@@ -1,0 +1,2277 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1610</width>
+    <height>896</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Gestion des Quais</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true"/>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <property name="styleSheet">
+    <string notr="true"/>
+   </property>
+   <widget class="QStackedWidget" name="stackedWidget">
+    <property name="geometry">
+     <rect>
+      <x>-10</x>
+      <y>-50</y>
+      <width>1621</width>
+      <height>1061</height>
+     </rect>
+    </property>
+    <property name="whatsThis">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;img src=&quot;:/res/bg.png&quot;/&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">
+
+/* Pages avec fond d'écran */
+#page_3, #page_4 {
+    background-image: url(:/res/bg.png);
+    background-repeat: no-repeat;
+    background-position: center;
+    border-radius: 15px;
+    font: 9px &quot;Arial&quot;;
+}
+
+/* ComboBox */
+QComboBox {
+    font-size: 14px;
+    padding: 6px;
+    border: 2px solid #59abc8;
+    border-radius: 15px;
+    background-color: rgba(0, 0, 50, 0.8);
+    color: white;
+    min-height: 20px;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 30px;
+}
+
+QComboBox::down-arrow {
+    image: url(:/down_arrow.png);
+    width: 16px;
+    height: 16px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: rgba(0, 0, 50, 0.9);
+    color: white;
+    border: 2px solid #59abc8;
+    selection-background-color: #0078D7;
+}
+
+/* LineEdit */
+QLineEdit {
+    font-size: 17px;
+    background: transparent;
+    border: none;
+    color: white;
+    border-bottom: 2px solid #0078D7;
+    padding: 3px;
+    selection-background-color: #FF8C00;
+}
+
+QLineEdit:focus {
+    border-bottom: 2px solid #FF8C00;
+font: &quot;Arial&quot;;
+color:rgb(187, 226, 255);
+}
+
+/* Boutons spéciaux */
+#ba, #bm, #bs, #br, #be, #btr, #brm, #bstat {
+    border-radius: 15px;
+    background-color: rgba(0, 0, 50, 0.8);
+    border: 2px solid #59abc8;
+    color: white;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 600;
+font:  &quot;Arial&quot;;
+}
+
+#ba:hover, #bm:hover, #bs:hover, #br:hover, #be:hover, #btr:hover, #brm:hover, #bstat:hover {
+    background-color: rgba(89, 171, 200, 0.3);
+    border-color: #FF8C00;
+}
+
+/* Labels spéciaux */
+#label_3{
+    border:none;
+    background-color: transparent;
+    font-weight: 700;
+color: rgb(66, 157, 255);
+font: 25pt &quot;Imprint MT Shadow&quot;;
+}
+
+#label_2, #label3_6,#label3_7,#label3_10,#label3_8,#label3_9 {
+    border: none;
+    background-color: transparent;
+    color: #ffffff;
+font: 15px &quot;Arial&quot;;
+}
+
+/* Frame */
+QFrame {
+    border-radius: 15px;
+    background-color: rgba(0, 0, 50, 0.7);
+    border: 2px solid #59abc8;
+font: 15px &quot;Arial&quot;;
+}
+
+/* Frame avec logo */
+#frame1 {
+    image: url(:/logoqt.jpg);
+    background-color: transparent;
+    border: none;
+}
+
+
+
+/* Boutons généraux */
+QPushButton {
+    background-color: rgba(0, 40, 80, 0.8);
+    border: 1px solid #59abc8;
+    border-radius: 15px;
+    color: white;
+    padding: 8px 16px;
+    font-size: 15px;
+font:  &quot;Arial&quot;;
+}
+
+QPushButton:hover {
+    background-color: rgba(0, 120, 215, 0.6);
+    border-color: #FF8C00;
+}
+
+QPushButton:pressed {
+    background-color: rgba(0, 120, 215, 0.8);
+}
+
+/* SpinBox et DoubleSpinBox */
+QSpinBox, QDoubleSpinBox {
+    background-color: rgba(0, 0, 50, 0.8);
+    border: 2px solid #59abc8;
+    border-radius: 15px;
+    color: white;
+    padding: 3px;
+    min-height: 25px;
+font: 9pt &quot;Arial&quot;;
+}
+
+/* TableWidget */
+QTableWidget {
+    background-color: rgba(0, 0, 50, 0.7);
+    border: 2px solid #59abc8;
+    border-radius: 15px;
+    gridline-color: #59abc8;
+    color: white;
+}
+
+QTableWidget::item {
+    padding: 5px;
+    border-bottom: 1px solid rgba(89, 171, 200, 0.3);
+}
+
+QTableWidget::item:selected {
+    background-color: #0078D7;
+font: 9pt &quot;Arial&quot;;
+}
+
+QHeaderView::section {
+    background-color: rgba(0, 40, 80, 0.9);
+    color: white;
+    padding: 8px;
+    border-radius: 5px;
+    border: 1px solid #59abc8;
+font: 8pt &quot;Arial&quot;;
+}
+
+/* MenuBar */
+QMenuBar {
+    background-color: rgba(0, 0, 50, 0.9);
+    color: white;
+    border-bottom: 2px solid #59abc8;
+font: 9pt &quot;Arial&quot;;
+}
+
+QMenuBar::item:selected {
+    background-color: #0078D7;
+font: 9pt &quot;Arial&quot;;
+}
+
+/* StatusBar */
+QStatusBar {
+    background-color: rgba(0, 0, 50, 0.9);
+    color: white;
+    border-top: 1px solid #59abc8;
+font: 9pt &quot;Arial&quot;;
+}
+
+/* ToolBar */
+QToolBar {
+    background-color: rgba(0, 0, 50, 0.8);
+    border: 1px solid #59abc8;
+    spacing: 5px;
+    padding: 3px;
+font: 9pt &quot;Arial&quot;;
+}
+
+/* === NOUVEAUX STYLES POUR LA SECTION COMPATIBILITÉ === */
+#frameCompatibilite {
+    border-radius: 15px;
+    background-color: rgba(0, 30, 60, 0.8);
+    border: 2px solid #59abc8;
+    padding: 10px;
+font: 9pt &quot;Arial&quot;;
+}
+
+#tableCompatibilite {
+    background-color: rgba(0, 20, 40, 0.9);
+    border: 1px solid #34495e;
+    border-radius: 10px;
+    gridline-color: #59abc8;
+    color: white;
+    font-size: 12px;
+}
+
+#tableCompatibilite::item {
+    padding: 5px;
+    border-bottom: 1px solid rgba(89, 171, 200, 0.2);
+}
+
+#tableCompatibilite::item:selected {
+    background-color: rgba(89, 171, 200, 0.4);
+}
+
+#tableCompatibilite QHeaderView::section {
+    background-color: rgba(0, 40, 80, 0.9);
+    color: white;
+    padding: 6px;
+    border: 1px solid #59abc8;
+    font-weight: bold;
+    font-size: 11px;
+}
+
+#btnAnalyserIA {
+    border-radius: 15px;
+    background-color: rgba(46, 204, 113, 0.8);
+    border: 2px solid #27ae60;
+    color: white;
+    padding: 8px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+#btnAnalyserIA:hover {
+    background-color: rgba(39, 174, 96, 0.9);
+    border-color: #2ECC71;
+}
+
+#btnAttribuerAuto {
+    border-radius: 15px;
+    background-color: rgba(52, 152, 219, 0.8);
+    border: 2px solid #2980b9;
+    color: white;
+    padding: 8px;
+    font-size: 14px;
+    font-weight: 600;
+font: 9pt &quot;Arial&quot;;
+}
+
+#btnAttribuerAuto:hover {
+    background-color: rgba(41, 128, 185, 0.9);
+    border-color: #3498db;
+font: 9pt &quot;Arial&quot;;
+}</string>
+    </property>
+    <property name="currentIndex">
+     <number>0</number>
+    </property>
+    <widget class="QWidget" name="page_3">
+     <widget class="QTableWidget" name="tableWidget">
+      <property name="geometry">
+       <rect>
+        <x>370</x>
+        <y>170</y>
+        <width>1181</width>
+        <height>271</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">font: 7pt &quot;Arial&quot;;</string>
+      </property>
+      <attribute name="horizontalHeaderMinimumSectionSize">
+       <number>41</number>
+      </attribute>
+      <attribute name="horizontalHeaderDefaultSectionSize">
+       <number>130</number>
+      </attribute>
+      <attribute name="verticalHeaderMinimumSectionSize">
+       <number>31</number>
+      </attribute>
+      <attribute name="verticalHeaderDefaultSectionSize">
+       <number>38</number>
+      </attribute>
+      <column>
+       <property name="text">
+        <string>ID quai</string>
+       </property>
+       <property name="font">
+        <font>
+         <pointsize>8</pointsize>
+        </font>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Code du quai</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Nom du quai</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Zone du port</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Zone couverte</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Longueur maximale</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Capacité maximale</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Statut</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Action</string>
+       </property>
+      </column>
+     </widget>
+     <widget class="QLineEdit" name="lineEdit_3">
+      <property name="geometry">
+       <rect>
+        <x>480</x>
+        <y>130</y>
+        <width>131</width>
+        <height>31</height>
+       </rect>
+      </property>
+      <property name="placeholderText">
+       <string>Search</string>
+      </property>
+     </widget>
+     <widget class="QLabel" name="label_3">
+      <property name="geometry">
+       <rect>
+        <x>600</x>
+        <y>50</y>
+        <width>311</width>
+        <height>61</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">color: rgb(66, 157, 255);
+font: 25pt &quot;Imprint MT Shadow&quot;;</string>
+      </property>
+      <property name="text">
+       <string>Gestion des quais</string>
+      </property>
+     </widget>
+     <widget class="QComboBox" name="comboBox_3">
+      <property name="geometry">
+       <rect>
+        <x>700</x>
+        <y>130</y>
+        <width>91</width>
+        <height>41</height>
+       </rect>
+      </property>
+      <item>
+       <property name="text">
+        <string>Tous</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Libre</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Occupé</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Maintenance</string>
+       </property>
+      </item>
+     </widget>
+     <widget class="QLabel" name="label3_10">
+      <property name="geometry">
+       <rect>
+        <x>440</x>
+        <y>130</y>
+        <width>41</width>
+        <height>31</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">color: rgb(255, 255, 255);</string>
+      </property>
+      <property name="text">
+       <string>🔍 :</string>
+      </property>
+     </widget>
+     <widget class="QLabel" name="label3_8">
+      <property name="geometry">
+       <rect>
+        <x>820</x>
+        <y>130</y>
+        <width>51</width>
+        <height>31</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">color: rgb(255, 255, 255);</string>
+      </property>
+      <property name="text">
+       <string>Zone :</string>
+      </property>
+     </widget>
+     <widget class="QComboBox" name="comboBox_4">
+      <property name="geometry">
+       <rect>
+        <x>870</x>
+        <y>130</y>
+        <width>101</width>
+        <height>41</height>
+       </rect>
+      </property>
+      <item>
+       <property name="text">
+        <string>Toutes</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Nord</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Sud</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Est</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Ouest</string>
+       </property>
+      </item>
+     </widget>
+     <widget class="QPushButton" name="pushButton_3">
+      <property name="geometry">
+       <rect>
+        <x>1320</x>
+        <y>130</y>
+        <width>51</width>
+        <height>41</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>✏️</string>
+      </property>
+     </widget>
+     <widget class="QComboBox" name="comboBox_5">
+      <property name="geometry">
+       <rect>
+        <x>1070</x>
+        <y>130</y>
+        <width>101</width>
+        <height>41</height>
+       </rect>
+      </property>
+      <item>
+       <property name="text">
+        <string>Toutes</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>&lt;= 5 bateaux</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>6-10 bateaux</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>&gt; 10 bateaux</string>
+       </property>
+      </item>
+     </widget>
+     <widget class="QPushButton" name="pushButton">
+      <property name="geometry">
+       <rect>
+        <x>50</x>
+        <y>780</y>
+        <width>141</width>
+        <height>51</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">font: 9pt &quot;Arial&quot;;</string>
+      </property>
+      <property name="text">
+       <string>⬅️ Retour Menu</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="pushButton_8">
+      <property name="geometry">
+       <rect>
+        <x>970</x>
+        <y>450</y>
+        <width>151</width>
+        <height>41</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>🚤 Affecter bateau</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="pushButton_4">
+      <property name="geometry">
+       <rect>
+        <x>1400</x>
+        <y>130</y>
+        <width>51</width>
+        <height>41</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>🗑️ </string>
+      </property>
+     </widget>
+     <widget class="QLabel" name="label3_7">
+      <property name="geometry">
+       <rect>
+        <x>650</x>
+        <y>130</y>
+        <width>61</width>
+        <height>31</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">color: rgb(255, 255, 255);</string>
+      </property>
+      <property name="text">
+       <string>Statut :</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="pushButton_7">
+      <property name="geometry">
+       <rect>
+        <x>490</x>
+        <y>460</y>
+        <width>164</width>
+        <height>41</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>📄 Exporter</string>
+      </property>
+     </widget>
+     <widget class="QLabel" name="label3_9">
+      <property name="geometry">
+       <rect>
+        <x>1000</x>
+        <y>130</y>
+        <width>91</width>
+        <height>31</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">color: rgb(255, 255, 255);</string>
+      </property>
+      <property name="text">
+       <string>Capacité :</string>
+      </property>
+     </widget>
+     <widget class="QFrame" name="frame">
+      <property name="geometry">
+       <rect>
+        <x>10</x>
+        <y>170</y>
+        <width>341</width>
+        <height>501</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">font: 9pt &quot;Arial&quot;;</string>
+      </property>
+      <property name="frameShape">
+       <enum>QFrame::Shape::StyledPanel</enum>
+      </property>
+      <property name="frameShadow">
+       <enum>QFrame::Shadow::Raised</enum>
+      </property>
+      <widget class="QLineEdit" name="lineEdit_4">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>0</y>
+         <width>271</width>
+         <height>48</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string/>
+       </property>
+       <property name="placeholderText">
+        <string>ID quai</string>
+       </property>
+      </widget>
+      <widget class="QLineEdit" name="lineEdit_5">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>50</y>
+         <width>271</width>
+         <height>48</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string/>
+       </property>
+       <property name="placeholderText">
+        <string>Code du quai</string>
+       </property>
+      </widget>
+      <widget class="QComboBox" name="comboBox_6">
+       <property name="geometry">
+        <rect>
+         <x>160</x>
+         <y>160</y>
+         <width>161</width>
+         <height>41</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">#combo_box{ border-radius: 15px;
+         color: rgba(0, 0, 50, 0.7);
+    border: 2px solid #59abc8 ;
+}</string>
+       </property>
+       <property name="editable">
+        <bool>true</bool>
+       </property>
+       <property name="currentText">
+        <string>Nord</string>
+       </property>
+       <item>
+        <property name="text">
+         <string>Nord</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Sud</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Est</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Ouest</string>
+        </property>
+       </item>
+      </widget>
+      <widget class="QLabel" name="label_2">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>250</y>
+         <width>151</width>
+         <height>21</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Longueur maximale :</string>
+       </property>
+      </widget>
+      <widget class="QDoubleSpinBox" name="doubleSpinBox_2">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>280</y>
+         <width>301</width>
+         <height>35</height>
+        </rect>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label3_6">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>320</y>
+         <width>181</width>
+         <height>31</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true"/>
+       </property>
+       <property name="text">
+        <string>Capacité maximale :</string>
+       </property>
+      </widget>
+      <widget class="QSpinBox" name="spinBox_2">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>350</y>
+         <width>301</width>
+         <height>35</height>
+        </rect>
+       </property>
+      </widget>
+      <widget class="QComboBox" name="comboBox_7">
+       <property name="geometry">
+        <rect>
+         <x>160</x>
+         <y>400</y>
+         <width>161</width>
+         <height>41</height>
+        </rect>
+       </property>
+       <property name="editable">
+        <bool>true</bool>
+       </property>
+       <property name="currentText">
+        <string>Libre</string>
+       </property>
+       <item>
+        <property name="text">
+         <string>Libre</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Occupé</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Maintenance</string>
+        </property>
+       </item>
+      </widget>
+      <widget class="QPushButton" name="pushButton_11">
+       <property name="geometry">
+        <rect>
+         <x>100</x>
+         <y>450</y>
+         <width>111</width>
+         <height>41</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string> Ajouter ➕ </string>
+       </property>
+      </widget>
+      <widget class="QLineEdit" name="lineEdit_6">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>100</y>
+         <width>271</width>
+         <height>48</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string/>
+       </property>
+       <property name="placeholderText">
+        <string>Nom du quai</string>
+       </property>
+      </widget>
+      <widget class="QComboBox" name="comboBox_8">
+       <property name="geometry">
+        <rect>
+         <x>160</x>
+         <y>210</y>
+         <width>161</width>
+         <height>41</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">#combo_box{ border-radius: 15px;
+         color: rgba(0, 0, 50, 0.7);
+    border: 2px solid #59abc8 ;
+}</string>
+       </property>
+       <property name="editable">
+        <bool>true</bool>
+       </property>
+       <property name="currentText">
+        <string>Oui</string>
+       </property>
+       <item>
+        <property name="text">
+         <string>Oui</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Non</string>
+        </property>
+       </item>
+      </widget>
+      <widget class="QLabel" name="label_4">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>170</y>
+         <width>131</width>
+         <height>31</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>TextLabel</string>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_5">
+       <property name="geometry">
+        <rect>
+         <x>22</x>
+         <y>210</y>
+         <width>131</width>
+         <height>31</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>TextLabel</string>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_6">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>400</y>
+         <width>131</width>
+         <height>31</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>TextLabel</string>
+       </property>
+      </widget>
+     </widget>
+     <widget class="QPushButton" name="pushButton_5">
+      <property name="geometry">
+       <rect>
+        <x>1240</x>
+        <y>130</y>
+        <width>51</width>
+        <height>41</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>🔄 </string>
+      </property>
+     </widget>
+     <widget class="QLabel" name="label">
+      <property name="geometry">
+       <rect>
+        <x>80</x>
+        <y>130</y>
+        <width>201</width>
+        <height>31</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">color: rgb(255, 255, 255);
+font: 11pt &quot;Sitka&quot;;</string>
+      </property>
+      <property name="text">
+       <string>        Formulaire</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="pushButton_6">
+      <property name="geometry">
+       <rect>
+        <x>540</x>
+        <y>740</y>
+        <width>211</width>
+        <height>51</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>Voir Map 🗺️</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="pushButton_9">
+      <property name="geometry">
+       <rect>
+        <x>930</x>
+        <y>740</y>
+        <width>211</width>
+        <height>51</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>Voir les statistiques 📊</string>
+      </property>
+     </widget>
+     <widget class="QFrame" name="frameCompatibilite">
+      <property name="geometry">
+       <rect>
+        <x>420</x>
+        <y>510</y>
+        <width>851</width>
+        <height>211</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">#frameCompatibilite {
+    border-radius: 15px;
+    background-color: rgba(0, 30, 60, 0.8);
+    border: 2px solid #59abc8;
+    padding: 10px;
+}</string>
+      </property>
+      <property name="frameShape">
+       <enum>QFrame::Shape::StyledPanel</enum>
+      </property>
+      <property name="frameShadow">
+       <enum>QFrame::Shadow::Raised</enum>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayoutCompat">
+       <property name="spacing">
+        <number>5</number>
+       </property>
+       <property name="leftMargin">
+        <number>5</number>
+       </property>
+       <property name="topMargin">
+        <number>5</number>
+       </property>
+       <property name="rightMargin">
+        <number>5</number>
+       </property>
+       <property name="bottomMargin">
+        <number>5</number>
+       </property>
+       <item>
+        <widget class="QLabel" name="labelCompatTitle">
+         <property name="styleSheet">
+          <string notr="true">color: #59abc8;
+font-weight: bold;
+font-size: 14px;
+qproperty-alignment: AlignCenter;</string>
+         </property>
+         <property name="text">
+          <string>📋 QUAIS COMPATIBLES POUR VOTRE NAVIRE</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QTableWidget" name="tableCompatibilite">
+         <property name="styleSheet">
+          <string notr="true">QTableWidget {
+	font: 9pt &quot;Arial&quot;;
+    background-color: rgba(0, 20, 40, 0.9);
+    border: 1px solid #34495e;
+    border-radius: 10px;
+    gridline-color: #59abc8;
+    color: white;
+    font-size: 12px;
+}
+QTableWidget::item {
+    padding: 5px;
+    border-bottom: 1px solid rgba(89, 171, 200, 0.2);
+}
+QTableWidget::item:selected {
+    background-color: rgba(89, 171, 200, 0.4);
+}
+QHeaderView::section {
+    background-color: rgba(0, 40, 80, 0.9);
+    color: white;
+    padding: 6px;
+    border: 1px solid #59abc8;
+    font-weight: bold;
+    font-size: 11px;
+}</string>
+         </property>
+         <attribute name="horizontalHeaderMinimumSectionSize">
+          <number>30</number>
+         </attribute>
+         <attribute name="horizontalHeaderDefaultSectionSize">
+          <number>163</number>
+         </attribute>
+         <attribute name="verticalHeaderVisible">
+          <bool>false</bool>
+         </attribute>
+         <column>
+          <property name="text">
+           <string>Quai</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Zone</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Distance</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Statut</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Compatibilité</string>
+          </property>
+         </column>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="labelQuaiProche">
+         <property name="styleSheet">
+          <string notr="true">color: #2ECC71;
+font-weight: bold;
+font-size: 13px;
+font-style: italic;
+qproperty-alignment: AlignCenter;</string>
+         </property>
+         <property name="text">
+          <string>🟢 QUAI LE PLUS PROCHE DISPONIBLE : Aucun sélectionné</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QPushButton" name="btnAnalyserIA">
+      <property name="geometry">
+       <rect>
+        <x>20</x>
+        <y>680</y>
+        <width>341</width>
+        <height>41</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">#btnAnalyserIA {
+	font: 9pt &quot;Arial&quot;;
+    border-radius: 15px;
+    background-color: rgba(46, 204, 113, 0.8);
+    border: 2px solid #27ae60;
+    color: white;
+    padding: 8px;
+    font-size: 14px;
+    font-weight: 600;
+}
+#btnAnalyserIA:hover {
+    background-color: rgba(39, 174, 96, 0.9);
+    border-color: #2ECC71;
+}</string>
+      </property>
+      <property name="text">
+       <string>🔍 Analyser les quais compatibles avec IA</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="btnAttribuerAuto">
+      <property name="geometry">
+       <rect>
+        <x>20</x>
+        <y>730</y>
+        <width>341</width>
+        <height>41</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">#btnAttribuerAuto {
+	font: 9pt &quot;Arial&quot;;
+    border-radius: 15px;
+    background-color: rgba(52, 152, 219, 0.8);
+    border: 2px solid #2980b9;
+    color: white;
+    padding: 8px;
+    font-size: 14px;
+    font-weight: 600;
+}
+#btnAttribuerAuto:hover {
+    background-color: rgba(41, 128, 185, 0.9);
+    border-color: #3498db;
+}</string>
+      </property>
+      <property name="text">
+       <string>🚢 Attribuer le quai le plus proche disponible</string>
+      </property>
+     </widget>
+    </widget>
+    <widget class="QWidget" name="page_4">
+     <widget class="QPushButton" name="pushButton_2">
+      <property name="geometry">
+       <rect>
+        <x>70</x>
+        <y>730</y>
+        <width>151</width>
+        <height>51</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>⬅️ Retour </string>
+      </property>
+     </widget>
+     <widget class="QFrame" name="statsFrame_2">
+      <property name="geometry">
+       <rect>
+        <x>640</x>
+        <y>60</y>
+        <width>771</width>
+        <height>741</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">#statsFrame {
+    border-radius: 15px;
+    background-color: rgba(0, 0, 50, 0.7);
+    border: 2px solid #59abc8;
+    padding: 15px;
+}</string>
+      </property>
+      <property name="frameShape">
+       <enum>QFrame::Shape::StyledPanel</enum>
+      </property>
+      <property name="frameShadow">
+       <enum>QFrame::Shadow::Raised</enum>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayout_7">
+       <item>
+        <widget class="QLabel" name="statsTitle_2">
+         <property name="styleSheet">
+          <string notr="true">color: #59abc8;
+font-weight: bold;
+font-size: 16px;</string>
+         </property>
+         <property name="text">
+          <string>📊 STATISTIQUES D'OCCUPATION</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="periodLayout_2">
+         <item>
+          <widget class="QLabel" name="label_period_2">
+           <property name="styleSheet">
+            <string notr="true">color: white;</string>
+           </property>
+           <property name="text">
+            <string>Période :</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QComboBox" name="comboPeriod_2">
+           <property name="editable">
+            <bool>true</bool>
+           </property>
+           <property name="currentText">
+            <string>Aujourd'hui</string>
+           </property>
+           <item>
+            <property name="text">
+             <string>Aujourd'hui</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Semaine en cours</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Mois en cours</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Trimestre</string>
+            </property>
+           </item>
+          </widget>
+         </item>
+         <item>
+          <spacer name="horizontalSpacer_3">
+           <property name="orientation">
+            <enum>Qt::Orientation::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btnRefreshStats_2">
+           <property name="styleSheet">
+            <string notr="true">QPushButton {
+    background-color: rgba(89, 171, 200, 0.5);
+    border: 1px solid #59abc8;
+    border-radius: 10px;
+    padding: 6px 12px;
+    color: white;
+}</string>
+           </property>
+           <property name="text">
+            <string>🔄 Actualiser</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="kpiLayout_2">
+         <item>
+          <widget class="QFrame" name="kpiTotal_2">
+           <property name="minimumSize">
+            <size>
+             <width>120</width>
+             <height>80</height>
+            </size>
+           </property>
+           <property name="styleSheet">
+            <string notr="true">#kpiTotal {
+    background-color: rgba(0, 40, 80, 0.8);
+    border-radius: 10px;
+    border: 2px solid #3498db;
+    padding: 10px;
+}</string>
+           </property>
+           <layout class="QVBoxLayout" name="verticalLayout_8">
+            <item>
+             <widget class="QLabel" name="label_kpiTotal_2">
+              <property name="styleSheet">
+               <string notr="true">color: #3498db;
+font-size: 12px;
+font-weight: bold;</string>
+              </property>
+              <property name="text">
+               <string>TOTAL</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="value_kpiTotal_2">
+              <property name="styleSheet">
+               <string notr="true">color: white;
+font-size: 24px;
+font-weight: bold;</string>
+              </property>
+              <property name="text">
+               <string>0</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="sub_kpiTotal_2">
+              <property name="styleSheet">
+               <string notr="true">color: #95a5a6;
+font-size: 11px;</string>
+              </property>
+              <property name="text">
+               <string>Quais</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QFrame" name="kpiOccupied_2">
+           <property name="minimumSize">
+            <size>
+             <width>120</width>
+             <height>80</height>
+            </size>
+           </property>
+           <property name="styleSheet">
+            <string notr="true">#kpiOccupied {
+    background-color: rgba(0, 40, 80, 0.8);
+    border-radius: 10px;
+    border: 2px solid #e74c3c;
+    padding: 10px;
+}</string>
+           </property>
+           <layout class="QVBoxLayout" name="verticalLayout_9">
+            <item>
+             <widget class="QLabel" name="label_kpiOccupied_2">
+              <property name="styleSheet">
+               <string notr="true">color: #e74c3c;
+font-size: 12px;
+font-weight: bold;</string>
+              </property>
+              <property name="text">
+               <string>OCCUPÉS</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="value_kpiOccupied_2">
+              <property name="styleSheet">
+               <string notr="true">color: white;
+font-size: 24px;
+font-weight: bold;</string>
+              </property>
+              <property name="text">
+               <string>0</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="sub_kpiOccupied_2">
+              <property name="styleSheet">
+               <string notr="true">color: #95a5a6;
+font-size: 11px;</string>
+              </property>
+              <property name="text">
+               <string>0%</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QFrame" name="kpiFree_2">
+           <property name="minimumSize">
+            <size>
+             <width>120</width>
+             <height>80</height>
+            </size>
+           </property>
+           <property name="styleSheet">
+            <string notr="true">#kpiFree {
+    background-color: rgba(0, 40, 80, 0.8);
+    border-radius: 10px;
+    border: 2px solid #27ae60;
+    padding: 10px;
+}</string>
+           </property>
+           <layout class="QVBoxLayout" name="verticalLayout_10">
+            <item>
+             <widget class="QLabel" name="label_kpiFree_2">
+              <property name="styleSheet">
+               <string notr="true">color: #27ae60;
+font-size: 12px;
+font-weight: bold;</string>
+              </property>
+              <property name="text">
+               <string>LIBRES</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="value_kpiFree_2">
+              <property name="styleSheet">
+               <string notr="true">color: white;
+font-size: 24px;
+font-weight: bold;</string>
+              </property>
+              <property name="text">
+               <string>0</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="sub_kpiFree_2">
+              <property name="styleSheet">
+               <string notr="true">color: #95a5a6;
+font-size: 11px;</string>
+              </property>
+              <property name="text">
+               <string>0%</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QFrame" name="kpiMaintenance_2">
+           <property name="minimumSize">
+            <size>
+             <width>120</width>
+             <height>80</height>
+            </size>
+           </property>
+           <property name="styleSheet">
+            <string notr="true">#kpiMaintenance {
+    background-color: rgba(0, 40, 80, 0.8);
+    border-radius: 10px;
+    border: 2px solid #f39c12;
+    padding: 10px;
+}</string>
+           </property>
+           <layout class="QVBoxLayout" name="verticalLayout_11">
+            <item>
+             <widget class="QLabel" name="label_kpiMaintenance_2">
+              <property name="styleSheet">
+               <string notr="true">color: #f39c12;
+font-size: 12px;
+font-weight: bold;</string>
+              </property>
+              <property name="text">
+               <string>MAINTENANCE</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="value_kpiMaintenance_2">
+              <property name="styleSheet">
+               <string notr="true">color: white;
+font-size: 24px;
+font-weight: bold;</string>
+              </property>
+              <property name="text">
+               <string>0</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="sub_kpiMaintenance_2">
+              <property name="styleSheet">
+               <string notr="true">color: #95a5a6;
+font-size: 11px;</string>
+              </property>
+              <property name="text">
+               <string>0%</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QLabel" name="label_zones_2">
+         <property name="styleSheet">
+          <string notr="true">color: white;
+font-weight: bold;
+margin-top: 10px;</string>
+         </property>
+         <property name="text">
+          <string>📈 RÉPARTITION PAR ZONE :</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="zonesContainerLayout_2">
+         <item>
+          <layout class="QVBoxLayout" name="zoneNordLayout_2">
+           <item>
+            <widget class="QLabel" name="label_zoneNord_2">
+             <property name="styleSheet">
+              <string notr="true">color: white;
+text-align: center;
+font-weight: bold;</string>
+             </property>
+             <property name="text">
+              <string>Nord</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignCenter</set>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QProgressBar" name="progressZoneNord_2">
+             <property name="minimumSize">
+              <size>
+               <width>30</width>
+               <height>120</height>
+              </size>
+             </property>
+             <property name="styleSheet">
+              <string notr="true">QProgressBar:vertical {
+    width: 25px;
+    border: 2px solid #3498db;
+    border-radius: 5px;
+    background-color: rgba(0, 40, 80, 0.5);
+    text-align: center;
+    padding: 5px;
+margin-left:70 px;
+}
+QProgressBar::chunk:vertical {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #3498db, stop:1 #2980b9);
+    border-radius: 3px;
+}</string>
+             </property>
+             <property name="value">
+              <number>0</number>
+             </property>
+             <property name="textVisible">
+              <bool>true</bool>
+             </property>
+             <property name="orientation">
+              <enum>Qt::Orientation::Vertical</enum>
+             </property>
+             <property name="format">
+              <string>%p%</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="value_zoneNord_2">
+             <property name="styleSheet">
+              <string notr="true">color: #3498db;
+font-weight: bold;
+font-size: 12px;
+text-align: center;</string>
+             </property>
+             <property name="text">
+              <string>0/0</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignCenter</set>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <layout class="QVBoxLayout" name="zoneSudLayout_2">
+           <item>
+            <widget class="QLabel" name="label_zoneSud_2">
+             <property name="styleSheet">
+              <string notr="true">color: white;
+text-align: center;
+font-weight: bold;</string>
+             </property>
+             <property name="text">
+              <string>Sud</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignCenter</set>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QProgressBar" name="progressZoneSud_2">
+             <property name="minimumSize">
+              <size>
+               <width>30</width>
+               <height>120</height>
+              </size>
+             </property>
+             <property name="styleSheet">
+              <string notr="true">QProgressBar:vertical {
+    width: 25px;
+    border: 2px solid #27ae60;
+    border-radius: 5px;
+    background-color: rgba(0, 40, 80, 0.5);
+    text-align: center;
+    padding: 5px;
+margin-left: 70px;
+}
+QProgressBar::chunk:vertical {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #27ae60, stop:1 #229954);
+    border-radius: 3px;
+}</string>
+             </property>
+             <property name="value">
+              <number>0</number>
+             </property>
+             <property name="textVisible">
+              <bool>true</bool>
+             </property>
+             <property name="orientation">
+              <enum>Qt::Orientation::Vertical</enum>
+             </property>
+             <property name="format">
+              <string>%p%</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="value_zoneSud_2">
+             <property name="styleSheet">
+              <string notr="true">color: #27ae60;
+font-weight: bold;
+font-size: 12px;
+text-align: center;</string>
+             </property>
+             <property name="text">
+              <string>0/0</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignCenter</set>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <layout class="QVBoxLayout" name="zoneEstLayout_2">
+           <item>
+            <widget class="QLabel" name="label_zoneEst_2">
+             <property name="styleSheet">
+              <string notr="true">color: white;
+text-align: center;
+font-weight: bold;</string>
+             </property>
+             <property name="text">
+              <string>Est</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignCenter</set>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QProgressBar" name="progressZoneEst_2">
+             <property name="minimumSize">
+              <size>
+               <width>30</width>
+               <height>120</height>
+              </size>
+             </property>
+             <property name="styleSheet">
+              <string notr="true">QProgressBar:vertical {
+    width: 25px;
+    border: 2px solid #f39c12;
+    border-radius: 5px;
+    background-color: rgba(0, 40, 80, 0.5);
+    text-align: center;
+    padding: 5px;
+margin-left:70px;
+}
+QProgressBar::chunk:vertical {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #f39c12, stop:1 #d68910);
+    border-radius: 3px;
+}</string>
+             </property>
+             <property name="value">
+              <number>0</number>
+             </property>
+             <property name="textVisible">
+              <bool>true</bool>
+             </property>
+             <property name="orientation">
+              <enum>Qt::Orientation::Vertical</enum>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="value_zoneEst_2">
+             <property name="styleSheet">
+              <string notr="true">color: #f39c12;
+font-weight: bold;
+font-size: 12px;
+text-align: center;</string>
+             </property>
+             <property name="text">
+              <string>0/0</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignCenter</set>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <layout class="QVBoxLayout" name="zoneOuestLayout_2">
+           <item>
+            <widget class="QLabel" name="label_zoneOuest_2">
+             <property name="styleSheet">
+              <string notr="true">color: white;
+text-align: center;
+font-weight: bold;</string>
+             </property>
+             <property name="text">
+              <string>Ouest</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignCenter</set>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QProgressBar" name="progressZoneOuest_2">
+             <property name="minimumSize">
+              <size>
+               <width>30</width>
+               <height>120</height>
+              </size>
+             </property>
+             <property name="styleSheet">
+              <string notr="true">QProgressBar:vertical {
+    width: 25px;
+    border: 2px solid #9b59b6;
+    border-radius: 5px;
+    background-color: rgba(0, 40, 80, 0.5);
+    text-align: center;
+    padding: 5px;
+margin-left:70 px;
+}
+QProgressBar::chunk:vertical {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #9b59b6, stop:1 #8e44ad);
+    border-radius: 3px;
+}</string>
+             </property>
+             <property name="value">
+              <number>0</number>
+             </property>
+             <property name="textVisible">
+              <bool>true</bool>
+             </property>
+             <property name="orientation">
+              <enum>Qt::Orientation::Vertical</enum>
+             </property>
+             <property name="format">
+              <string>%p%</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="value_zoneOuest_2">
+             <property name="styleSheet">
+              <string notr="true">color: #9b59b6;
+font-weight: bold;
+font-size: 12px;
+text-align: center;</string>
+             </property>
+             <property name="text">
+              <string>0/0</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignCenter</set>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="exportStatsLayout_2">
+         <item>
+          <spacer name="horizontalSpacer_4">
+           <property name="orientation">
+            <enum>Qt::Orientation::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btnExportStatsPDF_2">
+           <property name="styleSheet">
+            <string notr="true">QPushButton {
+    background-color: rgba(231, 76, 60, 0.7);
+    border: 1px solid #e74c3c;
+    border-radius: 10px;
+    padding: 8px 16px;
+    color: white;
+    font-weight: bold;
+}</string>
+           </property>
+           <property name="text">
+            <string>📄 Exporter PDF</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QFrame" name="frame_2">
+      <property name="geometry">
+       <rect>
+        <x>20</x>
+        <y>90</y>
+        <width>501</width>
+        <height>601</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">border-radius: 15px;
+background-color: rgba(10, 20, 40, 0.95);
+border: 3px solid #59abc8;</string>
+      </property>
+      <property name="frameShape">
+       <enum>QFrame::Shape::StyledPanel</enum>
+      </property>
+      <property name="frameShadow">
+       <enum>QFrame::Shadow::Raised</enum>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayout_map">
+       <item>
+        <widget class="QLabel" name="label_map_title">
+         <property name="styleSheet">
+          <string notr="true">color: #59abc8;
+font-weight: bold;
+font-size: 18px;
+qproperty-alignment: AlignCenter;</string>
+         </property>
+         <property name="text">
+          <string>🗺️ CARTE DU PORT - VISION GLOBALE</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btnRefreshMap">
+         <property name="maximumSize">
+          <size>
+           <width>200</width>
+           <height>30</height>
+          </size>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">QPushButton {
+    background-color: rgba(89, 171, 200, 0.6);
+    border: 1px solid #59abc8;
+    border-radius: 8px;
+    padding: 5px 10px;
+    color: white;
+    font-size: 11px;
+    font-weight: bold;
+}
+QPushButton:hover {
+    background-color: rgba(89, 171, 200, 0.8);
+}</string>
+         </property>
+         <property name="text">
+          <string>🔄 Rafraîchir la carte</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QFrame" name="mapContainer">
+         <property name="minimumSize">
+          <size>
+           <width>450</width>
+           <height>450</height>
+          </size>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">background-color: rgba(20, 30, 60, 0.9);
+border-radius: 12px;
+border: 2px solid #34495e;</string>
+         </property>
+         <layout class="QGridLayout" name="gridLayout_map">
+          <property name="leftMargin">
+           <number>20</number>
+          </property>
+          <property name="topMargin">
+           <number>20</number>
+          </property>
+          <property name="rightMargin">
+           <number>20</number>
+          </property>
+          <property name="bottomMargin">
+           <number>20</number>
+          </property>
+          <property name="spacing">
+           <number>15</number>
+          </property>
+          <item row="0" column="1">
+           <widget class="QFrame" name="zoneNord_map">
+            <property name="minimumSize">
+             <size>
+              <width>120</width>
+              <height>120</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>120</width>
+              <height>120</height>
+             </size>
+            </property>
+            <layout class="QVBoxLayout" name="verticalLayout_zoneNord">
+             <property name="spacing">
+              <number>5</number>
+             </property>
+             <property name="leftMargin">
+              <number>5</number>
+             </property>
+             <property name="topMargin">
+              <number>5</number>
+             </property>
+             <property name="rightMargin">
+              <number>5</number>
+             </property>
+             <property name="bottomMargin">
+              <number>5</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="label_zoneNord_map">
+               <property name="styleSheet">
+                <string notr="true">color: white;
+font-weight: bold;
+font-size: 10px;
+qproperty-alignment: AlignCenter;</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="value_zoneNord_map">
+               <property name="styleSheet">
+                <string notr="true">color: #3498db;
+font-weight: bold;
+font-size: 9px;
+qproperty-alignment: AlignCenter;</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item row="2" column="1">
+           <widget class="QFrame" name="zoneSud_map">
+            <property name="minimumSize">
+             <size>
+              <width>120</width>
+              <height>120</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>120</width>
+              <height>120</height>
+             </size>
+            </property>
+            <layout class="QVBoxLayout" name="verticalLayout_zoneSud">
+             <property name="spacing">
+              <number>5</number>
+             </property>
+             <property name="leftMargin">
+              <number>5</number>
+             </property>
+             <property name="topMargin">
+              <number>5</number>
+             </property>
+             <property name="rightMargin">
+              <number>5</number>
+             </property>
+             <property name="bottomMargin">
+              <number>5</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="label_zoneSud_map">
+               <property name="styleSheet">
+                <string notr="true">color: white;
+font-weight: bold;
+font-size: 10px;
+qproperty-alignment: AlignCenter;</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="value_zoneSud_map">
+               <property name="styleSheet">
+                <string notr="true">color: #27ae60;
+font-weight: bold;
+font-size: 9px;
+qproperty-alignment: AlignCenter;</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item row="1" column="2">
+           <widget class="QFrame" name="zoneEst_map">
+            <property name="minimumSize">
+             <size>
+              <width>120</width>
+              <height>120</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>120</width>
+              <height>120</height>
+             </size>
+            </property>
+            <layout class="QVBoxLayout" name="verticalLayout_zoneEst">
+             <property name="spacing">
+              <number>5</number>
+             </property>
+             <property name="leftMargin">
+              <number>5</number>
+             </property>
+             <property name="topMargin">
+              <number>5</number>
+             </property>
+             <property name="rightMargin">
+              <number>5</number>
+             </property>
+             <property name="bottomMargin">
+              <number>5</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="label_zoneEst_map">
+               <property name="styleSheet">
+                <string notr="true">color: white;
+font-weight: bold;
+font-size: 10px;
+qproperty-alignment: AlignCenter;</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="value_zoneEst_map">
+               <property name="styleSheet">
+                <string notr="true">color: #f39c12;
+font-weight: bold;
+font-size: 9px;
+qproperty-alignment: AlignCenter;</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QFrame" name="zoneOuest_map">
+            <property name="minimumSize">
+             <size>
+              <width>120</width>
+              <height>120</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>120</width>
+              <height>120</height>
+             </size>
+            </property>
+            <layout class="QVBoxLayout" name="verticalLayout_zoneOuest">
+             <property name="spacing">
+              <number>5</number>
+             </property>
+             <property name="leftMargin">
+              <number>5</number>
+             </property>
+             <property name="topMargin">
+              <number>5</number>
+             </property>
+             <property name="rightMargin">
+              <number>5</number>
+             </property>
+             <property name="bottomMargin">
+              <number>5</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="label_zoneOuest_map">
+               <property name="styleSheet">
+                <string notr="true">color: white;
+font-weight: bold;
+font-size: 10px;
+qproperty-alignment: AlignCenter;</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="value_zoneOuest_map">
+               <property name="styleSheet">
+                <string notr="true">color: #9b59b6;
+font-weight: bold;
+font-size: 9px;
+qproperty-alignment: AlignCenter;</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QFrame" name="zoneCentre_map">
+            <property name="minimumSize">
+             <size>
+              <width>120</width>
+              <height>120</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>120</width>
+              <height>120</height>
+             </size>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+stop:0 rgba(52, 152, 219, 0.3), stop:1 rgba(41, 128, 185, 0.5));
+border-radius: 60px;
+border: 3px dashed #3498db;</string>
+            </property>
+            <layout class="QVBoxLayout" name="verticalLayout_centre">
+             <item>
+              <widget class="QLabel" name="label_centre_map">
+               <property name="styleSheet">
+                <string notr="true">color: #3498db;
+font-weight: bold;
+font-size: 14px;
+qproperty-alignment: AlignCenter;</string>
+               </property>
+               <property name="text">
+                <string>⚓ PORT</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="label_legend">
+         <property name="styleSheet">
+          <string notr="true">color: #95a5a6;
+font-size: 10px;
+qproperty-alignment: AlignCenter;</string>
+         </property>
+         <property name="text">
+          <string>📊 Légende : 🟢 Peu occupé | 🔵 Moyennement | 🟠 Maintenance | 🔴 Très occupé</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="label_map_info">
+         <property name="styleSheet">
+          <string notr="true">color: #7f8c8d;
+font-size: 10px;
+font-style: italic;
+qproperty-alignment: AlignCenter;</string>
+         </property>
+         <property name="text">
+          <string>Cliquez sur une zone pour voir les détails des quais</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </widget>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>1610</width>
+     <height>26</height>
+    </rect>
+   </property>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <widget class="QToolBar" name="toolBar">
+   <property name="windowTitle">
+    <string>toolBar</string>
+   </property>
+   <attribute name="toolBarArea">
+    <enum>TopToolBarArea</enum>
+   </attribute>
+   <attribute name="toolBarBreak">
+    <bool>false</bool>
+   </attribute>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

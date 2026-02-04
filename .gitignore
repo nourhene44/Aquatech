@@ -1,0 +1,14 @@
+# Qt / Qt Creator
+build/
+*.pro.user
+*.pro.user.*
+*.user
+*.user.*
+*.autosave
+
+# Qt Creator local settings
+.qtcreator/
+
+# OS cruft
+.DS_Store
+Thumbs.db
