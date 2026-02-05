@@ -23,10 +23,10 @@
     </property>
     <property name="geometry">
      <rect>
-      <x>-10</x>
-      <y>-50</y>
+      <x>0</x>
+      <y>0</y>
       <width>1511</width>
-      <height>911</height>
+      <height>891</height>
      </rect>
     </property>
     <property name="styleSheet">
@@ -145,6 +145,9 @@ padding: 10px 20px;
 
 </string>
     </property>
+    <property name="currentIndex">
+     <number>0</number>
+    </property>
     <widget class="QWidget" name="pagepecheur">
      <property name="contextMenuPolicy">
       <enum>Qt::ContextMenuPolicy::DefaultContextMenu</enum>
@@ -171,7 +174,7 @@ padding: 10px 20px;
       </property>
       <property name="geometry">
        <rect>
-        <x>10</x>
+        <x>20</x>
         <y>130</y>
         <width>331</width>
         <height>531</height>
