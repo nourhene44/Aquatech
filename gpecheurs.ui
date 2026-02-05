@@ -30,13 +30,9 @@
      </rect>
     </property>
     <property name="styleSheet">
-     <string notr="true">#page5{
-background-image: url(:/bg.png);
-background-repeat: no-repeat;
-    background-position: center;
-}
+     <string notr="true">
 #pagepecheur {
-   background-image: url(:/bg.png);
+   background-image: url(:/new/prefix1/bg.png);
     background-repeat: no-repeat;
     background-position: center;
 border-radius:15px
@@ -1127,7 +1123,7 @@ background: transparent;</string>
       <widget class="QLabel" name="label_legend_chalutier_11p">
        <property name="geometry">
         <rect>
-         <x>80</x>
+         <x>70</x>
          <y>80</y>
          <width>251</width>
          <height>41</height>
@@ -1307,6 +1303,16 @@ padding: 10px 20px;</string>
         <string>🕵🏻Visage Détécté</string>
        </property>
       </widget>
+      <zorder>frame_10p</zorder>
+      <zorder>faceGuideCircle_4p</zorder>
+      <zorder>label_zones_4p</zorder>
+      <zorder>label_legend_chalutier_11p</zorder>
+      <zorder>label_legend_chalutier_12p</zorder>
+      <zorder>frame_11p</zorder>
+      <zorder>pushButton_10p</zorder>
+      <zorder>pushButton_11p</zorder>
+      <zorder>bmi_6p</zorder>
+      <zorder>label_8p</zorder>
      </widget>
     </widget>
     <widget class="QWidget" name="page5"/>
