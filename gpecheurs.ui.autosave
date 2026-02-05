@@ -1,0 +1,1329 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Gpecheurs</class>
+ <widget class="QMainWindow" name="Gpecheurs">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1512</width>
+    <height>943</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Gpecheurs</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
+   <widget class="QStackedWidget" name="stackedWidget">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>-10</x>
+      <y>-50</y>
+      <width>1511</width>
+      <height>911</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">#page5{
+background-image: url(:/bg.png);
+background-repeat: no-repeat;
+    background-position: center;
+}
+#pagepecheur {
+   background-image: url(:/bg.png);
+    background-repeat: no-repeat;
+    background-position: center;
+border-radius:15px
+}
+#labelfp{
+color:#fffae0;
+    font-weight: 600;
+    font-size: 17px;
+    padding: 5px 0;
+}
+
+QComboBox {
+font-size: 16px;
+    padding: 6px;
+    border: 2px solid #59abc8;
+    border-radius: 15px;
+        background-color: rgba(0, 0, 50, 0.8);
+
+
+}
+
+QLineEdit {
+font-size: 17px;
+    background: transparent;
+    border: none;
+    color: WHITE;
+    border-bottom: 2px solid #0078D7;
+    padding: 3px;
+    selection-background-color: #FF8C00;
+}
+#lineEdit_4p{
+  font-size: 17px;
+    background: transparent;
+    border: none;
+    color: black;
+    border-bottom: 2px solid #0078D7;
+    padding: 3px;
+    selection-background-color: #FF8C00;
+}
+
+
+QPushButton {
+    border-radius: 20px;
+background-color: rgba(0, 0, 150, 0.7);
+   border: 2px solid #59abc8;
+ color: white;
+    font-weight: 700;
+    font-size: 15px;
+    margin-bottom:20px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+padding: 10px 20px;
+}
+QPushButton:hover {
+    transform: translateY(-2px);
+    color: #59abc8;
+}
+#pushButtonp:hover{
+transform: translateY(-2px);
+    color: #80000;
+}
+
+#labelp{/* Labels spéciaux */
+    border:none;
+    background-color: transparent;
+    font-weight: 700;
+color: rgb(66, 157, 255);
+font: 25pt &quot;Imprint MT Shadow&quot;;
+}
+#label_2p,#label_4p,#label_5p,#label_6p,#label_7p,#label_3p{
+    border:none;
+    background-color:transparent;
+    font-size:20px;
+    color:#fffff;
+        color: rgb(255, 255, 255);
+    font-weight:500;
+    font-family: &quot;Segoe UI&quot;, &quot;Century Gothic&quot;, sans-serif;
+}
+QFrame {
+
+     border-radius: 15px;
+        background-color: rgba(0, 0, 50, 0.7);
+     border: 2px solid #59abc8 ;
+}
+#frame_3p{
+
+     border-radius: 15px;
+        background-color: rgba(0, 0, 50,0.9);
+     border: 2px solid #59abc8 ;
+}
+#framefaceidp{
+background-color: rgba(0, 0, 50, 0.9);
+}
+
+#btnFaceIDp {
+
+    background-color: rgba(175, 109, 202, 0.7);
+     border-radius: 20px;
+     border: 2px solid #59abc8;
+    color: white;
+    font-weight: 700;
+    font-size: 15px;
+    margin-bottom:20px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+padding: 10px 20px;
+}
+#btnFaceIDp:hover {
+    transform: translateY(-2px);
+    color: #9b59b6;
+}
+
+</string>
+    </property>
+    <widget class="QWidget" name="pagepecheur">
+     <property name="contextMenuPolicy">
+      <enum>Qt::ContextMenuPolicy::DefaultContextMenu</enum>
+     </property>
+     <widget class="QLabel" name="labelp">
+      <property name="enabled">
+       <bool>false</bool>
+      </property>
+      <property name="geometry">
+       <rect>
+        <x>540</x>
+        <y>50</y>
+        <width>411</width>
+        <height>41</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>Gestion Des Pêcheurs</string>
+      </property>
+     </widget>
+     <widget class="QFrame" name="framep">
+      <property name="enabled">
+       <bool>true</bool>
+      </property>
+      <property name="geometry">
+       <rect>
+        <x>10</x>
+        <y>130</y>
+        <width>331</width>
+        <height>531</height>
+       </rect>
+      </property>
+      <property name="frameShape">
+       <enum>QFrame::Shape::StyledPanel</enum>
+      </property>
+      <property name="frameShadow">
+       <enum>QFrame::Shadow::Raised</enum>
+      </property>
+      <widget class="QLineEdit" name="lineEditp">
+       <property name="geometry">
+        <rect>
+         <x>40</x>
+         <y>50</y>
+         <width>231</width>
+         <height>31</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string/>
+       </property>
+       <property name="placeholderText">
+        <string>ID</string>
+       </property>
+      </widget>
+      <widget class="QLineEdit" name="lineEdit_2p">
+       <property name="geometry">
+        <rect>
+         <x>40</x>
+         <y>110</y>
+         <width>231</width>
+         <height>31</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string/>
+       </property>
+       <property name="placeholderText">
+        <string>NOM</string>
+       </property>
+      </widget>
+      <widget class="QComboBox" name="comboBoxp">
+       <property name="geometry">
+        <rect>
+         <x>130</x>
+         <y>230</y>
+         <width>151</width>
+         <height>41</height>
+        </rect>
+       </property>
+       <property name="editable">
+        <bool>true</bool>
+       </property>
+       <property name="currentText">
+        <string>Capitaine</string>
+       </property>
+       <item>
+        <property name="text">
+         <string>Capitaine</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Marin</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Autre</string>
+        </property>
+       </item>
+      </widget>
+      <widget class="QComboBox" name="comboBox_2">
+       <property name="geometry">
+        <rect>
+         <x>130</x>
+         <y>290</y>
+         <width>151</width>
+         <height>41</height>
+        </rect>
+       </property>
+       <property name="editable">
+        <bool>true</bool>
+       </property>
+       <property name="currentText">
+        <string>Disponible</string>
+       </property>
+       <item>
+        <property name="text">
+         <string>Disponible</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Indisponible</string>
+        </property>
+       </item>
+      </widget>
+      <widget class="QComboBox" name="comboBox_3p">
+       <property name="geometry">
+        <rect>
+         <x>120</x>
+         <y>350</y>
+         <width>151</width>
+         <height>41</height>
+        </rect>
+       </property>
+       <item>
+        <property name="text">
+         <string>Bateaux</string>
+        </property>
+       </item>
+      </widget>
+      <widget class="QLineEdit" name="lineEdit_3p">
+       <property name="geometry">
+        <rect>
+         <x>40</x>
+         <y>170</y>
+         <width>231</width>
+         <height>28</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string/>
+       </property>
+       <property name="placeholderText">
+        <string>Prénom</string>
+       </property>
+      </widget>
+      <widget class="QPushButton" name="btnFaceIDp">
+       <property name="geometry">
+        <rect>
+         <x>50</x>
+         <y>410</y>
+         <width>201</width>
+         <height>61</height>
+        </rect>
+       </property>
+       <property name="toolTip">
+        <string>Capturer le visage pour reconnaissance faciale</string>
+       </property>
+       <property name="styleSheet">
+        <string notr="true"/>
+       </property>
+       <property name="text">
+        <string>👤 Enregistrer Visage</string>
+       </property>
+      </widget>
+      <widget class="QPushButton" name="bmip">
+       <property name="geometry">
+        <rect>
+         <x>170</x>
+         <y>470</y>
+         <width>121</width>
+         <height>61</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">background-color:rgba(0, 100, 0, 0.7);</string>
+       </property>
+       <property name="text">
+        <string>✅Mission</string>
+       </property>
+      </widget>
+      <widget class="QPushButton" name="bap">
+       <property name="geometry">
+        <rect>
+         <x>30</x>
+         <y>470</y>
+         <width>101</width>
+         <height>61</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Ajouter</string>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_5p">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>240</y>
+         <width>63</width>
+         <height>20</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Rôle:</string>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_6p">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>300</y>
+         <width>121</width>
+         <height>20</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Disponibilité:</string>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_7p">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>360</y>
+         <width>81</width>
+         <height>20</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Bateaux:</string>
+       </property>
+      </widget>
+     </widget>
+     <widget class="QTableWidget" name="tableWidgetp">
+      <property name="geometry">
+       <rect>
+        <x>360</x>
+        <y>180</y>
+        <width>1111</width>
+        <height>351</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">QTableWidget {
+    background-color: rgba(0, 0, 50, 0.7);
+    border: 2px solid #59abc8;
+    border-radius: 15px;
+    gridline-color: #59abc8;
+    color: white;
+}
+
+QTableWidget::item {
+    padding: 5px;
+    border-bottom: 1px solid rgba(89, 171, 200, 0.3);
+}
+
+QTableWidget::item:selected {
+    background-color: #0078D7;
+}
+
+QHeaderView::section {
+    background-color: rgba(0, 40, 80, 0.9);
+    color: white;
+    padding: 8px;
+    border-radius: 5px;
+    border: 1px solid #59abc8;
+}</string>
+      </property>
+      <attribute name="horizontalHeaderDefaultSectionSize">
+       <number>100</number>
+      </attribute>
+      <column>
+       <property name="text">
+        <string>ID</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Nom</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Prenom</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Rôle</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Bateaux</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Disponibilité</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Email</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Date</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Heure</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Face Id</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Action</string>
+       </property>
+      </column>
+     </widget>
+     <widget class="QComboBox" name="comboBox_5p">
+      <property name="geometry">
+       <rect>
+        <x>670</x>
+        <y>120</y>
+        <width>161</width>
+        <height>41</height>
+       </rect>
+      </property>
+      <property name="editable">
+       <bool>true</bool>
+      </property>
+      <property name="currentText">
+       <string>👥 Tous les rôles</string>
+      </property>
+      <item>
+       <property name="text">
+        <string>👥 Tous les rôles</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>👨‍✈️ Capitaine</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>🧑‍✈️  Contremaître</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>👨‍🌾Maître de pêche</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>👨‍🌾Marin-pêcheur</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>🧒apprenti pêcheur</string>
+       </property>
+      </item>
+     </widget>
+     <widget class="QLineEdit" name="lineEdit_4p">
+      <property name="geometry">
+       <rect>
+        <x>400</x>
+        <y>130</y>
+        <width>141</width>
+        <height>31</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string/>
+      </property>
+      <property name="placeholderText">
+       <string>Rechercher</string>
+      </property>
+     </widget>
+     <widget class="QLabel" name="label_3p">
+      <property name="geometry">
+       <rect>
+        <x>370</x>
+        <y>140</y>
+        <width>31</width>
+        <height>20</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>🔎:</string>
+      </property>
+     </widget>
+     <widget class="QDialog" name="dialogFaceIDp">
+      <property name="geometry">
+       <rect>
+        <x>500</x>
+        <y>200</y>
+        <width>500</width>
+        <height>400</height>
+       </rect>
+      </property>
+      <property name="visible">
+       <bool>false</bool>
+      </property>
+      <property name="windowTitle">
+       <string>👤 Reconnaissance Faciale</string>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayoutFaceID">
+       <property name="spacing">
+        <number>15</number>
+       </property>
+       <property name="leftMargin">
+        <number>20</number>
+       </property>
+       <property name="topMargin">
+        <number>20</number>
+       </property>
+       <property name="rightMargin">
+        <number>20</number>
+       </property>
+       <property name="bottomMargin">
+        <number>20</number>
+       </property>
+       <item>
+        <widget class="QLabel" name="labelFaceTitlep">
+         <property name="styleSheet">
+          <string notr="true">color: #9b59b6;
+font-size: 18px;
+font-weight: bold;
+text-align: center;
+padding: 10px;</string>
+         </property>
+         <property name="text">
+          <string>🔐 Reconnaissance Faciale</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignmentFlag::AlignCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="labelCamerap">
+         <property name="minimumSize">
+          <size>
+           <width>320</width>
+           <height>240</height>
+          </size>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">background-color: black;
+border: 2px solid #3498db;
+border-radius: 10px;</string>
+         </property>
+         <property name="text">
+          <string>📷 Caméra</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignmentFlag::AlignCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="labelFaceStatusp">
+         <property name="styleSheet">
+          <string notr="true">color: #f39c12;
+font-size: 14px;
+text-align: center;
+padding: 10px;</string>
+         </property>
+         <property name="text">
+          <string>Prêt à capturer...</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignmentFlag::AlignCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayoutFaceButtonsp">
+         <property name="spacing">
+          <number>20</number>
+         </property>
+         <item>
+          <widget class="QPushButton" name="btnCapturep">
+           <property name="styleSheet">
+            <string notr="true">background-color: #3498db;
+border: 2px solid #2980b9;
+color: white;
+padding: 10px;
+font-weight: bold;
+border-radius: 8px;
+font-size: 14px;</string>
+           </property>
+           <property name="text">
+            <string>📸 Capturer</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btnVerifyp">
+           <property name="styleSheet">
+            <string notr="true">background-color: #27ae60;
+border: 2px solid #229954;
+color: white;
+padding: 10px;
+font-weight: bold;
+border-radius: 8px;
+font-size: 14px;</string>
+           </property>
+           <property name="text">
+            <string>✅ Vérifier</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btnCancelFacep">
+           <property name="styleSheet">
+            <string notr="true">background-color: #e74c3c;
+border: 2px solid #c0392b;
+color: white;
+padding: 10px;
+font-weight: bold;
+border-radius: 8px;
+font-size: 14px;</string>
+           </property>
+           <property name="text">
+            <string>❌ Fermer</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QLabel" name="labelFaceInfop">
+         <property name="styleSheet">
+          <string notr="true">color: #3498db;
+font-size: 12px;
+text-align: center;
+padding: 5px;
+background-color: rgba(255, 255, 255, 0.1);
+border-radius: 5px;</string>
+         </property>
+         <property name="text">
+          <string>Pêcheur : [Nom]</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignmentFlag::AlignCenter</set>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QPushButton" name="pushButton_4p">
+      <property name="geometry">
+       <rect>
+        <x>1350</x>
+        <y>230</y>
+        <width>71</width>
+        <height>61</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">border:none;
+background-color:transparent;</string>
+      </property>
+      <property name="text">
+       <string>✏️</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="pushButton_5p">
+      <property name="geometry">
+       <rect>
+        <x>1390</x>
+        <y>230</y>
+        <width>61</width>
+        <height>61</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">border:none;
+background-color:transparent;</string>
+      </property>
+      <property name="text">
+       <string>❌</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="pushButton_6p">
+      <property name="geometry">
+       <rect>
+        <x>1420</x>
+        <y>230</y>
+        <width>61</width>
+        <height>61</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">border:none;
+background-color:transparent;</string>
+      </property>
+      <property name="text">
+       <string>🔄</string>
+      </property>
+     </widget>
+     <widget class="QFrame" name="frame_typesp">
+      <property name="geometry">
+       <rect>
+        <x>660</x>
+        <y>540</y>
+        <width>431</width>
+        <height>281</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">background-color: rgba(0, 0, 50, 0.7);
+            border: 2px solid #59abc8;
+            border-radius: 15px;</string>
+      </property>
+      <property name="frameShape">
+       <enum>QFrame::Shape::StyledPanel</enum>
+      </property>
+      <property name="frameShadow">
+       <enum>QFrame::Shadow::Raised</enum>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayout_types">
+       <item>
+        <widget class="QLabel" name="label_typesp">
+         <property name="styleSheet">
+          <string notr="true">color: #f3ffbe;
+                        font-weight: bold;
+                        font-size: 17px;
+                        padding: 10px;</string>
+         </property>
+         <property name="text">
+          <string>📈Statistiques Selon Disponibilité</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignmentFlag::AlignCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayout_typesp">
+         <item>
+          <widget class="QLabel" name="progressTypeCirclep">
+           <property name="minimumSize">
+            <size>
+             <width>200</width>
+             <height>200</height>
+            </size>
+           </property>
+           <property name="styleSheet">
+            <string notr="true">border-radius: 100px;
+        background: qconicalgradient(cx:0.5, cy:0.5, angle:90,
+            stop:0.0 #3498db,
+            stop:0.25 #27ae60,
+            stop:0.25 #f39c12,
+            stop:0.55 #9b59b6,
+            stop:0.55 #e74c3c,
+            stop:0.85 #1abc9c,
+            stop:0.85 rgba(26, 188, 156, 0.3) 100%);
+        border: 5px solid  rgb(74, 82, 90);
+</string>
+           </property>
+           <property name="text">
+            <string/>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignmentFlag::AlignCenter</set>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <layout class="QVBoxLayout" name="verticalLayout_legendp">
+           <item>
+            <widget class="QLabel" name="label_total_typesp">
+             <property name="styleSheet">
+              <string notr="true">color: grey;
+                                        font-weight: bold;
+                                        font-size: 16px;
+                                        padding: 5px;</string>
+             </property>
+             <property name="text">
+              <string>       Nom et Prenom</string>
+             </property>
+             <property name="textFormat">
+              <enum>Qt::TextFormat::AutoText</enum>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="label_legend_chalutierp">
+             <property name="styleSheet">
+              <string notr="true">color: #3498db;
+                                        font-weight: bold;
+                                        font-size: 14px;
+                                        padding: 3px;</string>
+             </property>
+             <property name="text">
+              <string>● Disponible: 0 (00%)</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="label_legend_palangrierp">
+             <property name="styleSheet">
+              <string notr="true">color: #27ae60;
+                                        font-weight: bold;
+                                        font-size: 14px;
+                                        padding: 3px;</string>
+             </property>
+             <property name="text">
+              <string>● Sous Condition: 0 (00%)</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="label_legend_caseyeurp">
+             <property name="styleSheet">
+              <string notr="true">color: #f39c12;
+                                        font-weight: bold;
+                                        font-size: 14px;
+                                        padding: 3px;</string>
+             </property>
+             <property name="text">
+              <string>● Indisponible: 0 (00%)</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="label_legend_traditionalp">
+             <property name="styleSheet">
+              <string notr="true">color: #9b59b6;
+                                        font-weight: bold;
+                                        font-size: 14px;
+                                        padding: 3px;</string>
+             </property>
+             <property name="text">
+              <string>● En Congé: 0 (00%)</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="label_legend_otherp">
+             <property name="styleSheet">
+              <string notr="true">color: #e74c3c;
+                                        font-weight: bold;
+                                        font-size: 14px;
+                                        padding: 3px;</string>
+             </property>
+             <property name="text">
+              <string>● Autres: 0 (00%)</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QLabel" name="labelfp">
+      <property name="geometry">
+       <rect>
+        <x>90</x>
+        <y>90</y>
+        <width>141</width>
+        <height>31</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>    Formulaire</string>
+      </property>
+     </widget>
+     <widget class="QLabel" name="label_2p">
+      <property name="geometry">
+       <rect>
+        <x>620</x>
+        <y>130</y>
+        <width>61</width>
+        <height>21</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>Rôle:</string>
+      </property>
+     </widget>
+     <widget class="QComboBox" name="comboBox_6p">
+      <property name="geometry">
+       <rect>
+        <x>980</x>
+        <y>120</y>
+        <width>231</width>
+        <height>41</height>
+       </rect>
+      </property>
+      <property name="editable">
+       <bool>true</bool>
+      </property>
+      <property name="currentText">
+       <string>📋 Toutes les disponibilités</string>
+      </property>
+      <item>
+       <property name="text">
+        <string>📋 Toutes les disponibilités</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>✅ Disponible</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>⏳ Disponible bientôt</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>❌ Indisponible</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>🏝️ En congé</string>
+       </property>
+      </item>
+     </widget>
+     <widget class="QLabel" name="label_4p">
+      <property name="geometry">
+       <rect>
+        <x>850</x>
+        <y>120</y>
+        <width>121</width>
+        <height>31</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>Disponibilité:</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="brmp">
+      <property name="geometry">
+       <rect>
+        <x>40</x>
+        <y>740</y>
+        <width>141</width>
+        <height>61</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>Retour Menu</string>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="bep">
+      <property name="geometry">
+       <rect>
+        <x>1310</x>
+        <y>740</y>
+        <width>181</width>
+        <height>61</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>📤Exporter en PDF</string>
+      </property>
+     </widget>
+     <widget class="QFrame" name="framefaceidp">
+      <property name="geometry">
+       <rect>
+        <x>510</x>
+        <y>130</y>
+        <width>881</width>
+        <height>531</height>
+       </rect>
+      </property>
+      <property name="frameShape">
+       <enum>QFrame::Shape::StyledPanel</enum>
+      </property>
+      <property name="frameShadow">
+       <enum>QFrame::Shadow::Raised</enum>
+      </property>
+      <widget class="QLabel" name="faceGuideCircle_4p">
+       <property name="geometry">
+        <rect>
+         <x>80</x>
+         <y>140</y>
+         <width>220</width>
+         <height>220</height>
+        </rect>
+       </property>
+       <property name="minimumSize">
+        <size>
+         <width>220</width>
+         <height>220</height>
+        </size>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>220</width>
+         <height>220</height>
+        </size>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">border: 3px dashed rgba(0, 250, 150, 0.7);
+border-radius: 110px;
+background: transparent;</string>
+       </property>
+       <property name="text">
+        <string/>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_zones_4p">
+       <property name="geometry">
+        <rect>
+         <x>30</x>
+         <y>20</y>
+         <width>821</width>
+         <height>46</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">color: #f3ffbe;
+                    font-weight: bold;
+                    font-size: 17px;
+                    padding: 10px;</string>
+       </property>
+       <property name="text">
+        <string>🔍Enregistrement Biométrique</string>
+       </property>
+       <property name="alignment">
+        <set>Qt::AlignmentFlag::AlignCenter</set>
+       </property>
+      </widget>
+      <widget class="QFrame" name="frame_10p">
+       <property name="geometry">
+        <rect>
+         <x>50</x>
+         <y>130</y>
+         <width>281</width>
+         <height>241</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true"/>
+       </property>
+       <property name="frameShape">
+        <enum>QFrame::Shape::StyledPanel</enum>
+       </property>
+       <property name="frameShadow">
+        <enum>QFrame::Shadow::Raised</enum>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_legend_chalutier_11p">
+       <property name="geometry">
+        <rect>
+         <x>80</x>
+         <y>80</y>
+         <width>251</width>
+         <height>41</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">color: white;
+                                        
+                                        font-size: 20px;
+                                        padding: 3px;
+ border-radius: 15px;</string>
+       </property>
+       <property name="text">
+        <string>Positionnez Votre Visage</string>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_legend_chalutier_12p">
+       <property name="geometry">
+        <rect>
+         <x>50</x>
+         <y>490</y>
+         <width>791</width>
+         <height>31</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">color: white;
+                                        
+                                        font-size: 20px;
+                                        padding: 3px;
+border-radius: 15px;</string>
+       </property>
+       <property name="text">
+        <string>                         💡 Assurez-vous d'être dans un endroit bien éclairé</string>
+       </property>
+      </widget>
+      <widget class="QFrame" name="frame_11p">
+       <property name="geometry">
+        <rect>
+         <x>450</x>
+         <y>129</y>
+         <width>391</width>
+         <height>201</height>
+        </rect>
+       </property>
+       <property name="frameShape">
+        <enum>QFrame::Shape::StyledPanel</enum>
+       </property>
+       <property name="frameShadow">
+        <enum>QFrame::Shadow::Raised</enum>
+       </property>
+       <widget class="QLabel" name="label_legend_chalutier_13p">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>10</y>
+          <width>361</width>
+          <height>41</height>
+         </rect>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">color: #3498db;
+                                        
+                                        font-size: 20px;
+                                        padding: 3px;
+ border-radius: 15px;</string>
+        </property>
+        <property name="text">
+         <string>        Pêcheur En Enregistrement</string>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="lineEdit_11p">
+        <property name="geometry">
+         <rect>
+          <x>20</x>
+          <y>80</y>
+          <width>341</width>
+          <height>31</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+        <property name="placeholderText">
+         <string>Nom &amp; Prénom</string>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="lineEdit_12p">
+        <property name="geometry">
+         <rect>
+          <x>20</x>
+          <y>140</y>
+          <width>341</width>
+          <height>31</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+        <property name="placeholderText">
+         <string>Rôle</string>
+        </property>
+       </widget>
+      </widget>
+      <widget class="QPushButton" name="pushButton_10p">
+       <property name="geometry">
+        <rect>
+         <x>520</x>
+         <y>370</y>
+         <width>291</width>
+         <height>61</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">
+background-color: rgba(0, 80, 120, 0.7);
+  </string>
+       </property>
+       <property name="text">
+        <string>🔄Réessayer</string>
+       </property>
+      </widget>
+      <widget class="QPushButton" name="pushButton_11p">
+       <property name="geometry">
+        <rect>
+         <x>520</x>
+         <y>430</y>
+         <width>291</width>
+         <height>61</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">background-color: rgba(80, 0, 0, 0.7);
+</string>
+       </property>
+       <property name="text">
+        <string>❌ Annuler</string>
+       </property>
+      </widget>
+      <widget class="QPushButton" name="bmi_6p">
+       <property name="geometry">
+        <rect>
+         <x>50</x>
+         <y>440</y>
+         <width>291</width>
+         <height>61</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">background-color:rgba(0, 80, 0, 0.7);</string>
+       </property>
+       <property name="text">
+        <string>✅FaceID Valider</string>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_8p">
+       <property name="geometry">
+        <rect>
+         <x>110</x>
+         <y>390</y>
+         <width>181</width>
+         <height>61</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">background-color: rgba(255, 140, 0, 0.7);
+color: white;
+box-shadow: 0px 0px 15px #FFB74D;
+color: white;
+    font-weight: 700;
+    font-size: 15px;
+    margin-bottom:20px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+padding: 10px 20px;</string>
+       </property>
+       <property name="text">
+        <string>🕵🏻Visage Détécté</string>
+       </property>
+      </widget>
+     </widget>
+    </widget>
+    <widget class="QWidget" name="page5"/>
+   </widget>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>1512</width>
+     <height>25</height>
+    </rect>
+   </property>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
