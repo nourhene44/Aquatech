@@ -30,13 +30,9 @@
      </rect>
     </property>
     <property name="styleSheet">
-     <string notr="true">#page5{
-background-image: url(:/bg.png);
-background-repeat: no-repeat;
-    background-position: center;
-}
+     <string notr="true">
 #pagepecheur {
-   background-image: url(:/bg.png);
+   background-image: url(:/new/prefix1/bg.png);
     background-repeat: no-repeat;
     background-position: center;
 border-radius:15px
