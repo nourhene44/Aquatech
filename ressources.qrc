@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/">
+        <file>simpleback.jpg</file>
+        <file>bg.png</file>
+        <file>logoqt.jpg</file>
+    </qresource>
+</RCC>
