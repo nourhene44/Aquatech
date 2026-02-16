@@ -116,7 +116,7 @@ border-radius:50PX}
 </string>
     </property>
     <property name="currentIndex">
-     <number>3</number>
+     <number>4</number>
     </property>
     <widget class="QWidget" name="loginb">
      <widget class="QLabel" name="label_b">
@@ -2696,7 +2696,7 @@ background_color:transparent</string>
       </column>
       <column>
        <property name="text">
-        <string>Face Id</string>
+        <string>Photo</string>
        </property>
       </column>
       <column>
@@ -3485,7 +3485,7 @@ border-radius: 15px;</string>
 	background-color: rgb(70, 140, 58);}</string>
        </property>
        <property name="text">
-        <string>✅ FaceID Valider</string>
+        <string>✅ Photo Valider</string>
        </property>
       </widget>
       <widget class="QLabel" name="label_8p">

@@ -630,6 +630,9 @@ void MainWindow::on_p2b_clicked()
         if (ui->label_4p) ui->label_4p->setVisible(true);
         if (ui->comboBox_6p) ui->comboBox_6p->setVisible(true);
         if (ui->frame_typesp) ui->frame_typesp->setVisible(true);
+        if (ui->pushButton_4p) ui->pushButton_4p->setVisible(true);
+        if (ui->pushButton_5p) ui->pushButton_5p->setVisible(true);
+        if (ui->pushButton_6p) ui->pushButton_6p->setVisible(true);
     }
 
     // loadPecheurs(); (removed)
@@ -714,6 +717,9 @@ static void setPecheurMainWidgetsVisible(Ui::MainWindow* ui, bool visible)
     if (ui->label_4p) ui->label_4p->setVisible(visible);
     if (ui->comboBox_6p) ui->comboBox_6p->setVisible(visible);
     if (ui->frame_typesp) ui->frame_typesp->setVisible(visible);
+    if (ui->pushButton_4p) ui->pushButton_4p->setVisible(visible);
+    if (ui->pushButton_5p) ui->pushButton_5p->setVisible(visible);
+    if (ui->pushButton_6p) ui->pushButton_6p->setVisible(visible);
 }
 
 void MainWindow::on_btnFaceIDp_clicked()
@@ -943,10 +949,7 @@ void MainWindow::on_pushButton_9_clicked()
 }
 
 // Return the shared Connection instance
-Connection* MainWindow::getOracleConnection()
-{
-    return Connection::getInstance();
-}
+
 
 // Close is a no-op wrapper (Connection singleton handles lifecycle)
 void MainWindow::closeOracleConnection(Connection* conn)

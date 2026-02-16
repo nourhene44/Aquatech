@@ -1,29 +1,26 @@
 #include "GQuai.h"
 #include <QApplication>
-#include "connection.h"
 #include <QMessageBox>
-
+#include "connection.h"
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
+    MainWindow w;
+    Connection c;
+    bool test=c.createconnect();
+    if(test)
+    {w.show();
+        QMessageBox::information(nullptr, QObject::tr("database is open"),
+                                 QObject::tr("connection successful.\n"
+                                             "Click Cancel to exit."), QMessageBox::Cancel);
 
-    // ✅ Utilisation du Singleton - PAS de constructeur direct!
-    Connection* conn = Connection::getInstance();
-
-    if(!conn->createconnect())
-    {
-        QMessageBox::critical(nullptr, "Database Error",
-                              "❌ Connection to Oracle failed.\nPlease check your database settings.");
-        return -1;
     }
     else
-    {
-        QMessageBox::information(nullptr, "Success",
-                                 "✅ Connected to Oracle successfully!");
-    }
+        QMessageBox::critical(nullptr, QObject::tr("database is not open"),
+                              QObject::tr("connection failed.\n"
+                                          "Click Cancel to exit."), QMessageBox::Cancel);
 
-    MainWindow w;
-    w.show();
+
 
     return a.exec();
 }
