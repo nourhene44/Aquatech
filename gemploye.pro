@@ -11,11 +11,19 @@ CONFIG += c++17
 SOURCES += \
     main.cpp \
     mainwindow2.cpp \
+<<<<<<< HEAD
     GQuai.cpp
 
 HEADERS += \
     mainwindow2.h \
     GQuai.h
+=======
+    mainwindow.cpp
+
+HEADERS += \
+    mainwindow2.h \
+    mainwindow.h
+>>>>>>> 7ce8a15 (Initial commit: all local work)
 
 FORMS += \
     mainwindow2.ui

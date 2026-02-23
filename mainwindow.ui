@@ -6,8 +6,13 @@
    <rect>
     <x>0</x>
     <y>0</y>
+<<<<<<< HEAD
     <width>1521</width>
     <height>878</height>
+=======
+    <width>1612</width>
+    <height>862</height>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
    </rect>
   </property>
   <property name="windowTitle">
@@ -23,9 +28,15 @@
     </property>
     <property name="geometry">
      <rect>
+<<<<<<< HEAD
       <x>0</x>
       <y>0</y>
       <width>1521</width>
+=======
+      <x>-10</x>
+      <y>-10</y>
+      <width>1741</width>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
       <height>821</height>
      </rect>
     </property>
@@ -34,6 +45,10 @@
 font-size:16px;
 font-weight:600;
  	color: rgb(0, 0, 90);
+<<<<<<< HEAD
+=======
+
+>>>>>>> 7ce8a15 (Initial commit: all local work)
 }
 QPushButton
 {border:2px solid rgb(0, 0, 112);
@@ -116,7 +131,11 @@ border-radius:50PX}
 </string>
     </property>
     <property name="currentIndex">
+<<<<<<< HEAD
      <number>4</number>
+=======
+     <number>6</number>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
     </property>
     <widget class="QWidget" name="loginb">
      <widget class="QLabel" name="label_b">
@@ -4935,9 +4954,15 @@ background-color:transparent</string>
      <widget class="QTableWidget" name="tableWidgetQuai">
       <property name="geometry">
        <rect>
+<<<<<<< HEAD
         <x>540</x>
         <y>170</y>
         <width>971</width>
+=======
+        <x>550</x>
+        <y>170</y>
+        <width>961</width>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
         <height>291</height>
        </rect>
       </property>
@@ -4948,7 +4973,11 @@ background-color:transparent</string>
        <number>41</number>
       </attribute>
       <attribute name="horizontalHeaderDefaultSectionSize">
+<<<<<<< HEAD
        <number>138</number>
+=======
+       <number>190</number>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
       </attribute>
       <attribute name="verticalHeaderMinimumSectionSize">
        <number>31</number>
@@ -4958,7 +4987,11 @@ background-color:transparent</string>
       </attribute>
       <column>
        <property name="text">
+<<<<<<< HEAD
         <string>ID quai</string>
+=======
+        <string>ID Quai</string>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
        </property>
        <property name="font">
         <font>
@@ -4973,22 +5006,38 @@ background-color:transparent</string>
       </column>
       <column>
        <property name="text">
+<<<<<<< HEAD
         <string>Zone du port</string>
+=======
+        <string>Z du port</string>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
        </property>
       </column>
       <column>
        <property name="text">
+<<<<<<< HEAD
         <string>Zone couverte</string>
+=======
+        <string>Z couverte</string>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
        </property>
       </column>
       <column>
        <property name="text">
+<<<<<<< HEAD
         <string>Longueur maximale</string>
+=======
+        <string>L maximale</string>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
        </property>
       </column>
       <column>
        <property name="text">
+<<<<<<< HEAD
         <string>Capacité maximale</string>
+=======
+        <string>C maximale</string>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
        </property>
        <property name="font">
         <font>
@@ -5355,7 +5404,11 @@ image: url(:/res/loupe.png);</string>
       <widget class="QPushButton" name="pushButton_11">
        <property name="geometry">
         <rect>
+<<<<<<< HEAD
          <x>100</x>
+=======
+         <x>90</x>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
          <y>440</y>
          <width>111</width>
          <height>41</height>
@@ -5473,7 +5526,11 @@ image: url(:/res/loupe.png);</string>
       <property name="geometry">
        <rect>
         <x>900</x>
+<<<<<<< HEAD
         <y>630</y>
+=======
+        <y>680</y>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
         <width>91</width>
         <height>71</height>
        </rect>
@@ -5490,7 +5547,11 @@ background:transparent;</string>
       <property name="geometry">
        <rect>
         <x>1040</x>
+<<<<<<< HEAD
         <y>630</y>
+=======
+        <y>680</y>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
         <width>91</width>
         <height>71</height>
        </rect>
@@ -5503,6 +5564,7 @@ background:transparent;</string>
        <string/>
       </property>
      </widget>
+<<<<<<< HEAD
      <widget class="QPushButton" name="pushButton_5p_2">
       <property name="geometry">
        <rect>
@@ -5539,11 +5601,17 @@ background-color:transparent;</string>
        <string/>
       </property>
      </widget>
+=======
+>>>>>>> 7ce8a15 (Initial commit: all local work)
      <widget class="QFrame" name="frameMeteo">
       <property name="geometry">
        <rect>
         <x>620</x>
+<<<<<<< HEAD
         <y>470</y>
+=======
+        <y>520</y>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
         <width>761</width>
         <height>151</height>
        </rect>
@@ -5663,6 +5731,7 @@ font-size: 11px;</string>
          </item>
         </layout>
        </item>
+<<<<<<< HEAD
        <item>
         <widget class="QPushButton" name="btnRefreshMeteo">
          <property name="minimumSize">
@@ -5697,6 +5766,8 @@ QPushButton:hover {
          </property>
         </widget>
        </item>
+=======
+>>>>>>> 7ce8a15 (Initial commit: all local work)
       </layout>
      </widget>
      <widget class="QFrame" name="frame_4">
@@ -5816,6 +5887,7 @@ border:none;</string>
        </property>
       </widget>
      </widget>
+<<<<<<< HEAD
      <widget class="QPushButton" name="pushButton_5p_5">
       <property name="geometry">
        <rect>
@@ -5835,11 +5907,17 @@ background-color:transparent;</string>
        <string/>
       </property>
      </widget>
+=======
+>>>>>>> 7ce8a15 (Initial commit: all local work)
      <widget class="QPushButton" name="pushButton_pdfb_2">
       <property name="geometry">
        <rect>
         <x>1360</x>
+<<<<<<< HEAD
         <y>10</y>
+=======
+        <y>470</y>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
         <width>151</width>
         <height>41</height>
        </rect>
@@ -5850,6 +5928,15 @@ background-color:transparent;</string>
      </widget>
     </widget>
     <widget class="QWidget" name="page_4">
+<<<<<<< HEAD
+=======
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>800</height>
+      </size>
+     </property>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
      <widget class="QPushButton" name="pushButton_2">
       <property name="geometry">
        <rect>
@@ -6016,6 +6103,7 @@ font-size: 14px;</string>
               </property>
              </spacer>
             </item>
+<<<<<<< HEAD
             <item>
              <widget class="QPushButton" name="btnRefreshStats_2">
               <property name="text">
@@ -6051,6 +6139,8 @@ font-size: 14px;</string>
               </item>
              </widget>
             </item>
+=======
+>>>>>>> 7ce8a15 (Initial commit: all local work)
            </layout>
           </item>
           <item>
@@ -6237,6 +6327,7 @@ stop:0 rgba(52, 152, 219, 35), stop:0.5 rgba(155, 89, 182, 25), stop:1 rgba(243,
 border-radius: 14px;
 border: none;</string>
              </property>
+<<<<<<< HEAD
              <widget class="QFrame" name="curvePoint8_2">
               <property name="geometry">
                <rect>
@@ -6252,6 +6343,8 @@ border-radius: 6px;
 border: 2px solid rgba(255, 255, 255, 220);</string>
               </property>
              </widget>
+=======
+>>>>>>> 7ce8a15 (Initial commit: all local work)
             </widget>
             <widget class="QFrame" name="curvePoint1_2">
              <property name="geometry">
@@ -6424,13 +6517,22 @@ border: 2px solid rgba(255, 255, 255, 220);</string>
        <item>
         <widget class="QLabel" name="label_zones_2">
          <property name="styleSheet">
+<<<<<<< HEAD
           <string notr="true">
 font-weight: bold;
 margin-top: 10px;</string>
+=======
+          <string notr="true">font-weight: 700;
+        font-size: 11pt;
+        color: rgb(0, 0, 90);
+        margin-top: 10px;
+        margin-bottom: 4px;</string>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
          </property>
          <property name="text">
           <string>📍 RÉPARTITION PAR ZONE :</string>
          </property>
+<<<<<<< HEAD
         </widget>
        </item>
        <item>
@@ -6470,10 +6572,102 @@ font-weight: bold;</string>
     text-align: center;
     padding: 5px;
 margin-left:70 px;
+=======
+         <property name="alignment">
+          <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QFrame" name="zonesFrame_2">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>190</height>
+          </size>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">QFrame#zonesFrame_2 {
+    border: 1px solid rgba(0, 0, 120, 60);
+    border-radius: 18px;
+    background-color: rgba(255, 255, 255, 25);
+}</string>
+         </property>
+         <property name="frameShape">
+          <enum>QFrame::Shape::NoFrame</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Shadow::Plain</enum>
+         </property>
+         <layout class="QHBoxLayout" name="zonesContainerLayout_2">
+          <property name="spacing">
+           <number>60</number>
+          </property>
+          <item>
+           <layout class="QVBoxLayout" name="zoneNordLayout_2">
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="label_zoneNord_2">
+              <property name="minimumSize">
+               <size>
+                <width>90</width>
+                <height>28</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>120</width>
+                <height>32</height>
+               </size>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">QLabel#label_zoneNord_2 {
+    color: rgb(0, 0, 90);
+    font-weight: 700;
+    padding: 3px 14px;
+    border: 2px solid rgb(0, 102, 204);
+    border-radius: 14px;
+    background-color: rgba(224, 238, 255, 220);
+}</string>
+              </property>
+              <property name="text">
+               <string>Nord</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item alignment="Qt::AlignmentFlag::AlignHCenter">
+             <widget class="QProgressBar" name="progressZoneNord_2">
+              <property name="minimumSize">
+               <size>
+                <width>30</width>
+                <height>160</height>
+               </size>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">QProgressBar:vertical {
+    width: 28px;
+    border: 2px solid #3498db;
+    border-radius: 6px;
+    background-color: rgb(224, 238, 255);
+    text-align: center;
+    padding: 5px;
+>>>>>>> 7ce8a15 (Initial commit: all local work)
 }
 QProgressBar::chunk:vertical {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 #3498db, stop:1 #2980b9);
+<<<<<<< HEAD
     border-radius: 3px;
 }</string>
              </property>
@@ -6527,10 +6721,85 @@ font-weight: bold;</string>
 background-color: rgb(224, 238, 255);    text-align: center;
     padding: 5px;
 margin-left: 70px;
+=======
+    border-radius: 4px;
+}</string>
+              </property>
+              <property name="value">
+               <number>0</number>
+              </property>
+              <property name="textVisible">
+               <bool>true</bool>
+              </property>
+              <property name="orientation">
+               <enum>Qt::Orientation::Vertical</enum>
+              </property>
+              <property name="format">
+               <string>%p%</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QVBoxLayout" name="zoneSudLayout_2">
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="label_zoneSud_2">
+              <property name="minimumSize">
+               <size>
+                <width>90</width>
+                <height>28</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>120</width>
+                <height>32</height>
+               </size>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">QLabel#label_zoneSud_2 {
+    color: rgb(0, 70, 0);
+    font-weight: 700;
+    padding: 3px 14px;
+    border: 2px solid rgb(0, 160, 75);
+    border-radius: 14px;
+    background-color: rgba(220, 245, 228, 220);
+}</string>
+              </property>
+              <property name="text">
+               <string>Sud</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item alignment="Qt::AlignmentFlag::AlignHCenter">
+             <widget class="QProgressBar" name="progressZoneSud_2">
+              <property name="minimumSize">
+               <size>
+                <width>30</width>
+                <height>160</height>
+               </size>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">QProgressBar:vertical {
+    width: 28px;
+    border: 2px solid #27ae60;
+    border-radius: 6px;
+    background-color: rgb(224, 238, 255);
+    text-align: center;
+    padding: 5px;
+>>>>>>> 7ce8a15 (Initial commit: all local work)
 }
 QProgressBar::chunk:vertical {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 #27ae60, stop:1 #229954);
+<<<<<<< HEAD
     border-radius: 3px;
 }</string>
              </property>
@@ -6584,10 +6853,85 @@ font-weight: bold;</string>
     text-align: center;
     padding: 5px;
 margin-left:70px;
+=======
+    border-radius: 4px;
+}</string>
+              </property>
+              <property name="value">
+               <number>0</number>
+              </property>
+              <property name="textVisible">
+               <bool>true</bool>
+              </property>
+              <property name="orientation">
+               <enum>Qt::Orientation::Vertical</enum>
+              </property>
+              <property name="format">
+               <string>%p%</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QVBoxLayout" name="zoneEstLayout_2">
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="label_zoneEst_2">
+              <property name="minimumSize">
+               <size>
+                <width>90</width>
+                <height>28</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>120</width>
+                <height>32</height>
+               </size>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">QLabel#label_zoneEst_2 {
+    color: rgb(120, 70, 0);
+    font-weight: 700;
+    padding: 3px 14px;
+    border: 2px solid rgb(230, 140, 0);
+    border-radius: 14px;
+    background-color: rgba(255, 239, 210, 220);
+}</string>
+              </property>
+              <property name="text">
+               <string>Est</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item alignment="Qt::AlignmentFlag::AlignHCenter">
+             <widget class="QProgressBar" name="progressZoneEst_2">
+              <property name="minimumSize">
+               <size>
+                <width>30</width>
+                <height>160</height>
+               </size>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">QProgressBar:vertical {
+    width: 28px;
+    border: 2px solid #f39c12;
+    border-radius: 6px;
+    background-color: rgb(224, 238, 255);
+    text-align: center;
+    padding: 5px;
+>>>>>>> 7ce8a15 (Initial commit: all local work)
 }
 QProgressBar::chunk:vertical {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 #f39c12, stop:1 #d68910);
+<<<<<<< HEAD
     border-radius: 3px;
 }</string>
              </property>
@@ -6639,10 +6983,82 @@ font-weight: bold;</string>
     text-align: center;
     padding: 5px;
 margin-left:70 px;
+=======
+    border-radius: 4px;
+}</string>
+              </property>
+              <property name="value">
+               <number>0</number>
+              </property>
+              <property name="textVisible">
+               <bool>true</bool>
+              </property>
+              <property name="orientation">
+               <enum>Qt::Orientation::Vertical</enum>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QVBoxLayout" name="zoneOuestLayout_2">
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="label_zoneOuest_2">
+              <property name="minimumSize">
+               <size>
+                <width>90</width>
+                <height>28</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>120</width>
+                <height>32</height>
+               </size>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">QLabel#label_zoneOuest_2 {
+    color: rgb(70, 0, 70);
+    font-weight: 700;
+    padding: 3px 14px;
+    border: 2px solid rgb(170, 85, 200);
+    border-radius: 14px;
+    background-color: rgba(245, 228, 255, 220);
+}</string>
+              </property>
+              <property name="text">
+               <string>Ouest</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignmentFlag::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item alignment="Qt::AlignmentFlag::AlignHCenter">
+             <widget class="QProgressBar" name="progressZoneOuest_2">
+              <property name="minimumSize">
+               <size>
+                <width>30</width>
+                <height>160</height>
+               </size>
+              </property>
+              <property name="styleSheet">
+               <string notr="true">QProgressBar:vertical {
+    width: 28px;
+    border: 2px solid #9b59b6;
+    border-radius: 6px;
+    background-color: rgb(224, 238, 255);
+    text-align: center;
+    padding: 5px;
+>>>>>>> 7ce8a15 (Initial commit: all local work)
 }
 QProgressBar::chunk:vertical {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 #9b59b6, stop:1 #8e44ad);
+<<<<<<< HEAD
     border-radius: 3px;
 }</string>
              </property>
@@ -6672,12 +7088,86 @@ QProgressBar::chunk:vertical {
             <enum>Qt::Orientation::Horizontal</enum>
            </property>
            <property name="sizeHint" stdset="0">
+=======
+    border-radius: 4px;
+}</string>
+              </property>
+              <property name="value">
+               <number>0</number>
+              </property>
+              <property name="textVisible">
+               <bool>true</bool>
+              </property>
+              <property name="orientation">
+               <enum>Qt::Orientation::Vertical</enum>
+              </property>
+              <property name="format">
+               <string>%p%</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="exportStatsLayout_2">
+         <property name="leftMargin">
+          <number>20</number>
+         </property>
+         <property name="topMargin">
+          <number>8</number>
+         </property>
+         <property name="rightMargin">
+          <number>20</number>
+         </property>
+         <property name="bottomMargin">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QFrame" name="horizontalSpacer_4">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="minimumSize">
+>>>>>>> 7ce8a15 (Initial commit: all local work)
             <size>
              <width>40</width>
              <height>20</height>
             </size>
            </property>
+<<<<<<< HEAD
           </spacer>
+=======
+           <property name="maximumSize">
+            <size>
+             <width>16777215</width>
+             <height>20</height>
+            </size>
+           </property>
+           <property name="styleSheet">
+            <string notr="true">background-color: qlineargradient(x1:0, y1:0.5, x2:1, y2:0.5,
+    stop:0 rgba(0, 102, 204, 200),
+    stop:1 rgba(0, 153, 255, 200));
+border-radius: 4px;
+border: 2px solid rgba(0, 70, 160, 230);
+margin-left: 4px;
+margin-right: 8px;
+margin-top: 2px;
+margin-bottom: 2px;</string>
+           </property>
+           <property name="frameShape">
+            <enum>QFrame::Shape::NoFrame</enum>
+           </property>
+           <property name="frameShadow">
+            <enum>QFrame::Shadow::Plain</enum>
+           </property>
+          </widget>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
          </item>
          <item>
           <widget class="QPushButton" name="btnExportStatsPDF_2">
@@ -6921,7 +7411,11 @@ font-size: 14px;
 qproperty-alignment: AlignCenter;</string>
                </property>
                <property name="text">
+<<<<<<< HEAD
                 <string>âš“ PORT</string>
+=======
+                <string> PORT</string>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
                </property>
               </widget>
              </item>
@@ -7080,6 +7574,7 @@ qproperty-alignment: AlignCenter;</string>
        <string>Gestion des quais</string>
       </property>
      </widget>
+<<<<<<< HEAD
      <widget class="QPushButton" name="btnRefreshStats_5">
       <property name="geometry">
        <rect>
@@ -7099,6 +7594,8 @@ border:none;
        <string/>
       </property>
      </widget>
+=======
+>>>>>>> 7ce8a15 (Initial commit: all local work)
      <widget class="QPushButton" name="btnRefreshStats_6">
       <property name="geometry">
        <rect>
@@ -9831,8 +10328,13 @@ background-color:transparent;
     <rect>
      <x>0</x>
      <y>0</y>
+<<<<<<< HEAD
      <width>1521</width>
      <height>25</height>
+=======
+     <width>1612</width>
+     <height>22</height>
+>>>>>>> 7ce8a15 (Initial commit: all local work)
     </rect>
    </property>
   </widget>

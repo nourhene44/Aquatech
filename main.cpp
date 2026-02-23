@@ -1,4 +1,4 @@
-#include "GQuai.h"
+#include "mainwindow.h"
 #include <QApplication>
 #include "connection.h"
 #include <QMessageBox>
