@@ -2587,7 +2587,7 @@ font-weight:600;</string>
        </property>
        <property name="styleSheet">
         <string notr="true">border:none;
-background_color:transparent</string>
+background-color:transparent</string>
        </property>
        <property name="text">
         <string>Date Inscription:</string>
@@ -2630,7 +2630,7 @@ background_color:transparent</string>
        </property>
        <property name="styleSheet">
         <string notr="true">border:none;
-background_color:transparent</string>
+background-color:transparent</string>
        </property>
        <property name="text">
         <string>Date Affectation:</string>
@@ -2657,7 +2657,7 @@ background_color:transparent</string>
        </property>
        <property name="styleSheet">
         <string notr="true">border:none;
-background_color:transparent</string>
+background-color:transparent</string>
        </property>
        <property name="text">
         <string>ID Bateau:</string>
@@ -2957,7 +2957,7 @@ background-color:transparent;</string>
        <rect>
         <x>760</x>
         <y>480</y>
-        <width>431</width>
+        <width>451</width>
         <height>281</height>
        </rect>
       </property>
@@ -3008,7 +3008,7 @@ border:1.5px solid  rgb(0, 0, 115);            border-radius: 15px;</string>
             stop:0.55 #e74c3c,
             stop:0.85 #1abc9c,
             stop:0.85 rgba(26, 188, 156, 0.3) 100%);
-        border: 5px solid  rgb(74, 82, 90);
+        border: 4px solid  rgb(255, 255, 255);
 </string>
            </property>
            <property name="text">
@@ -3022,26 +3022,9 @@ border:1.5px solid  rgb(0, 0, 115);            border-radius: 15px;</string>
          <item>
           <layout class="QVBoxLayout" name="verticalLayout_legendp">
            <item>
-            <widget class="QLabel" name="label_total_typesp">
-             <property name="styleSheet">
-              <string notr="true"> 	color: rgb(0, 0, 90);
-
-                                        font-weight: bold;
-                                        font-size: 16px;
-                                        padding: 5px;</string>
-             </property>
-             <property name="text">
-              <string>       Nom et Prenom</string>
-             </property>
-             <property name="textFormat">
-              <enum>Qt::TextFormat::AutoText</enum>
-             </property>
-            </widget>
-           </item>
-           <item>
             <widget class="QLabel" name="label_legend_chalutierp">
              <property name="styleSheet">
-              <string notr="true">color: #3498db;
+              <string notr="true">color:#00C853;
                                         font-weight: bold;
                                         font-size: 14px;
                                         padding: 3px;</string>
@@ -3054,20 +3037,20 @@ border:1.5px solid  rgb(0, 0, 115);            border-radius: 15px;</string>
            <item>
             <widget class="QLabel" name="label_legend_palangrierp">
              <property name="styleSheet">
-              <string notr="true">color: #27ae60;
+              <string notr="true">color: #007BFF;
                                         font-weight: bold;
                                         font-size: 14px;
                                         padding: 3px;</string>
              </property>
              <property name="text">
-              <string> • Sous Condition: 0 (00%)</string>
+              <string> • Disponible Bientot: 0 (00%)</string>
              </property>
             </widget>
            </item>
            <item>
             <widget class="QLabel" name="label_legend_caseyeurp">
              <property name="styleSheet">
-              <string notr="true">color: #f39c12;
+              <string notr="true">color: #FF1744;
                                         font-weight: bold;
                                         font-size: 14px;
                                         padding: 3px;</string>
@@ -3080,26 +3063,13 @@ border:1.5px solid  rgb(0, 0, 115);            border-radius: 15px;</string>
            <item>
             <widget class="QLabel" name="label_legend_traditionalp">
              <property name="styleSheet">
-              <string notr="true">color: #9b59b6;
+              <string notr="true">color: #AA00FF;
                                         font-weight: bold;
                                         font-size: 14px;
                                         padding: 3px;</string>
              </property>
              <property name="text">
               <string>• En conge: 0 (00%)</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QLabel" name="label_legend_otherp">
-             <property name="styleSheet">
-              <string notr="true">color: #e74c3c;
-                                        font-weight: bold;
-                                        font-size: 14px;
-                                        padding: 3px;</string>
-             </property>
-             <property name="text">
-              <string> • Autres: 0 (00%)</string>
              </property>
             </widget>
            </item>
@@ -3408,7 +3378,7 @@ font-size:18px</string>
       <property name="geometry">
        <rect>
         <x>530</x>
-        <y>160</y>
+        <y>-40</y>
         <width>881</width>
         <height>531</height>
        </rect>
@@ -3641,7 +3611,6 @@ border-radius: 15px;</string>
     font-weight: 700;
     font-size: 15px;
     margin-bottom:20px;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
     padding: 10px 20px;</string>
        </property>
        <property name="text">

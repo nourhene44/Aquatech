@@ -1,5 +1,5 @@
-#ifndef GQUAI_H
-#define GQUAI_H
+#ifndef MAINWINDOW_H
+#define MAINWINDOW_H
 
 #include <QMainWindow>
 #include <QString>
@@ -86,6 +86,7 @@ private slots:
     void on_p6b_clicked();          // Menu GBateau -> Gestion des employés (pagee)
     void on_pushButton_10e_clicked();
     void on_pushButton_pdfb_5_clicked();    // Retour Menu (pagee) -> Menu GBateau
+    void on_bep_clicked();                  // Exporter PDF (pagepecheur)
     void on_pushButton_7c_5_clicked();
     void on_pushButton_8c_4_clicked();
     void on_pushButton_8c_3_clicked();
@@ -134,4 +135,4 @@ private:
     // (Database load/validation helpers removed)
 };
 
-#endif // GQUAI_H
+#endif // MAINWINDOW_H

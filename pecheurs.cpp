@@ -6,6 +6,7 @@
 #include <QMetaType>
 #include <QRegularExpression>
 #include <QDebug>
+#include <QStringList>
 
 static QString s_lastError;
 
@@ -55,11 +56,84 @@ static QString canonicalDisponibilite(const QString& raw)
 
 static bool isValidEmail(const QString& email)
 {
-	if (email.trimmed().isEmpty()) {
-		return true;
-	}
 	static const QRegularExpression pattern(QStringLiteral("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"));
 	return pattern.match(email.trimmed()).hasMatch();
+}
+
+static int toIntOrZeroLocal(const QString& text)
+{
+	if (text.trimmed().isEmpty()) return 0;
+
+	bool ok = false;
+	const int value = text.trimmed().toInt(&ok);
+	if (ok) return value;
+
+	const double dvalue = text.trimmed().toDouble(&ok);
+	if (ok) return static_cast<int>(dvalue);
+
+	return 0;
+}
+
+static bool isAllRolesSelection(const QString& text)
+{
+	const QString t = normalizeText(text);
+	return t.contains(QStringLiteral("tous"))
+		&& (t.contains(QStringLiteral("role")) || t.contains(QStringLiteral("rôle")));
+}
+
+static bool isAllDisponibiliteSelection(const QString& text)
+{
+	const QString t = normalizeText(text);
+	return t.contains(QStringLiteral("toutes")) && t.contains(QStringLiteral("dispon"));
+}
+
+static void appendPecheursFilters(QStringList& whereParts,
+							  const QString& recherche,
+							  const QString& roleSelection,
+							  const QString& dispoSelection)
+{
+	if (!recherche.isEmpty()) {
+		const QStringList termes = recherche.split(' ', Qt::SkipEmptyParts);
+		if (termes.size() >= 2) {
+			whereParts << "((LOWER(Nom_Pecheur) LIKE LOWER(:nom) AND LOWER(Prenom_Pecheur) LIKE LOWER(:prenom)) "
+						 "OR (LOWER(Nom_Pecheur) LIKE LOWER(:prenom) AND LOWER(Prenom_Pecheur) LIKE LOWER(:nom)))";
+		} else {
+			whereParts << "(LOWER(Nom_Pecheur) LIKE LOWER(:terme) OR LOWER(Prenom_Pecheur) LIKE LOWER(:terme))";
+		}
+	}
+
+	if (!roleSelection.isEmpty() && !isAllRolesSelection(roleSelection)) {
+		whereParts << "LOWER(Role) = LOWER(:role)";
+	}
+
+	if (!dispoSelection.isEmpty() && !isAllDisponibiliteSelection(dispoSelection)) {
+		whereParts << "LOWER(Disponibilite) = LOWER(:dispo)";
+	}
+}
+
+static void bindPecheursFilters(QSqlQuery& query,
+						const QString& recherche,
+						const QString& roleSelection,
+						const QString& dispoSelection)
+{
+	if (!recherche.isEmpty()) {
+		const QStringList termes = recherche.split(' ', Qt::SkipEmptyParts);
+		if (termes.size() >= 2) {
+			const QString nomTerme = termes.at(0);
+			const QString prenomTerme = termes.mid(1).join(" ");
+			query.bindValue(QStringLiteral(":nom"), "%" + nomTerme + "%");
+			query.bindValue(QStringLiteral(":prenom"), "%" + prenomTerme + "%");
+		} else {
+			query.bindValue(QStringLiteral(":terme"), "%" + recherche + "%");
+		}
+	}
+
+	if (!roleSelection.isEmpty() && !isAllRolesSelection(roleSelection)) {
+		query.bindValue(QStringLiteral(":role"), roleSelection);
+	}
+	if (!dispoSelection.isEmpty() && !isAllDisponibiliteSelection(dispoSelection)) {
+		query.bindValue(QStringLiteral(":dispo"), dispoSelection);
+	}
 }
 
 Pecheurs::Pecheurs()
@@ -102,6 +176,10 @@ bool Pecheurs::ajouter() const
 		s_lastError = QStringLiteral("Prénom obligatoire.");
 		return false;
 	}
+	if (email_.trimmed().isEmpty()) {
+		s_lastError = QStringLiteral("Email obligatoire.");
+		return false;
+	}
 
 	const QString roleCanonical = canonicalRole(role_);
 	if (roleCanonical.isEmpty()) {
@@ -142,7 +220,7 @@ bool Pecheurs::ajouter() const
 	query.bindValue(":prenom", prenom_.trimmed());
 	query.bindValue(":role", roleCanonical);
 	query.bindValue(":disp", dispoCanonical);
-	query.bindValue(":email", email_.trimmed().isEmpty() ? QVariant(QMetaType::fromType<QString>()) : QVariant(email_.trimmed()));
+	query.bindValue(":email", email_.trimmed());
 	query.bindValue(":heures", heures_);  // Envoyer 0 si c'est 0, pas NULL
 	query.bindValue(":dins", dateInscription_.isValid() ? QVariant(dateInscription_) : nullDate());
 	query.bindValue(":daff", dateAffectation_.isValid() ? QVariant(dateAffectation_) : nullDate());
@@ -180,9 +258,19 @@ bool Pecheurs::supprimer(int id)
 
 bool Pecheurs::modifier() const
 {
+	return modifierAvecAncienId(id_);
+}
+
+bool Pecheurs::modifierAvecAncienId(int ancienId) const
+{
 	// Validation ID
 	if (id_ <= 0) {
 		s_lastError = QStringLiteral("ID invalide (doit être > 0).");
+		return false;
+	}
+
+	if (ancienId <= 0) {
+		s_lastError = QStringLiteral("ID original invalide (doit être > 0).");
 		return false;
 	}
 
@@ -193,6 +281,10 @@ bool Pecheurs::modifier() const
 	}
 	if (prenom_.trimmed().isEmpty()) {
 		s_lastError = QStringLiteral("Prénom obligatoire.");
+		return false;
+	}
+	if (email_.trimmed().isEmpty()) {
+		s_lastError = QStringLiteral("Email obligatoire.");
 		return false;
 	}
 
@@ -224,37 +316,63 @@ bool Pecheurs::modifier() const
 		return false;
 	}
 
+	// Si l'ID a changé, vérifier qu'il n'est pas déjà utilisé par un autre pêcheur.
+	if (id_ != ancienId) {
+		QSqlQuery checkIdQuery;
+		checkIdQuery.prepare(
+			"SELECT 1 FROM PECHEURS "
+			"WHERE ID_Pecheur = :newId AND ID_Pecheur <> :oldId");
+		checkIdQuery.bindValue(":newId", id_);
+		checkIdQuery.bindValue(":oldId", ancienId);
+
+		if (!checkIdQuery.exec()) {
+			s_lastError = checkIdQuery.lastError().text();
+			return false;
+		}
+
+		if (checkIdQuery.next()) {
+			s_lastError = QStringLiteral("Cet ID est déjà utilisé. Veuillez saisir un ID différent.");
+			return false;
+		}
+	}
+
 	QSqlQuery query;
 	query.prepare(
 		"UPDATE PECHEURS SET "
-		"Nom_Pecheur = :nom, Prenom_Pecheur = :prenom, Role = :role, "
+		"ID_Pecheur = :newId, Nom_Pecheur = :nom, Prenom_Pecheur = :prenom, Role = :role, "
 		"Disponibilite = :disp, Email = :email, Heures = :heures, "
 		"Date_Inscription = :dins, Date_Affectation = :daff, ID_Bateau = :idb "
-		"WHERE ID_Pecheur = :id");
+		"WHERE ID_Pecheur = :oldId");
+	query.bindValue(":newId", id_);
 	query.bindValue(":nom", nom_.trimmed());
 	query.bindValue(":prenom", prenom_.trimmed());
 	query.bindValue(":role", roleCanonical);
 	query.bindValue(":disp", dispoCanonical);
-	query.bindValue(":email", email_.trimmed().isEmpty() ? QVariant(QMetaType::fromType<QString>()) : QVariant(email_.trimmed()));
+	query.bindValue(":email", email_.trimmed());
 	query.bindValue(":heures", heures_);
 	query.bindValue(":dins", dateInscription_.isValid() ? QVariant(dateInscription_) : nullDate());
 	query.bindValue(":daff", dateAffectation_.isValid() ? QVariant(dateAffectation_) : nullDate());
 	query.bindValue(":idb", idBateau_ > 0 ? QVariant(idBateau_) : nullInt());
-	query.bindValue(":id", id_);
+	query.bindValue(":oldId", ancienId);
 	
 	qDebug() << "=== Pecheurs::modifier() UPDATE QUERY ===";
-	qDebug() << "ID:" << id_ << "Nom:" << nom_.trimmed() << "Prenom:" << prenom_.trimmed() 
+	qDebug() << "Ancien ID:" << ancienId << "Nouveau ID:" << id_ << "Nom:" << nom_.trimmed() << "Prenom:" << prenom_.trimmed() 
 	         << "Role:" << roleCanonical << "Dispo:" << dispoCanonical << "Email:" << email_.trimmed();
 	
 	if (!query.exec()) {
-		s_lastError = query.lastError().text();
+		const QString dbError = query.lastError().text();
+		if (dbError.contains(QStringLiteral("ORA-00001"), Qt::CaseInsensitive)) {
+			s_lastError = QStringLiteral("Cet ID est déjà utilisé. Veuillez saisir un ID différent.");
+		} else {
+			s_lastError = dbError;
+		}
 		qDebug() << "query.exec() FAILED!" << s_lastError;
 		return false;
 	}
 	const int rowsAffected = query.numRowsAffected();
 	qDebug() << "query.exec() SUCCESS - Rows affected:" << rowsAffected;
 	if (rowsAffected <= 0) {
-		s_lastError = QStringLiteral("Aucune ligne mise à jour. Vérifier l'ID du pêcheur.");
+		s_lastError = QStringLiteral("Aucune ligne mise à jour. Vérifier l'ID original du pêcheur.");
 		qDebug() << "ERREUR: " << s_lastError;
 		return false;
 	}
@@ -267,6 +385,130 @@ QSqlQueryModel* Pecheurs::afficher()
 	auto* model = new QSqlQueryModel();
 	model->setQuery("SELECT * FROM PECHEURS ORDER BY ID_Pecheur");
 	return model;
+}
+
+bool Pecheurs::chargerTable(const QString& recherche,
+						   const QString& roleSelection,
+						   const QString& dispoSelection,
+						   QVector<TableRowData>& rows)
+{
+	rows.clear();
+
+	QSqlQuery query;
+	QStringList whereParts;
+	appendPecheursFilters(whereParts, recherche, roleSelection, dispoSelection);
+
+	QString sql =
+		"SELECT ID_Pecheur, Nom_Pecheur, Prenom_Pecheur, Role, ID_Bateau, "
+		"Disponibilite, Email, Date_Inscription, Date_Affectation, Heures, Photo "
+		"FROM PECHEURS";
+	if (!whereParts.isEmpty()) {
+		sql += " WHERE " + whereParts.join(" AND ");
+	}
+	sql += " ORDER BY ID_Pecheur";
+	query.prepare(sql);
+	bindPecheursFilters(query, recherche, roleSelection, dispoSelection);
+
+	if (!query.exec()) {
+		s_lastError = query.lastError().text();
+		return false;
+	}
+
+	while (query.next()) {
+		TableRowData row;
+		row.id = query.value(0).toInt();
+		row.nom = query.value(1).toString();
+		row.prenom = query.value(2).toString();
+		row.role = query.value(3).toString();
+		row.idBateau = query.value(4).toInt();
+		row.disponibilite = query.value(5).toString();
+		row.email = query.value(6).toString();
+		row.dateInscription = query.value(7).toDate();
+		row.dateAffectation = query.value(8).toDate();
+		row.heures = query.value(9).toInt();
+		row.photo = query.value(10).toString();
+		rows.push_back(row);
+	}
+
+	s_lastError.clear();
+	return true;
+}
+
+Pecheurs::DisponibiliteStats Pecheurs::calculerDisponibiliteStats(const QString& recherche,
+											  const QString& roleSelection,
+											  const QString& dispoSelection)
+{
+	DisponibiliteStats stats;
+
+	QSqlQuery query;
+	QStringList whereParts;
+	appendPecheursFilters(whereParts, recherche, roleSelection, dispoSelection);
+
+	QString sql = QStringLiteral("SELECT Disponibilite FROM PECHEURS");
+	if (!whereParts.isEmpty()) {
+		sql += " WHERE " + whereParts.join(" AND ");
+	}
+
+	query.prepare(sql);
+	bindPecheursFilters(query, recherche, roleSelection, dispoSelection);
+
+	if (!query.exec()) {
+		s_lastError = query.lastError().text();
+		return stats;
+	}
+
+	while (query.next()) {
+		const QString d = normalizeText(query.value(0).toString());
+		if (d.contains(QStringLiteral("indisponible"))) {
+			++stats.indisponible;
+		} else if (d.contains(QStringLiteral("bientot"))) {
+			++stats.bientot;
+		} else if (d.contains(QStringLiteral("conge"))) {
+			++stats.enConge;
+		} else if (d.contains(QStringLiteral("disponible"))) {
+			++stats.disponible;
+		}
+	}
+
+	s_lastError.clear();
+	return stats;
+}
+
+bool Pecheurs::idExiste(int id)
+{
+	if (id <= 0) return false;
+
+	QSqlQuery query;
+	query.prepare("SELECT 1 FROM PECHEURS WHERE ID_Pecheur = :id");
+	query.bindValue(":id", id);
+
+	if (!query.exec()) {
+		s_lastError = query.lastError().text();
+		return false;
+	}
+
+	s_lastError.clear();
+	return query.next();
+}
+
+int Pecheurs::bateauIdFromText(const QString& text)
+{
+	const int direct = toIntOrZeroLocal(text);
+	if (direct > 0 || text.trimmed().isEmpty()) return direct;
+
+	QSqlQuery query;
+	query.prepare("SELECT ID_Bateau FROM BATEAUX WHERE Nom = :nom");
+	query.bindValue(":nom", text.trimmed());
+
+	if (query.exec() && query.next()) {
+		s_lastError.clear();
+		return query.value(0).toInt();
+	}
+
+	if (!query.lastError().text().isEmpty()) {
+		s_lastError = query.lastError().text();
+	}
+	return 0;
 }
 
 QString Pecheurs::lastError()

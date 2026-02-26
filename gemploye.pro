@@ -11,13 +11,13 @@ CONFIG += c++17
 SOURCES += \
     main.cpp \
     mainwindow2.cpp \
-    GQuai.cpp \
+    mainwindow.cpp \
     pecheurs.cpp \
     connection.cpp
 
 HEADERS += \
     mainwindow2.h \
-    GQuai.h \
+    mainwindow.h \
     pecheurs.h \
     connection.h
 

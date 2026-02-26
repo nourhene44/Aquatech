@@ -1,4 +1,4 @@
-#include "GQuai.h"
+#include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include <QAbstractButton>
 #include <QComboBox>
@@ -11,17 +11,26 @@
 #include <QDate>
 #include <QHBoxLayout>
 #include <QWidget>
+#include <QLayout>
 
 #include <QDateTime>
 #include <QMessageBox>
 #include <QDebug>
 #include <QMetaType>
 #include <QStringList>
+#include <QPainter>
+#include <QPixmap>
+#include <QPdfWriter>
+#include <QFileDialog>
+#include <QStandardPaths>
+#include <QDir>
+#include <QPageSize>
+#include <QPageLayout>
+#include <QFontMetrics>
+#include <QApplication>
 // Database
 #include "connection.h"
 #include "pecheurs.h"
-#include <QSqlQuery>
-#include <QSqlError>
 
 // Toggle global: activer/désactiver les opérations CRUD.
 static const bool kCrudEnabled = true;
@@ -44,13 +53,7 @@ static int toIntOrZero(const QString& text)
 
 static int bateauIdFromText(const QString& text)
 {
-    const int direct = toIntOrZero(text);
-    if (direct > 0 || text.trimmed().isEmpty()) return direct;
-    QSqlQuery q;
-    q.prepare("SELECT ID_Bateau FROM BATEAUX WHERE Nom = :nom");
-    q.bindValue(":nom", text.trimmed());
-    if (q.exec() && q.next()) return q.value(0).toInt();
-    return 0;
+    return Pecheurs::bateauIdFromText(text);
 }
 
 static QString cleanFilterLabel(QString text)
@@ -64,17 +67,111 @@ static QString cleanFilterLabel(QString text)
     return text.simplified();
 }
 
-static bool isAllRolesSelection(const QString& text)
+static QPixmap buildDisponibiliteCirclePixmap(int disponible, int bientot, int indisponible, int enConge, int size)
 {
-    const QString t = text.toLower();
-    return t.contains(QStringLiteral("tous"))
-        && (t.contains(QStringLiteral("role")) || t.contains(QStringLiteral("rôle")));
+    const int separatorWidth = 2;
+    const int outerBorderWidth = 4;
+
+    const int safeSize = qMax(40, size);
+    QPixmap pixmap(safeSize, safeSize);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+
+    QPen separatorPen(QColor(255, 255, 255), separatorWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+    painter.setPen(separatorPen);
+
+    const qreal inset = static_cast<qreal>(outerBorderWidth) / 2.0;
+    const QRectF pieRect(inset, inset, safeSize - 2.0 * inset, safeSize - 2.0 * inset);
+    const int total = disponible + bientot + indisponible + enConge;
+    const int totalUnits = 360 * 16;
+
+    int sDisponible = 0;
+    int sBientot = 0;
+    int sIndisponible = 0;
+    int sEnConge = 0;
+
+    if (total > 0) {
+        sDisponible = qRound((static_cast<double>(disponible) / static_cast<double>(total)) * totalUnits);
+        sBientot = qRound((static_cast<double>(bientot) / static_cast<double>(total)) * totalUnits);
+        sIndisponible = qRound((static_cast<double>(indisponible) / static_cast<double>(total)) * totalUnits);
+        sEnConge = qMax(0, totalUnits - (sDisponible + sBientot + sIndisponible));
+    } else {
+        sDisponible = totalUnits / 4;
+        sBientot = totalUnits / 4;
+        sIndisponible = totalUnits / 4;
+        sEnConge = totalUnits - (sDisponible + sBientot + sIndisponible);
+    }
+
+    QVector<QPair<QColor, int>> slices = {
+        { QColor(QStringLiteral("#00C853")), sDisponible },
+        { QColor(QStringLiteral("#007BFF")), sBientot },
+        { QColor(QStringLiteral("#FF1744")), sIndisponible },
+        { QColor(QStringLiteral("#9b59b6")), sEnConge }
+    };
+
+    int startAngle = 90 * 16;
+    for (const auto& slice : slices) {
+        if (slice.second <= 0) {
+            continue;
+        }
+        painter.setBrush(slice.first);
+        const int span = -slice.second;
+        painter.drawPie(pieRect, startAngle, span);
+        startAngle += span;
+    }
+
+    painter.setBrush(Qt::NoBrush);
+    QPen borderPen(QColor(255, 255, 255), outerBorderWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+    painter.setPen(borderPen);
+    painter.drawEllipse(pieRect);
+
+    return pixmap;
 }
 
-static bool isAllDisponibiliteSelection(const QString& text)
+static void updateDisponibiliteStats(
+    Ui::MainWindow* ui,
+    const QString& recherche,
+    const QString& roleSelection,
+    const QString& dispoSelection)
 {
-    const QString t = text.toLower();
-    return t.contains(QStringLiteral("toutes")) && t.contains(QStringLiteral("dispon"));
+    if (!ui) return;
+
+    const Pecheurs::DisponibiliteStats stats = Pecheurs::calculerDisponibiliteStats(recherche, roleSelection, dispoSelection);
+    const int disponible = stats.disponible;
+    const int bientot = stats.bientot;
+    const int indisponible = stats.indisponible;
+    const int enConge = stats.enConge;
+
+    const int total = disponible + bientot + indisponible + enConge;
+    const auto pct = [total](int value) {
+        if (total <= 0) return QStringLiteral("0.0");
+        return QString::number((100.0 * static_cast<double>(value)) / static_cast<double>(total), 'f', 1);
+    };
+
+    if (ui->label_legend_chalutierp) {
+        ui->label_legend_chalutierp->setText(
+            QStringLiteral("• Disponible: %1 (%2%)").arg(disponible).arg(pct(disponible)));
+    }
+    if (ui->label_legend_palangrierp) {
+        ui->label_legend_palangrierp->setText(
+            QStringLiteral("• Disponible bientot: %1 (%2%)").arg(bientot).arg(pct(bientot)));
+    }
+    if (ui->label_legend_caseyeurp) {
+        ui->label_legend_caseyeurp->setText(
+            QStringLiteral("• Indisponible: %1 (%2%)").arg(indisponible).arg(pct(indisponible)));
+    }
+    if (ui->label_legend_traditionalp) {
+        ui->label_legend_traditionalp->setText(
+            QStringLiteral("• En conge: %1 (%2%)").arg(enConge).arg(pct(enConge)));
+    }
+    if (ui->progressTypeCirclep) {
+        const int size = qMin(ui->progressTypeCirclep->width(), ui->progressTypeCirclep->height());
+        ui->progressTypeCirclep->setStyleSheet(QStringLiteral("border: none; background: transparent;"));
+        ui->progressTypeCirclep->setPixmap(buildDisponibiliteCirclePixmap(disponible, bientot, indisponible, enConge, size));
+    }
 }
 
 static inline bool handleCrudDisabled(QWidget* parent)
@@ -82,6 +179,19 @@ static inline bool handleCrudDisabled(QWidget* parent)
     if (kCrudEnabled) return true;
     QMessageBox::information(parent, QStringLiteral("CRUD désactivé"), QStringLiteral("Les opérations CRUD sont désactivées dans cette build."));
     return false;
+}
+
+static bool isSaisieConstraintError(const QString& error)
+{
+    const QString e = error.toLower();
+    return e.contains(QStringLiteral("obligatoire"))
+        || e.contains(QStringLiteral("invalide"))
+        || e.contains(QStringLiteral("déjà utilisé"))
+        || e.contains(QStringLiteral("deja utilise"))
+        || e.contains(QStringLiteral("veuillez saisir"))
+        || e.contains(QStringLiteral("format attendu"))
+        || e.contains(QStringLiteral("doit être"))
+        || e.contains(QStringLiteral("doit etre"));
 }
 
 static QString normalizeMojibake(QString text)
@@ -367,77 +477,43 @@ void MainWindow::loadPecheurs()
     qDebug() << "=== loadPecheurs() APPELÉE ===";
     if (!ui || !ui->tableWidgetp) return;
 
-    QSqlQuery query;
     const QString recherche = ui->lineEdit_4p ? ui->lineEdit_4p->text().trimmed().simplified() : QString();
     const QString roleSelection = cleanFilterLabel(ui->comboBox_5p ? ui->comboBox_5p->currentText() : QString());
     const QString dispoSelection = cleanFilterLabel(ui->comboBox_6p ? ui->comboBox_6p->currentText() : QString());
 
-    QStringList whereParts;
-
-    if (!recherche.isEmpty()) {
-        const QStringList termes = recherche.split(' ', Qt::SkipEmptyParts);
-        if (termes.size() >= 2) {
-            const QString nomTerme = termes.at(0);
-            const QString prenomTerme = termes.mid(1).join(" ");
-            whereParts << "((LOWER(Nom_Pecheur) LIKE LOWER(:nom) AND LOWER(Prenom_Pecheur) LIKE LOWER(:prenom)) "
-                         "OR (LOWER(Nom_Pecheur) LIKE LOWER(:prenom) AND LOWER(Prenom_Pecheur) LIKE LOWER(:nom)))";
-        } else {
-            whereParts << "(LOWER(Nom_Pecheur) LIKE LOWER(:terme) OR LOWER(Prenom_Pecheur) LIKE LOWER(:terme))";
-        }
-    }
-
-    if (!roleSelection.isEmpty() && !isAllRolesSelection(roleSelection)) {
-        whereParts << "LOWER(Role) = LOWER(:role)";
-    }
-
-    if (!dispoSelection.isEmpty() && !isAllDisponibiliteSelection(dispoSelection)) {
-        whereParts << "LOWER(Disponibilite) = LOWER(:dispo)";
-    }
-
-    QString sql =
-        "SELECT ID_Pecheur, Nom_Pecheur, Prenom_Pecheur, Role, ID_Bateau, "
-        "Disponibilite, Email, Date_Inscription, Date_Affectation, Heures, Photo "
-        "FROM PECHEURS";
-    if (!whereParts.isEmpty()) {
-        sql += " WHERE " + whereParts.join(" AND ");
-    }
-    sql += " ORDER BY ID_Pecheur";
-    query.prepare(sql);
-
-    if (!recherche.isEmpty()) {
-        const QStringList termes = recherche.split(' ', Qt::SkipEmptyParts);
-        if (termes.size() >= 2) {
-            const QString nomTerme = termes.at(0);
-            const QString prenomTerme = termes.mid(1).join(" ");
-            query.bindValue(QStringLiteral(":nom"), "%" + nomTerme + "%");
-            query.bindValue(QStringLiteral(":prenom"), "%" + prenomTerme + "%");
-        } else {
-            query.bindValue(QStringLiteral(":terme"), "%" + recherche + "%");
-        }
-    }
-    if (!roleSelection.isEmpty() && !isAllRolesSelection(roleSelection)) {
-        query.bindValue(QStringLiteral(":role"), roleSelection);
-    }
-    if (!dispoSelection.isEmpty() && !isAllDisponibiliteSelection(dispoSelection)) {
-        query.bindValue(QStringLiteral(":dispo"), dispoSelection);
-    }
-
-    if (!query.exec()) {
-        qDebug() << "Erreur recherche/loadPecheurs:" << query.lastError().text();
+    QVector<Pecheurs::TableRowData> rows;
+    if (!Pecheurs::chargerTable(recherche, roleSelection, dispoSelection, rows)) {
+        qDebug() << "Erreur recherche/loadPecheurs:" << Pecheurs::lastError();
     }
 
     auto* table = ui->tableWidgetp;
+    table->setAlternatingRowColors(true);
+    table->setShowGrid(false);
+    table->setStyleSheet(
+        "QTableWidget {"
+        "background-color: #ffffff;"
+        "alternate-background-color: #ebebeb;"
+        "border: none;"
+        "}"
+        "QTableWidget::item {"
+        "padding: 4px;"
+        "border: none;"
+        "}"
+        "QTableWidget::item:selected {"
+        "background-color: rgba(0, 85, 127, 0.20);"
+        "color: #0b2d4a;"
+        "}");
     table->setRowCount(0);
     qDebug() << "Table vidée, en train de recharger...";
 
     int row = 0;
-    while (query.next()) {
+    for (const Pecheurs::TableRowData& record : rows) {
         const int currentRow = row;
         table->insertRow(row);
-        const QString id = query.value(0).toString();
-        const QString nom = query.value(1).toString();
-        const QString prenom = query.value(2).toString();
-        const QString role = query.value(3).toString();
+        const QString id = QString::number(record.id);
+        const QString nom = record.nom;
+        const QString prenom = record.prenom;
+        const QString role = record.role;
         
         qDebug() << "Row" << row << "ID:" << id << "Nom:" << nom << "Prenom:" << prenom << "Role:" << role;
         
@@ -445,12 +521,12 @@ void MainWindow::loadPecheurs()
         table->setItem(row, 1, new QTableWidgetItem(nom));
         table->setItem(row, 2, new QTableWidgetItem(prenom));
         table->setItem(row, 3, new QTableWidgetItem(role));
-        table->setItem(row, 4, new QTableWidgetItem(query.value(4).toString()));
-        table->setItem(row, 5, new QTableWidgetItem(query.value(5).toString()));
-        table->setItem(row, 6, new QTableWidgetItem(query.value(6).toString()));
-        const QDate dIns = query.value(7).toDate();
-        const QDate dAff = query.value(8).toDate();
-        const int heures = query.value(9).toInt();
+        table->setItem(row, 4, new QTableWidgetItem(QString::number(record.idBateau)));
+        table->setItem(row, 5, new QTableWidgetItem(record.disponibilite));
+        table->setItem(row, 6, new QTableWidgetItem(record.email));
+        const QDate dIns = record.dateInscription;
+        const QDate dAff = record.dateAffectation;
+        const int heures = record.heures;
         const QString heureTexte = QStringLiteral(" %1:00").arg(qBound(0, heures, 23), 2, 10, QChar('0'));
         table->setItem(row, 7, new QTableWidgetItem(dIns.isValid() ? dIns.toString("dd/MM/yyyy") + heureTexte : QString()));
         table->setItem(row, 8, new QTableWidgetItem(dAff.isValid() ? dAff.toString("dd/MM/yyyy") + heureTexte : QString()));
@@ -461,16 +537,22 @@ void MainWindow::loadPecheurs()
         auto* actionWidget = new QWidget();
         actionWidget->setStyleSheet("background-color: transparent;");
         auto* actionLayout = new QHBoxLayout(actionWidget);
-        actionLayout->setContentsMargins(2, 0, 2, 12);
-        actionLayout->setSpacing(5);
+        actionLayout->setContentsMargins(3, 0, 3, 6);
+        actionLayout->setSpacing(4);
         
         // Bouton Modifier (style pushButton_6p)
-        auto* btnEdit = new QPushButton("✏️");
-        btnEdit->setMinimumWidth(35);
-        btnEdit->setMinimumHeight(35);
-        btnEdit->setMaximumWidth(35);
-        btnEdit->setMaximumHeight(35);
-        btnEdit->setStyleSheet("QPushButton { border: none; background-color: transparent; font-size: 18px; padding: 0px; margin: 0px; } QPushButton:hover { background-color: rgba(52, 152, 219, 0.05); }");
+        auto* btnEdit = new QPushButton("📝");
+        btnEdit->setFixedSize(40, 24);
+        btnEdit->setStyleSheet(
+            "QPushButton { "
+            "border: 2px solid rgb(0, 0, 112); "
+            "border-radius: 4px; "
+            "background-color: transparent; "
+            "color: rgb(0, 0, 112); "
+            "font-size: 16px; "
+            "padding: 0px; margin: 0px; } "
+            "QPushButton:hover { background-color: rgba(0, 0, 112, 0.08); border-color: #59abc8; } "
+            "QPushButton:pressed { background-color: rgba(0, 0, 112, 0.15); }");
         connect(btnEdit, &QPushButton::clicked, this, [this, currentRow]() {
             if (ui && ui->tableWidgetp && currentRow < ui->tableWidgetp->rowCount()) {
                 ui->tableWidgetp->selectRow(currentRow);
@@ -480,11 +562,17 @@ void MainWindow::loadPecheurs()
         
         // Bouton Supprimer (style pushButton_5p)
         auto* btnDelete = new QPushButton("❌");
-        btnDelete->setMinimumWidth(35);
-        btnDelete->setMinimumHeight(35);
-        btnDelete->setMaximumWidth(35);
-        btnDelete->setMaximumHeight(35);
-        btnDelete->setStyleSheet("QPushButton { border: none; background-color: transparent; font-size: 18px; padding: 0px; margin: 0px; } QPushButton:hover { background-color: rgba(231, 76, 60, 0.05); }");
+        btnDelete->setFixedSize(40, 24);
+        btnDelete->setStyleSheet(
+            "QPushButton { "
+            "border: 2px solid rgb(0, 0, 112); "
+            "border-radius: 4px; "
+            "background-color: transparent; "
+            "color: rgb(0, 0, 112); "
+            "font-size: 16px; "
+            "padding: 0px; margin: 0px; } "
+            "QPushButton:hover { background-color: rgba(0, 0, 112, 0.08); border-color: #59abc8; } "
+            "QPushButton:pressed { background-color: rgba(0, 0, 112, 0.15); }");
         connect(btnDelete, &QPushButton::clicked, this, [this, currentRow]() {
             if (ui && ui->tableWidgetp && currentRow < ui->tableWidgetp->rowCount()) {
                 ui->tableWidgetp->selectRow(currentRow);
@@ -492,9 +580,8 @@ void MainWindow::loadPecheurs()
             }
         });
         
-        actionLayout->addStretch();
-        actionLayout->addWidget(btnEdit, 0, Qt::AlignCenter);
-        actionLayout->addWidget(btnDelete, 0, Qt::AlignCenter);
+        actionLayout->addWidget(btnEdit, 0, Qt::AlignHCenter | Qt::AlignTop);
+        actionLayout->addWidget(btnDelete, 0, Qt::AlignHCenter | Qt::AlignTop);
         actionLayout->addStretch();
         
         table->setCellWidget(row, 11, actionWidget);
@@ -516,6 +603,10 @@ void MainWindow::loadPecheurs()
     table->setColumnWidth(9, 70);   // Heures
     table->setColumnWidth(10, 60);  // Photo
     table->setColumnWidth(11, 100); // Action
+    table->verticalHeader()->setDefaultSectionSize(34);
+
+    // Mettre à jour les statistiques de disponibilité selon les filtres actifs.
+    updateDisponibiliteStats(ui, recherche, roleSelection, dispoSelection);
 }
 
 void MainWindow::on_lineEdit_4p_textChanged(const QString &text)
@@ -972,6 +1063,152 @@ static void setPecheurMainWidgetsVisible(Ui::MainWindow* ui, bool visible)
     if (ui->frame_typesp) ui->frame_typesp->setVisible(visible);
 }
 
+static QPixmap captureFullTableWidgetPixmap(QTableWidget* table)
+{
+    if (!table) return QPixmap();
+
+    int fullWidth = table->frameWidth() * 2 + table->verticalHeader()->width();
+    for (int c = 0; c < table->columnCount(); ++c) {
+        if (!table->isColumnHidden(c)) {
+            fullWidth += table->columnWidth(c);
+        }
+    }
+
+    int fullHeight = table->frameWidth() * 2 + table->horizontalHeader()->height();
+    for (int r = 0; r < table->rowCount(); ++r) {
+        if (!table->isRowHidden(r)) {
+            fullHeight += table->rowHeight(r);
+        }
+    }
+
+    fullWidth = qMax(fullWidth, 400);
+    fullHeight = qMax(fullHeight, 120);
+
+    const QSize oldSize = table->size();
+    const QSize oldMin = table->minimumSize();
+    const QSize oldMax = table->maximumSize();
+
+    table->setMinimumSize(fullWidth, fullHeight);
+    table->setMaximumSize(fullWidth, fullHeight);
+    table->resize(fullWidth, fullHeight);
+    qApp->processEvents();
+
+    QPixmap shot = table->grab();
+
+    table->setMinimumSize(oldMin);
+    table->setMaximumSize(oldMax);
+    table->resize(oldSize);
+    qApp->processEvents();
+
+    return shot;
+}
+
+static QPixmap captureWidgetForPdf(QWidget* widget,
+                                   const QSize& minTargetSize = QSize(900, 520),
+                                   int scaleFactor = 2)
+{
+    if (!widget) return QPixmap();
+
+    QSize targetSize = widget->size();
+    targetSize = targetSize.expandedTo(widget->minimumSizeHint());
+    if (widget->layout()) {
+        targetSize = targetSize.expandedTo(widget->layout()->sizeHint());
+    }
+    targetSize = targetSize.expandedTo(minTargetSize);
+    targetSize.setWidth(qMax(1, targetSize.width()));
+    targetSize.setHeight(qMax(1, targetSize.height()));
+
+    const QSize oldSize = widget->size();
+    const QSize oldMin = widget->minimumSize();
+    const QSize oldMax = widget->maximumSize();
+
+    widget->setMinimumSize(targetSize);
+    widget->setMaximumSize(targetSize);
+    widget->resize(targetSize);
+    qApp->processEvents();
+
+    const int safeScale = qMax(1, scaleFactor);
+    QPixmap shot(targetSize.width() * safeScale, targetSize.height() * safeScale);
+    shot.setDevicePixelRatio(static_cast<qreal>(safeScale));
+    shot.fill(Qt::white);
+
+    QPainter pixPainter(&shot);
+    widget->render(&pixPainter, QPoint(), QRegion(), QWidget::DrawWindowBackground | QWidget::DrawChildren);
+    pixPainter.end();
+
+    widget->setMinimumSize(oldMin);
+    widget->setMaximumSize(oldMax);
+    widget->resize(oldSize);
+    qApp->processEvents();
+
+    return shot;
+}
+
+static int findActionColumnIndex(const QTableWidget* table)
+{
+    if (!table) return -1;
+
+    for (int c = 0; c < table->columnCount(); ++c) {
+        QTableWidgetItem* headerItem = table->horizontalHeaderItem(c);
+        if (!headerItem) continue;
+
+        const QString headerText = headerItem->text().trimmed();
+        if (headerText.compare(QStringLiteral("Action"), Qt::CaseInsensitive) == 0
+            || headerText.contains(QStringLiteral("Action"), Qt::CaseInsensitive)) {
+            return c;
+        }
+    }
+
+    return -1;
+}
+
+static void drawPixmapWithPagination(QPdfWriter& writer,
+                                     QPainter& painter,
+                                     const QPixmap& source,
+                                     int margin,
+                                     int& y,
+                                     int blockSpacing = 18)
+{
+    if (source.isNull()) return;
+
+    const int pageW = writer.width();
+    const int pageH = writer.height();
+    const int contentW = pageW - (2 * margin);
+
+    if (contentW <= 0 || source.width() <= 0 || source.height() <= 0) return;
+
+    const double scale = static_cast<double>(contentW) / static_cast<double>(source.width());
+    int remainingSrcY = 0;
+
+    while (remainingSrcY < source.height()) {
+        int availableH = pageH - margin - y;
+        if (availableH <= 40) {
+            writer.newPage();
+            y = margin;
+            availableH = pageH - margin - y;
+        }
+
+        int srcChunkH = static_cast<int>(availableH / scale);
+        srcChunkH = qMax(1, srcChunkH);
+        srcChunkH = qMin(srcChunkH, source.height() - remainingSrcY);
+
+        const int targetChunkH = qMax(1, static_cast<int>(srcChunkH * scale));
+        const QRect targetRect(margin, y, contentW, targetChunkH);
+        const QRect sourceRect(0, remainingSrcY, source.width(), srcChunkH);
+        painter.drawPixmap(targetRect, source, sourceRect);
+
+        y += targetChunkH;
+        remainingSrcY += srcChunkH;
+
+        if (remainingSrcY < source.height()) {
+            writer.newPage();
+            y = margin;
+        } else {
+            y += blockSpacing;
+        }
+    }
+}
+
 void MainWindow::on_btnFaceIDp_clicked()
 {
     // Afficher FaceID, masquer les widgets principaux
@@ -996,18 +1233,107 @@ void MainWindow::on_brmp_clicked()
         ui->stackedWidget->setCurrentWidget(ui->gestionsb);
     }
 }
+
+static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
+{
+    if (!parent || !ui || !ui->tableWidgetp) return;
+
+    const QString documentsDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    const QString baseDir = documentsDir.isEmpty() ? QDir::homePath() : documentsDir;
+    const QString defaultName = QStringLiteral("pecheurs_statistiques_%1.pdf")
+        .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss")));
+    QString filePath = QFileDialog::getSaveFileName(
+        parent,
+        QStringLiteral("Exporter PDF"),
+        QDir(baseDir).filePath(defaultName),
+        QStringLiteral("PDF Files (*.pdf)"));
+
+    if (filePath.trimmed().isEmpty()) {
+        return;
+    }
+    if (!filePath.toLower().endsWith(QStringLiteral(".pdf"))) {
+        filePath += QStringLiteral(".pdf");
+    }
+
+    QPdfWriter writer(filePath);
+    writer.setPageSize(QPageSize(QPageSize::A4));
+    writer.setPageOrientation(QPageLayout::Landscape);
+    writer.setResolution(300);
+    writer.setPageMargins(QMarginsF(8, 8, 8, 8), QPageLayout::Millimeter);
+
+    QPainter painter(&writer);
+    if (!painter.isActive()) {
+        QMessageBox::critical(parent, QStringLiteral("Erreur"), QStringLiteral("Impossible de créer le fichier PDF."));
+        return;
+    }
+
+    const int pageW = writer.width();
+    const int margin = 72;
+    const int contentW = pageW - (2 * margin);
+    int y = margin;
+
+    QFont titleFont(QStringLiteral("Arial"), 13, QFont::Bold);
+    QFont normalFont(QStringLiteral("Arial"), 9);
+
+    painter.setPen(Qt::black);
+    painter.setFont(titleFont);
+    painter.drawText(QRect(margin, y, contentW, 40), Qt::AlignLeft | Qt::AlignVCenter,
+                     QStringLiteral("Capture PDF - Page Pêcheurs"));
+    y += 46;
+
+    painter.setFont(normalFont);
+    painter.drawText(QRect(margin, y, contentW, 22), Qt::AlignLeft | Qt::AlignVCenter,
+                     QStringLiteral("Date: %1").arg(QDateTime::currentDateTime().toString(QStringLiteral("dd/MM/yyyy HH:mm"))));
+    y += 30;
+
+    const int actionColumn = findActionColumnIndex(ui->tableWidgetp);
+    const bool actionColumnWasHidden = (actionColumn >= 0) ? ui->tableWidgetp->isColumnHidden(actionColumn) : false;
+    if (actionColumn >= 0 && !actionColumnWasHidden) {
+        ui->tableWidgetp->setColumnHidden(actionColumn, true);
+    }
+
+    const QPixmap tablePixmap = captureFullTableWidgetPixmap(ui->tableWidgetp);
+
+    if (actionColumn >= 0 && !actionColumnWasHidden) {
+        ui->tableWidgetp->setColumnHidden(actionColumn, false);
+    }
+
+    drawPixmapWithPagination(writer, painter, tablePixmap, margin, y, 20);
+
+    if (ui->frame_typesp && ui->frame_typesp->isVisible()) {
+        writer.newPage();
+        y = margin;
+
+        painter.setFont(titleFont);
+        painter.drawText(QRect(margin, y, contentW, 34), Qt::AlignLeft | Qt::AlignVCenter,
+                         QStringLiteral("Statistiques"));
+        y += 40;
+
+        const QPixmap statsPixmap = captureWidgetForPdf(ui->frame_typesp);
+        drawPixmapWithPagination(writer, painter, statsPixmap, margin, y, 12);
+    }
+
+    painter.end();
+    QMessageBox::information(parent, QStringLiteral("Export PDF"),
+                             QStringLiteral("Fichier PDF exporté avec succès:\n%1").arg(filePath));
+}
+
 void MainWindow::on_pushButton_pdfb_5_clicked()
 {
-    // Retour Menu depuis pagepecheur -> menu GBateau
+    // Bouton retour menu (comportement d'origine)
     if (!ui) return;
 
-    // Remettre l'état normal côté pêcheurs
     if (ui->framefaceidp) ui->framefaceidp->hide();
     setPecheurMainWidgetsVisible(ui, true);
 
     if (ui->stackedWidget && ui->gestionsb) {
         ui->stackedWidget->setCurrentWidget(ui->gestionsb);
     }
+}
+
+void MainWindow::on_bep_clicked()
+{
+    exportPecheursPdfReport(this, ui);
 }
 
 void MainWindow::on_bmi_6p_clicked()
@@ -1037,8 +1363,31 @@ void MainWindow::on_bap_clicked()
     const int id = toIntOrZero(ui && ui->lineEditp ? ui->lineEditp->text() : QString());
     qDebug() << "ID du formulaire:" << id;
     
-    if (id <= 0 || (ui && ui->lineEdit_2p && ui->lineEdit_2p->text().trimmed().isEmpty())) {
-        QMessageBox::warning(this, "Champs", "ID et Nom obligatoires");
+    const QString nom = ui && ui->lineEdit_2p ? ui->lineEdit_2p->text().trimmed() : QString();
+    const QString prenom = ui && ui->lineEdit_3p ? ui->lineEdit_3p->text().trimmed() : QString();
+    const QString email = ui && ui->lineEditp_2 ? ui->lineEditp_2->text().trimmed() : QString();
+
+    if (id <= 0) {
+        QMessageBox::warning(this, "Champs", "Veuillez saisir ID");
+        if (ui && ui->lineEditp) ui->lineEditp->setFocus();
+        return;
+    }
+
+    if (nom.isEmpty()) {
+        QMessageBox::warning(this, "Champs", "Veuillez saisir Nom");
+        if (ui && ui->lineEdit_2p) ui->lineEdit_2p->setFocus();
+        return;
+    }
+
+    if (prenom.isEmpty()) {
+        QMessageBox::warning(this, "Champs", "Veuillez saisir Prenom");
+        if (ui && ui->lineEdit_3p) ui->lineEdit_3p->setFocus();
+        return;
+    }
+
+    if (email.isEmpty()) {
+        QMessageBox::warning(this, "Champs", "Veuillez saisir Email");
+        if (ui && ui->lineEditp_2) ui->lineEditp_2->setFocus();
         return;
     }
     
@@ -1047,28 +1396,28 @@ void MainWindow::on_bap_clicked()
         // Mode MODIFICATION
         qDebug() << ">>> Mode MODIFICATION ACTIVÉ <<<";
         qDebug() << "Mode MODIFICATION: ID en édition:" << m_editingPecheurId << "ID du formulaire:" << id;
-        // IMPORTANT: Utiliser l'ID original du pêcheur sélectionné (m_editingPecheurId), pas celui du formulaire
-        // Le champ ID est maintenant en lecture seule, mais on force la valeur correcte par sécurité
-        Pecheurs pForModify = p;
-        pForModify.setId(m_editingPecheurId);
-        qDebug() << "Pêcheur à modifier: ID=" << m_editingPecheurId << "(au lieu de " << id << " du formulaire)";
-        if (pForModify.modifier()) {
+        // Utiliser l'ID original uniquement pour cibler la ligne en base,
+        // et l'ID du formulaire comme nouvelle valeur à enregistrer.
+        qDebug() << "Pêcheur à modifier: ancien ID=" << m_editingPecheurId << "nouvel ID=" << id;
+        if (p.modifierAvecAncienId(m_editingPecheurId)) {
             qDebug() << "p.modifier() a réussi!";
             loadPecheurs();
             resetAjouterButton();
             QMessageBox::information(this, "OK", "Modification reussie");
         } else {
-            qDebug() << "p.modifier() a échoué!" << Pecheurs::lastError();
-            QMessageBox::critical(this, "Erreur", "Modification echouee: " + Pecheurs::lastError());
+            const QString err = Pecheurs::lastError();
+            qDebug() << "p.modifierAvecAncienId() a échoué!" << err;
+            if (isSaisieConstraintError(err)) {
+                QMessageBox::warning(this, "Champs", "Modification echouee: " + err);
+            } else {
+                QMessageBox::critical(this, "Erreur", "Modification echouee: " + err);
+            }
         }
     } else {
         // Mode AJOUT
         qDebug() << ">>> Mode AJOUT ACTIVÉ <<<";
         qDebug() << "Mode AJOUT: ID en édition:" << m_editingPecheurId;
-        QSqlQuery existsQuery;
-        existsQuery.prepare("SELECT 1 FROM PECHEURS WHERE ID_Pecheur = :id");
-        existsQuery.bindValue(":id", id);
-        if (existsQuery.exec() && existsQuery.next()) {
+        if (Pecheurs::idExiste(id)) {
             QMessageBox::warning(this, "Doublon", "Cet ID existe déjà. Veuillez saisir un ID différent.");
             return;
         }
@@ -1079,8 +1428,13 @@ void MainWindow::on_bap_clicked()
             resetAjouterButton();
             QMessageBox::information(this, "OK", "Ajout reussi");
         } else {
-            qDebug() << "p.ajouter() a échoué!" << Pecheurs::lastError();
-            QMessageBox::critical(this, "Erreur", "Ajout echoue: " + Pecheurs::lastError());
+            const QString err = Pecheurs::lastError();
+            qDebug() << "p.ajouter() a échoué!" << err;
+            if (isSaisieConstraintError(err)) {
+                QMessageBox::warning(this, "Champs", "Ajout echoue: " + err);
+            } else {
+                QMessageBox::critical(this, "Erreur", "Ajout echoue: " + err);
+            }
         }
     }
 }
@@ -1162,10 +1516,10 @@ void MainWindow::loadPecheurFromTable()
     m_editingPecheurId = toIntOrZero(id);
     qDebug() << "loadPecheurFromTable: m_editingPecheurId =" << m_editingPecheurId << "ID extrait =" << id;
     
-    // Rendre le champ ID en lecture seule (ne pas modifier une clé primaire)
+    // Garder le champ ID éditable pour permettre la modification de l'ID
     if (ui && ui->lineEditp) {
-        ui->lineEditp->setReadOnly(true);
-        qDebug() << "Champ ID mis en lecture seule";
+        ui->lineEditp->setReadOnly(false);
+        qDebug() << "Champ ID éditable en mode modification";
     }
     
     // Changer le bouton "Ajouter" en "Modifier"
@@ -1206,12 +1560,17 @@ void MainWindow::on_pushButton_6p_clicked()
     // Sinon = Mode SAUVEGARDE
     else {
         const Pecheurs p = pecheurFromForm();
-        if (p.modifier()) {
+        if (p.modifierAvecAncienId(m_editingPecheurId)) {
             loadPecheurs();
-            m_editingPecheurId = -1;  // Réinitialiser l'état
+            resetAjouterButton();
             QMessageBox::information(this, "OK", "Modification reussie");
         } else {
-            QMessageBox::critical(this, "Erreur", "Modification echouee: " + Pecheurs::lastError());
+            const QString err = Pecheurs::lastError();
+            if (isSaisieConstraintError(err)) {
+                QMessageBox::warning(this, "Champs", "Modification echouee: " + err);
+            } else {
+                QMessageBox::critical(this, "Erreur", "Modification echouee: " + err);
+            }
         }
     }
 }
