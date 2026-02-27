@@ -1599,6 +1599,8 @@ void MainWindow::ajouterBateauFromForm()
         ui->doubleSpinBox->setValue(0.0);
         ui->spinBox->setValue(0);
 
+        // Remettre le bouton sur "Ajouter"
+        if (ui->pushButton_2b) ui->pushButton_2b->setText("Ajouter");
         loadBateaux();
     }
 }
@@ -1634,9 +1636,7 @@ void MainWindow::loadBateaux()
     if (!ui->tableWidgetb) return;
 
     // Build SQL with optional WHERE clauses from search filters
-    QString sql = "SELECT ID_BATEAU, NOM, PROPRIETAIRE, LARGEUR, TYPE, STATUT, "
-                  "CAPACITE, DATE_ENTREE, DATE_DERNIERE_MAINTENANCE, FREQUENCE_MAINTENANCE "
-                  "FROM BATEAUX";
+    QString sql = "SELECT ID_BATEAU, NOM, PROPRIETAIRE, LARGEUR, TYPE, STATUT, CAPACITE, DATE_ENTREE, DATE_DERNIERE_MAINTENANCE, FREQUENCE_MAINTENANCE FROM BATEAUX";
 
     QStringList conditions;
     QString searchText = ui->lineEdit_4p_2 ? ui->lineEdit_4p_2->text().trimmed() : QString();
@@ -1665,13 +1665,13 @@ void MainWindow::loadBateaux()
 
     QSqlQuery query(sql);
     // Synchronise le nombre de colonnes avec les données SQL + Actions
-    ui->tableWidgetb->setColumnCount(12); // 11 champs + Actions
+    ui->tableWidgetb->setColumnCount(11); // 10 attributs + Actions
     ui->tableWidgetb->setRowCount(0);
 
     int row = 0;
     while (query.next()) {
         ui->tableWidgetb->insertRow(row);
-        for (int col = 0; col < 11; ++col) {
+        for (int col = 0; col < 10; ++col) {
             QString cellText;
             if (col == 7 || col == 8) {
                 QDateTime dt = query.value(col).toDateTime();
@@ -1718,14 +1718,12 @@ void MainWindow::loadBateaux()
         connect(btnSupprimer, &QPushButton::clicked, this, [this, currentRow]() {
             supprimerBateauFromRow(currentRow);
         });
-        ui->tableWidgetb->setCellWidget(row, 11, actionWidget);
+        ui->tableWidgetb->setCellWidget(row, 10, actionWidget);
         ++row;
     }
 
     // Afficher la colonne Actions
-    ui->tableWidgetb->setColumnHidden(11, false);
-    // Hide the unused column 12
-    ui->tableWidgetb->setColumnHidden(12, true);
+    ui->tableWidgetb->setColumnHidden(10, false);
 
     ui->tableWidgetb->resizeColumnsToContents();
     ui->tableWidgetb->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
@@ -1736,9 +1734,7 @@ void MainWindow::loadBateaux()
     ui->tableWidgetb->horizontalHeader()->setSectionResizeMode(9, QHeaderView::Fixed);
     ui->tableWidgetb->setColumnWidth(9, 100);
     ui->tableWidgetb->horizontalHeader()->setSectionResizeMode(10, QHeaderView::Fixed);
-    ui->tableWidgetb->setColumnWidth(10, 100);
-    ui->tableWidgetb->horizontalHeader()->setSectionResizeMode(11, QHeaderView::Fixed);
-    ui->tableWidgetb->setColumnWidth(11, 72);
+    ui->tableWidgetb->setColumnWidth(10, 72);
 
     updateStatsBateaux();
 }
@@ -1775,7 +1771,10 @@ void MainWindow::modifierBateauFromRow(int row)
     ui->spinBox->setValue(cellText(9).toInt()); // Frequence maintenance
 
     QMessageBox::information(this, "Modifier",
-        QString("Bateau \"%1\" chargé dans le formulaire.\nModifiez les champs puis cliquez Ajouter.").arg(cellText(1)));
+        QString("Bateau \"%1\" chargé dans le formulaire.\nModifiez les champs puis cliquez sur Modifier.").arg(cellText(1)));
+
+    // Change le texte du bouton en "Modifier"
+    if (ui->pushButton_2b) ui->pushButton_2b->setText("Modifier");
 }
 
 // ── Supprimer : supprimer le bateau de la ligne ─────────────────────────────
