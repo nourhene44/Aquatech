@@ -1267,51 +1267,233 @@ static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
         return;
     }
 
-    const int pageW = writer.width();
-    const int margin = 72;
-    const int contentW = pageW - (2 * margin);
-    int y = margin;
-
-    QFont titleFont(QStringLiteral("Arial"), 13, QFont::Bold);
-    QFont normalFont(QStringLiteral("Arial"), 9);
-
-    painter.setPen(Qt::black);
-    painter.setFont(titleFont);
-    painter.drawText(QRect(margin, y, contentW, 40), Qt::AlignLeft | Qt::AlignVCenter,
-                     QStringLiteral("Capture PDF - Page Pêcheurs"));
-    y += 46;
-
-    painter.setFont(normalFont);
-    painter.drawText(QRect(margin, y, contentW, 22), Qt::AlignLeft | Qt::AlignVCenter,
-                     QStringLiteral("Date: %1").arg(QDateTime::currentDateTime().toString(QStringLiteral("dd/MM/yyyy HH:mm"))));
-    y += 30;
-
     const int actionColumn = findActionColumnIndex(ui->tableWidgetp);
     const bool actionColumnWasHidden = (actionColumn >= 0) ? ui->tableWidgetp->isColumnHidden(actionColumn) : false;
     if (actionColumn >= 0 && !actionColumnWasHidden) {
         ui->tableWidgetp->setColumnHidden(actionColumn, true);
     }
 
-    const QPixmap tablePixmap = captureFullTableWidgetPixmap(ui->tableWidgetp);
+    auto restoreActionColumn = [ui, actionColumn, actionColumnWasHidden]() {
+        if (actionColumn >= 0 && !actionColumnWasHidden) {
+            ui->tableWidgetp->setColumnHidden(actionColumn, false);
+        }
+    };
 
-    if (actionColumn >= 0 && !actionColumnWasHidden) {
-        ui->tableWidgetp->setColumnHidden(actionColumn, false);
+    const QString exportStamp = QDateTime::currentDateTime().toString(QStringLiteral("dd/MM/yyyy HH:mm"));
+    const int pageW = writer.width();
+    const int pageH = writer.height();
+    const int margin = 54;
+    const int contentW = pageW - (2 * margin);
+    int y = margin;
+
+    QFont titleFont(QStringLiteral("Arial"), 20, QFont::Bold);
+    QFont subtitleFont(QStringLiteral("Arial"), 11, QFont::Normal);
+    QFont headerFont(QStringLiteral("Arial"), 9, QFont::Bold);
+    QFont cellFont(QStringLiteral("Arial"), 8, QFont::Normal);
+    QFont sectionFont(QStringLiteral("Arial"), 19, QFont::Bold);
+    QFont totalFont(QStringLiteral("Arial"), 12, QFont::Bold);
+    QFont footerFont(QStringLiteral("Arial"), 9, QFont::Normal);
+
+    painter.fillRect(QRect(0, 0, pageW, pageH), QColor(QStringLiteral("#f7f7f7")));
+
+    painter.setPen(QColor(QStringLiteral("#0b1b8f")));
+    painter.setFont(titleFont);
+    painter.drawText(QRect(margin, y, contentW, 88), Qt::AlignLeft | Qt::AlignVCenter,
+                     QStringLiteral("AQUATEC — Liste des Pecheurs"));
+    y += 96;
+
+    painter.setPen(QColor(QStringLiteral("#6e6e6e")));
+    painter.setFont(subtitleFont);
+    painter.drawText(QRect(margin, y, contentW, 28), Qt::AlignHCenter | Qt::AlignVCenter,
+                     QStringLiteral("Exporté le %1").arg(exportStamp));
+    y += 42;
+
+    QTableWidget* table = ui->tableWidgetp;
+    QVector<int> columns;
+    QVector<int> sourceWidths;
+    int totalSourceW = 0;
+
+    for (int c = 0; c < table->columnCount(); ++c) {
+        if (table->isColumnHidden(c)) continue;
+        if (c == actionColumn) continue;
+        columns.push_back(c);
+        const int w = qMax(40, table->columnWidth(c));
+        sourceWidths.push_back(w);
+        totalSourceW += w;
     }
 
-    drawPixmapWithPagination(writer, painter, tablePixmap, margin, y, 20);
-
-    if (ui->frame_typesp && ui->frame_typesp->isVisible()) {
-        writer.newPage();
-        y = margin;
-
-        painter.setFont(titleFont);
-        painter.drawText(QRect(margin, y, contentW, 34), Qt::AlignLeft | Qt::AlignVCenter,
-                         QStringLiteral("Statistiques"));
-        y += 40;
-
-        const QPixmap statsPixmap = captureWidgetForPdf(ui->frame_typesp);
-        drawPixmapWithPagination(writer, painter, statsPixmap, margin, y, 12);
+    if (columns.isEmpty()) {
+        restoreActionColumn();
+        painter.end();
+        QMessageBox::warning(parent, QStringLiteral("Export PDF"),
+                             QStringLiteral("Aucune colonne à exporter."));
+        return;
     }
+
+    QVector<int> drawWidths;
+    drawWidths.reserve(columns.size());
+    int usedW = 0;
+    for (int i = 0; i < sourceWidths.size(); ++i) {
+        int dw = qMax(42, static_cast<int>((static_cast<double>(sourceWidths[i]) / static_cast<double>(qMax(1, totalSourceW))) * contentW));
+        drawWidths.push_back(dw);
+        usedW += dw;
+    }
+    if (!drawWidths.isEmpty()) {
+        drawWidths[drawWidths.size() - 1] += (contentW - usedW);
+    }
+
+    auto drawTableHeader = [&]() {
+        const int headerH = 34;
+        int x = margin;
+        painter.fillRect(QRect(margin, y, contentW, headerH), QColor(QStringLiteral("#0b1b8f")));
+        painter.setFont(headerFont);
+        painter.setPen(Qt::white);
+        for (int i = 0; i < columns.size(); ++i) {
+            const int c = columns[i];
+            const int w = drawWidths[i];
+            const QString text = table->horizontalHeaderItem(c) ? table->horizontalHeaderItem(c)->text().trimmed() : QStringLiteral("Colonne %1").arg(c + 1);
+            painter.drawText(QRect(x + 5, y, w - 10, headerH), Qt::AlignLeft | Qt::AlignVCenter, text);
+            x += w;
+        }
+        y += headerH;
+    };
+
+    const int footerY = pageH - margin - 20;
+    const int statsBlockTop = pageH - margin - 420;
+    const int tableTop = y;
+    const int tableHeaderH = 30;
+    const int tableTotalH = 30;
+    const int tableBottomLimit = qMax(tableTop + tableHeaderH + 40, statsBlockTop - 18);
+    const int tableRowsAreaH = qMax(40, tableBottomLimit - tableTop - tableHeaderH - tableTotalH);
+    const int rowH = 23;
+    const int maxRowsInPdf = qMax(1, tableRowsAreaH / rowH);
+
+    drawTableHeader();
+
+    QVector<int> visibleRows;
+    visibleRows.reserve(table->rowCount());
+    for (int r = 0; r < table->rowCount(); ++r) {
+        if (!table->isRowHidden(r)) visibleRows.push_back(r);
+    }
+
+    const int totalVisibleRows = visibleRows.size();
+    const int exportedRows = qMin(maxRowsInPdf, totalVisibleRows);
+
+    painter.setFont(cellFont);
+    for (int index = 0; index < exportedRows; ++index) {
+        const int r = visibleRows[index];
+        const QColor rowColor = (index % 2 == 0) ? QColor(QStringLiteral("#ffffff")) : QColor(QStringLiteral("#e9edf5"));
+        painter.fillRect(QRect(margin, y, contentW, rowH), rowColor);
+        painter.setPen(QColor(QStringLiteral("#b9b9b9")));
+        painter.drawRect(QRect(margin, y, contentW, rowH));
+
+        int x = margin;
+        for (int i = 0; i < columns.size(); ++i) {
+            const int c = columns[i];
+            const int w = drawWidths[i];
+            painter.setPen(QColor(QStringLiteral("#b9b9b9")));
+            painter.drawLine(x, y, x, y + rowH);
+
+            painter.setPen(QColor(QStringLiteral("#2c2c2c")));
+            const QTableWidgetItem* item = table->item(r, c);
+            QString text = item ? item->text() : QString();
+            text = text.simplified();
+
+            QFontMetrics fm(cellFont);
+            text = fm.elidedText(text, Qt::ElideRight, qMax(10, w - 8));
+            painter.drawText(QRect(x + 4, y, w - 8, rowH), Qt::AlignLeft | Qt::AlignVCenter, text);
+            x += w;
+        }
+
+        painter.setPen(QColor(QStringLiteral("#b9b9b9")));
+        painter.drawLine(margin + contentW, y, margin + contentW, y + rowH);
+        y += rowH;
+    }
+
+    y += 8;
+    painter.setPen(QColor(QStringLiteral("#6e6e6e")));
+    painter.setFont(totalFont);
+    painter.drawText(QRect(margin, y, contentW, 24), Qt::AlignHCenter | Qt::AlignVCenter,
+                     QStringLiteral("Total: %1 pecheurs").arg(totalVisibleRows));
+
+    if (totalVisibleRows > exportedRows) {
+        painter.setFont(QFont(QStringLiteral("Arial"), 9, QFont::Normal));
+        painter.setPen(QColor(QStringLiteral("#8a8a8a")));
+        painter.drawText(QRect(margin, y + 24, contentW, 18), Qt::AlignHCenter | Qt::AlignVCenter,
+                         QStringLiteral("(%1 lignes affichées sur %2 dans cette page)").arg(exportedRows).arg(totalVisibleRows));
+    }
+
+    const QString recherche = ui->lineEdit_4p ? ui->lineEdit_4p->text().trimmed().simplified() : QString();
+    const QString roleSelection = cleanFilterLabel(ui->comboBox_5p ? ui->comboBox_5p->currentText() : QString());
+    const QString dispoSelection = cleanFilterLabel(ui->comboBox_6p ? ui->comboBox_6p->currentText() : QString());
+    const Pecheurs::DisponibiliteStats stats = Pecheurs::calculerDisponibiliteStats(recherche, roleSelection, dispoSelection);
+    const int totalStats = stats.disponible + stats.bientot + stats.indisponible + stats.enConge;
+
+    y = statsBlockTop;
+
+    painter.setPen(QColor(QStringLiteral("#0b1b8f")));
+    painter.setFont(QFont(QStringLiteral("Arial"), 15, QFont::Bold));
+    painter.drawText(QRect(margin, y, contentW, 36), Qt::AlignHCenter | Qt::AlignVCenter,
+                     QStringLiteral("Statistiques selon disponibilité"));
+    y += 36;
+
+    painter.setPen(QColor(QStringLiteral("#6e6e6e")));
+    painter.setFont(QFont(QStringLiteral("Arial"), 10, QFont::Bold));
+    painter.drawText(QRect(margin, y, contentW, 22), Qt::AlignHCenter | Qt::AlignVCenter,
+                     QStringLiteral("Total: %1 pecheurs").arg(totalStats));
+    y += 28;
+
+    const QRect pieRect(margin + 8, y + 4, 170, 170);
+    const QVector<QPair<QString, QPair<int, QColor>>> slices = {
+        { QStringLiteral("Disponible"), { stats.disponible, QColor(QStringLiteral("#00C853")) } },
+        { QStringLiteral("Disponible bientot"), { stats.bientot, QColor(QStringLiteral("#007BFF")) } },
+        { QStringLiteral("Indisponible"), { stats.indisponible, QColor(QStringLiteral("#FF1744")) } },
+        { QStringLiteral("En conge"), { stats.enConge, QColor(QStringLiteral("#AA00FF")) } }
+    };
+
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    if (totalStats > 0) {
+        int startAngle = 90 * 16;
+        for (const auto& slice : slices) {
+            const int value = slice.second.first;
+            if (value <= 0) continue;
+            const int span = -qRound((static_cast<double>(value) / static_cast<double>(totalStats)) * 360.0 * 16.0);
+            painter.setBrush(slice.second.second);
+            painter.setPen(Qt::white);
+            painter.drawPie(pieRect, startAngle, span);
+            startAngle += span;
+        }
+    } else {
+        painter.setBrush(QColor(QStringLiteral("#dadada")));
+        painter.setPen(Qt::white);
+        painter.drawEllipse(pieRect);
+    }
+
+    painter.setRenderHint(QPainter::Antialiasing, false);
+
+    const int legendX = pieRect.right() + 28;
+    int legendY = y + 4;
+    painter.setFont(QFont(QStringLiteral("Arial"), 10, QFont::Normal));
+    for (const auto& slice : slices) {
+        const int value = slice.second.first;
+        const double pct = (totalStats > 0) ? (100.0 * static_cast<double>(value) / static_cast<double>(totalStats)) : 0.0;
+        painter.fillRect(QRect(legendX, legendY + 6, 10, 10), slice.second.second);
+        painter.setPen(QColor(QStringLiteral("#202020")));
+        painter.drawText(QRect(legendX + 18, legendY - 2, contentW - (legendX - margin) - 20, 22),
+                         Qt::AlignLeft | Qt::AlignVCenter,
+                         QStringLiteral("%1: %2 (%3%)")
+                            .arg(slice.first)
+                            .arg(value)
+                            .arg(QString::number(pct, 'f', 0)));
+        legendY += 26;
+    }
+
+    painter.setPen(QColor(QStringLiteral("#8a8a8a")));
+    painter.setFont(footerFont);
+    painter.drawText(QRect(margin, footerY, contentW, 20), Qt::AlignHCenter | Qt::AlignVCenter,
+                     QStringLiteral("AQUATEC - Rapport généré le %1").arg(exportStamp));
+
+    restoreActionColumn();
 
     painter.end();
     QMessageBox::information(parent, QStringLiteral("Export PDF"),
