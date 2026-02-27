@@ -8,6 +8,8 @@
 #include "connection.h"
 #include "quai.h"
 
+class QNetworkAccessManager;
+
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
@@ -116,6 +118,8 @@ private slots:
     void on_comboBox_3_currentIndexChanged(int index);
     void on_comboBox_4_currentIndexChanged(int index);
     void on_comboBox_5_currentIndexChanged(int index);
+    void on_comboBoxCity_currentIndexChanged(int index);
+    void on_pushButton_pdfb_clicked();
     void on_pushButton_pdfb_2_clicked();
     void on_btnExportStatsPDF_2_clicked();
     void on_comboChartType_2_currentIndexChanged(int index);
@@ -124,6 +128,7 @@ private slots:
     void on_bap_clicked();
     void on_pushButton_2b_clicked();
     void on_pushButton_11_clicked();
+    void on_btnExportMapPdf_clicked();
 
 public:
     // Ajout des méthodes manquantes pour la gestion des quais
@@ -140,10 +145,28 @@ private:
     Ui::MainWindow *ui;
     QLabel* m_curveLineLabelQuaiStats = nullptr;
     QTimer* m_statsTimer = nullptr;
+    QTimer* m_weatherTimer = nullptr;
+    QNetworkAccessManager* m_weatherNetwork = nullptr;
+    QString m_selectedCity = QStringLiteral("Bizerte");
+
+    // --- Bateau CRUD ---
+    QString currentEditingId;
+    void loadBateaux();
+    void modifierBateauFromRow(int row);
+    void supprimerBateauFromRow(int row);
+    void filterBateaux();
+    void updateStatsBateaux();
+
     void showFrame(QWidget* frameToShow);
     void setupFrames();
     void normalizeUiTexts();
     void applyQuaiFilters();
+    void refreshWeatherForPage3();
+    void updateWeatherLabels(const QString& icon,
+                             const QString& temperatureText,
+                             const QString& descriptionText,
+                             const QString& windText,
+                             const QString& humidityText);
     bool exportWidgetToPdf(QWidget *widget,
                            const QString &defaultFileName,
                            const QString &dialogTitle);

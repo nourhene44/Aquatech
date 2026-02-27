@@ -6,13 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-<<<<<<< HEAD
-    <width>1521</width>
-    <height>878</height>
-=======
     <width>1612</width>
     <height>862</height>
->>>>>>> 7ce8a15 (Initial commit: all local work)
    </rect>
   </property>
   <property name="windowTitle">
@@ -28,15 +23,9 @@
     </property>
     <property name="geometry">
      <rect>
-<<<<<<< HEAD
-      <x>0</x>
-      <y>0</y>
-      <width>1521</width>
-=======
       <x>-10</x>
       <y>-10</y>
       <width>1741</width>
->>>>>>> 7ce8a15 (Initial commit: all local work)
       <height>821</height>
      </rect>
     </property>
@@ -45,10 +34,7 @@
 font-size:16px;
 font-weight:600;
  	color: rgb(0, 0, 90);
-<<<<<<< HEAD
-=======
 
->>>>>>> 7ce8a15 (Initial commit: all local work)
 }
 QPushButton
 {border:2px solid rgb(0, 0, 112);
@@ -131,11 +117,7 @@ border-radius:50PX}
 </string>
     </property>
     <property name="currentIndex">
-<<<<<<< HEAD
-     <number>4</number>
-=======
-     <number>6</number>
->>>>>>> 7ce8a15 (Initial commit: all local work)
+     <number>5</number>
     </property>
     <widget class="QWidget" name="loginb">
      <widget class="QLabel" name="label_b">
@@ -4574,86 +4556,61 @@ background-color:transparent;</string>
       <attribute name="horizontalHeaderDefaultSectionSize">
        <number>125</number>
       </attribute>
-      <column>
-       <property name="text">
-        <string>ID Bateau</string>
-       </property>
-       <property name="font">
-        <font>
-         <bold>false</bold>
-        </font>
-       </property>
-      </column>
-      <column>
-       <property name="text">
-        <string> Nom Bateau</string>
-       </property>
-       <property name="font">
-        <font>
-         <bold>false</bold>
-        </font>
-       </property>
-      </column>
-      <column>
-       <property name="text">
-        <string>Proprietaire</string>
-       </property>
-       <property name="font">
-        <font>
-         <bold>false</bold>
-        </font>
-       </property>
-      </column>
-      <column>
-       <property name="text">
-        <string>Largeur</string>
-       </property>
-       <property name="font">
-        <font>
-         <bold>false</bold>
-        </font>
-       </property>
-      </column>
-      <column>
-       <property name="text">
-        <string>Type      </string>
-       </property>
-       <property name="font">
-        <font>
-         <bold>false</bold>
-        </font>
-       </property>
-      </column>
-      <column>
-       <property name="text">
-        <string>Statut</string>
-       </property>
-       <property name="font">
-        <font>
-         <bold>false</bold>
-        </font>
-       </property>
-      </column>
-      <column>
-       <property name="text">
-        <string>Capacité</string>
-       </property>
-       <property name="font">
-        <font>
-         <bold>false</bold>
-        </font>
-       </property>
-      </column>
-      <column>
-       <property name="text">
-        <string>Actions</string>
-       </property>
-       <property name="font">
-        <font>
-         <bold>false</bold>
-        </font>
-       </property>
-      </column>
+    <column>
+     <property name="text">
+      <string>ID Bateau</string>
+     </property>
+    </column>
+    <column>
+     <property name="text">
+      <string>Nom Bateau</string>
+     </property>
+    </column>
+    <column>
+     <property name="text">
+      <string>Proprietaire</string>
+     </property>
+    </column>
+    <column>
+     <property name="text">
+      <string>Largeur</string>
+     </property>
+    </column>
+    <column>
+     <property name="text">
+      <string>Type</string>
+     </property>
+    </column>
+    <column>
+     <property name="text">
+      <string>Statut</string>
+     </property>
+    </column>
+    <column>
+     <property name="text">
+      <string>Capacité</string>
+     </property>
+    </column>
+    <column>
+     <property name="text">
+      <string>Date entrée</string>
+     </property>
+    </column>
+    <column>
+     <property name="text">
+      <string>Date dernière maintenance</string>
+     </property>
+    </column>
+    <column>
+     <property name="text">
+      <string>Fréquence maintenance</string>
+     </property>
+    </column>
+    <column>
+     <property name="text">
+      <string>Actions</string>
+     </property>
+    </column>
      </widget>
      <widget class="QLabel" name="label_5b">
       <property name="geometry">
@@ -4773,60 +4730,6 @@ background-color:transparent;</string>
       </property>
       <property name="styleSheet">
        <string notr="true">image: url(:/res/loupe.png);</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
-     <widget class="QPushButton" name="pushButton_4p_3">
-      <property name="geometry">
-       <rect>
-        <x>1370</x>
-        <y>190</y>
-        <width>61</width>
-        <height>61</height>
-       </rect>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border:none;
-background-color:transparent;
-image: url(:/res/stylo.png);</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
-     <widget class="QPushButton" name="pushButton_5p_3">
-      <property name="geometry">
-       <rect>
-        <x>1440</x>
-        <y>190</y>
-        <width>61</width>
-        <height>61</height>
-       </rect>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border:none;
-background-color:transparent;
-image: url(:/res/supprimer.png);</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
-     <widget class="QPushButton" name="pushButton_6p_3">
-      <property name="geometry">
-       <rect>
-        <x>1400</x>
-        <y>190</y>
-        <width>61</width>
-        <height>61</height>
-       </rect>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border:none;
-image: url(:/res/rafraichir.png);
-background-color:transparent;</string>
       </property>
       <property name="text">
        <string/>
@@ -4954,15 +4857,9 @@ background-color:transparent</string>
      <widget class="QTableWidget" name="tableWidgetQuai">
       <property name="geometry">
        <rect>
-<<<<<<< HEAD
-        <x>540</x>
-        <y>170</y>
-        <width>971</width>
-=======
         <x>550</x>
         <y>170</y>
         <width>961</width>
->>>>>>> 7ce8a15 (Initial commit: all local work)
         <height>291</height>
        </rect>
       </property>
@@ -4973,11 +4870,7 @@ background-color:transparent</string>
        <number>41</number>
       </attribute>
       <attribute name="horizontalHeaderDefaultSectionSize">
-<<<<<<< HEAD
-       <number>138</number>
-=======
        <number>190</number>
->>>>>>> 7ce8a15 (Initial commit: all local work)
       </attribute>
       <attribute name="verticalHeaderMinimumSectionSize">
        <number>31</number>
@@ -4987,11 +4880,7 @@ background-color:transparent</string>
       </attribute>
       <column>
        <property name="text">
-<<<<<<< HEAD
-        <string>ID quai</string>
-=======
         <string>ID Quai</string>
->>>>>>> 7ce8a15 (Initial commit: all local work)
        </property>
        <property name="font">
         <font>
@@ -5006,38 +4895,22 @@ background-color:transparent</string>
       </column>
       <column>
        <property name="text">
-<<<<<<< HEAD
-        <string>Zone du port</string>
-=======
         <string>Z du port</string>
->>>>>>> 7ce8a15 (Initial commit: all local work)
        </property>
       </column>
       <column>
        <property name="text">
-<<<<<<< HEAD
-        <string>Zone couverte</string>
-=======
         <string>Z couverte</string>
->>>>>>> 7ce8a15 (Initial commit: all local work)
        </property>
       </column>
       <column>
        <property name="text">
-<<<<<<< HEAD
-        <string>Longueur maximale</string>
-=======
         <string>L maximale</string>
->>>>>>> 7ce8a15 (Initial commit: all local work)
        </property>
       </column>
       <column>
        <property name="text">
-<<<<<<< HEAD
-        <string>Capacité maximale</string>
-=======
         <string>C maximale</string>
->>>>>>> 7ce8a15 (Initial commit: all local work)
        </property>
        <property name="font">
         <font>
@@ -5404,11 +5277,7 @@ image: url(:/res/loupe.png);</string>
       <widget class="QPushButton" name="pushButton_11">
        <property name="geometry">
         <rect>
-<<<<<<< HEAD
-         <x>100</x>
-=======
          <x>90</x>
->>>>>>> 7ce8a15 (Initial commit: all local work)
          <y>440</y>
          <width>111</width>
          <height>41</height>
@@ -5526,11 +5395,7 @@ image: url(:/res/loupe.png);</string>
       <property name="geometry">
        <rect>
         <x>900</x>
-<<<<<<< HEAD
-        <y>630</y>
-=======
         <y>680</y>
->>>>>>> 7ce8a15 (Initial commit: all local work)
         <width>91</width>
         <height>71</height>
        </rect>
@@ -5547,11 +5412,7 @@ background:transparent;</string>
       <property name="geometry">
        <rect>
         <x>1040</x>
-<<<<<<< HEAD
-        <y>630</y>
-=======
         <y>680</y>
->>>>>>> 7ce8a15 (Initial commit: all local work)
         <width>91</width>
         <height>71</height>
        </rect>
@@ -5564,54 +5425,68 @@ background:transparent;</string>
        <string/>
       </property>
      </widget>
-<<<<<<< HEAD
-     <widget class="QPushButton" name="pushButton_5p_2">
+     <widget class="QComboBox" name="comboBoxCity">
       <property name="geometry">
        <rect>
-        <x>1410</x>
-        <y>180</y>
-        <width>61</width>
-        <height>61</height>
+        <x>620</x>
+        <y>480</y>
+        <width>280</width>
+        <height>30</height>
        </rect>
       </property>
       <property name="styleSheet">
-       <string notr="true">border:none;
-image: url(:/res/supprimer.png);
-background-color:transparent;</string>
+       <string notr="true">border-radius: 5px;
+background-color: rgb(240, 245, 255);
+border: 1px solid rgb(0, 0, 115);
+padding: 3px 5px;
+font-size: 12px;</string>
       </property>
-      <property name="text">
-       <string/>
-      </property>
+      <item>
+       <property name="text">
+        <string>Bizerte</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Tunis</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Sfax</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Sousse</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Gabes</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Ain Draham</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Tabarka</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Kasserine</string>
+       </property>
+      </item>
      </widget>
-     <widget class="QPushButton" name="pushButton_6p_2">
-      <property name="geometry">
-       <rect>
-        <x>1440</x>
-        <y>180</y>
-        <width>61</width>
-        <height>61</height>
-       </rect>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border:none;
-image: url(:/res/rafraichir.png);
-background-color:transparent;</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
-=======
->>>>>>> 7ce8a15 (Initial commit: all local work)
      <widget class="QFrame" name="frameMeteo">
       <property name="geometry">
        <rect>
         <x>620</x>
-<<<<<<< HEAD
-        <y>470</y>
-=======
         <y>520</y>
->>>>>>> 7ce8a15 (Initial commit: all local work)
         <width>761</width>
         <height>151</height>
        </rect>
@@ -5731,43 +5606,6 @@ font-size: 11px;</string>
          </item>
         </layout>
        </item>
-<<<<<<< HEAD
-       <item>
-        <widget class="QPushButton" name="btnRefreshMeteo">
-         <property name="minimumSize">
-          <size>
-           <width>30</width>
-           <height>30</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>30</width>
-           <height>30</height>
-          </size>
-         </property>
-         <property name="toolTip">
-          <string>Actualiser la météo</string>
-         </property>
-         <property name="styleSheet">
-          <string notr="true">QPushButton {
-    background-color: rgba(89, 171, 200, 0.5);
-    border: 1px solid #59abc8;
-    border-radius: 8px;
-    color: white;
-    font-size: 14px;
-}
-QPushButton:hover {
-    background-color: rgba(89, 171, 200, 0.8);
-}</string>
-         </property>
-         <property name="text">
-          <string/>
-         </property>
-        </widget>
-       </item>
-=======
->>>>>>> 7ce8a15 (Initial commit: all local work)
       </layout>
      </widget>
      <widget class="QFrame" name="frame_4">
@@ -5887,37 +5725,11 @@ border:none;</string>
        </property>
       </widget>
      </widget>
-<<<<<<< HEAD
-     <widget class="QPushButton" name="pushButton_5p_5">
-      <property name="geometry">
-       <rect>
-        <x>1380</x>
-        <y>180</y>
-        <width>61</width>
-        <height>61</height>
-       </rect>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border:none;
-image: url(:/res/stylo.png);
-
-background-color:transparent;</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
-=======
->>>>>>> 7ce8a15 (Initial commit: all local work)
      <widget class="QPushButton" name="pushButton_pdfb_2">
       <property name="geometry">
        <rect>
         <x>1360</x>
-<<<<<<< HEAD
-        <y>10</y>
-=======
         <y>470</y>
->>>>>>> 7ce8a15 (Initial commit: all local work)
         <width>151</width>
         <height>41</height>
        </rect>
@@ -5928,15 +5740,12 @@ background-color:transparent;</string>
      </widget>
     </widget>
     <widget class="QWidget" name="page_4">
-<<<<<<< HEAD
-=======
      <property name="minimumSize">
       <size>
        <width>0</width>
        <height>800</height>
       </size>
      </property>
->>>>>>> 7ce8a15 (Initial commit: all local work)
      <widget class="QPushButton" name="pushButton_2">
       <property name="geometry">
        <rect>
@@ -6103,44 +5912,6 @@ font-size: 14px;</string>
               </property>
              </spacer>
             </item>
-<<<<<<< HEAD
-            <item>
-             <widget class="QPushButton" name="btnRefreshStats_2">
-              <property name="text">
-               <string>      Actualiser</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QComboBox" name="comboChartType_2">
-              <property name="minimumSize">
-               <size>
-                <width>140</width>
-                <height>36</height>
-               </size>
-              </property>
-              <property name="currentText">
-               <string>24 dernières heures</string>
-              </property>
-              <item>
-               <property name="text">
-                <string>24 dernières heures</string>
-               </property>
-              </item>
-              <item>
-               <property name="text">
-                <string>7 derniers jours</string>
-               </property>
-              </item>
-              <item>
-               <property name="text">
-                <string>30 derniers jours</string>
-               </property>
-              </item>
-             </widget>
-            </item>
-=======
->>>>>>> 7ce8a15 (Initial commit: all local work)
            </layout>
           </item>
           <item>
@@ -6327,24 +6098,6 @@ stop:0 rgba(52, 152, 219, 35), stop:0.5 rgba(155, 89, 182, 25), stop:1 rgba(243,
 border-radius: 14px;
 border: none;</string>
              </property>
-<<<<<<< HEAD
-             <widget class="QFrame" name="curvePoint8_2">
-              <property name="geometry">
-               <rect>
-                <x>620</x>
-                <y>100</y>
-                <width>12</width>
-                <height>12</height>
-               </rect>
-              </property>
-              <property name="styleSheet">
-               <string notr="true">background-color: #f39c12;
-border-radius: 6px;
-border: 2px solid rgba(255, 255, 255, 220);</string>
-              </property>
-             </widget>
-=======
->>>>>>> 7ce8a15 (Initial commit: all local work)
             </widget>
             <widget class="QFrame" name="curvePoint1_2">
              <property name="geometry">
@@ -6517,62 +6270,15 @@ border: 2px solid rgba(255, 255, 255, 220);</string>
        <item>
         <widget class="QLabel" name="label_zones_2">
          <property name="styleSheet">
-<<<<<<< HEAD
-          <string notr="true">
-font-weight: bold;
-margin-top: 10px;</string>
-=======
           <string notr="true">font-weight: 700;
         font-size: 11pt;
         color: rgb(0, 0, 90);
         margin-top: 10px;
         margin-bottom: 4px;</string>
->>>>>>> 7ce8a15 (Initial commit: all local work)
          </property>
          <property name="text">
           <string>📍 RÉPARTITION PAR ZONE :</string>
          </property>
-<<<<<<< HEAD
-        </widget>
-       </item>
-       <item>
-        <layout class="QHBoxLayout" name="zonesContainerLayout_2">
-         <item>
-          <layout class="QVBoxLayout" name="zoneNordLayout_2">
-           <item>
-            <widget class="QLabel" name="label_zoneNord_2">
-             <property name="styleSheet">
-              <string notr="true"> 	color: rgb(0, 0, 90);
-
-text-align: center;
-font-weight: bold;</string>
-             </property>
-             <property name="text">
-              <string>Nord</string>
-             </property>
-             <property name="alignment">
-              <set>Qt::AlignmentFlag::AlignCenter</set>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QProgressBar" name="progressZoneNord_2">
-             <property name="minimumSize">
-              <size>
-               <width>30</width>
-               <height>120</height>
-              </size>
-             </property>
-             <property name="styleSheet">
-              <string notr="true">QProgressBar:vertical {
-    width: 25px;
-    border: 2px solid #3498db;
-    border-radius: 5px;
-   background-color: rgb(224, 238, 255);
-    text-align: center;
-    padding: 5px;
-margin-left:70 px;
-=======
          <property name="alignment">
           <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
          </property>
@@ -6657,71 +6363,15 @@ margin-left:70 px;
               <property name="styleSheet">
                <string notr="true">QProgressBar:vertical {
     width: 28px;
-    border: 2px solid #3498db;
+    border: 2px solid #0057d8;
     border-radius: 6px;
     background-color: rgb(224, 238, 255);
     text-align: center;
     padding: 5px;
->>>>>>> 7ce8a15 (Initial commit: all local work)
 }
 QProgressBar::chunk:vertical {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 #3498db, stop:1 #2980b9);
-<<<<<<< HEAD
-    border-radius: 3px;
-}</string>
-             </property>
-             <property name="value">
-              <number>0</number>
-             </property>
-             <property name="textVisible">
-              <bool>true</bool>
-             </property>
-             <property name="orientation">
-              <enum>Qt::Orientation::Vertical</enum>
-             </property>
-             <property name="format">
-              <string>%p%</string>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </item>
-         <item>
-          <layout class="QVBoxLayout" name="zoneSudLayout_2">
-           <item>
-            <widget class="QLabel" name="label_zoneSud_2">
-             <property name="styleSheet">
-              <string notr="true"> 	color: rgb(0, 0, 90);
-
-text-align: center;
-font-weight: bold;</string>
-             </property>
-             <property name="text">
-              <string>Sud</string>
-             </property>
-             <property name="alignment">
-              <set>Qt::AlignmentFlag::AlignCenter</set>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QProgressBar" name="progressZoneSud_2">
-             <property name="minimumSize">
-              <size>
-               <width>30</width>
-               <height>120</height>
-              </size>
-             </property>
-             <property name="styleSheet">
-              <string notr="true">QProgressBar:vertical {
-    width: 25px;
-    border: 2px solid #27ae60;
-    border-radius: 5px;
-background-color: rgb(224, 238, 255);    text-align: center;
-    padding: 5px;
-margin-left: 70px;
-=======
+        stop:0 #2196f3, stop:1 #0057d8);
     border-radius: 4px;
 }</string>
               </property>
@@ -6794,66 +6444,10 @@ margin-left: 70px;
     background-color: rgb(224, 238, 255);
     text-align: center;
     padding: 5px;
->>>>>>> 7ce8a15 (Initial commit: all local work)
 }
 QProgressBar::chunk:vertical {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 #27ae60, stop:1 #229954);
-<<<<<<< HEAD
-    border-radius: 3px;
-}</string>
-             </property>
-             <property name="value">
-              <number>0</number>
-             </property>
-             <property name="textVisible">
-              <bool>true</bool>
-             </property>
-             <property name="orientation">
-              <enum>Qt::Orientation::Vertical</enum>
-             </property>
-             <property name="format">
-              <string>%p%</string>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </item>
-         <item>
-          <layout class="QVBoxLayout" name="zoneEstLayout_2">
-           <item>
-            <widget class="QLabel" name="label_zoneEst_2">
-             <property name="styleSheet">
-              <string notr="true"> 	color: rgb(0, 0, 90);
-
-text-align: center;
-font-weight: bold;</string>
-             </property>
-             <property name="text">
-              <string>Est</string>
-             </property>
-             <property name="alignment">
-              <set>Qt::AlignmentFlag::AlignCenter</set>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QProgressBar" name="progressZoneEst_2">
-             <property name="minimumSize">
-              <size>
-               <width>30</width>
-               <height>120</height>
-              </size>
-             </property>
-             <property name="styleSheet">
-              <string notr="true">QProgressBar:vertical {
-    width: 25px;
-    border: 2px solid #f39c12;
-    border-radius: 5px;background-color: rgb(224, 238, 255);
-    text-align: center;
-    padding: 5px;
-margin-left:70px;
-=======
     border-radius: 4px;
 }</string>
               </property>
@@ -6926,64 +6520,10 @@ margin-left:70px;
     background-color: rgb(224, 238, 255);
     text-align: center;
     padding: 5px;
->>>>>>> 7ce8a15 (Initial commit: all local work)
 }
 QProgressBar::chunk:vertical {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 #f39c12, stop:1 #d68910);
-<<<<<<< HEAD
-    border-radius: 3px;
-}</string>
-             </property>
-             <property name="value">
-              <number>0</number>
-             </property>
-             <property name="textVisible">
-              <bool>true</bool>
-             </property>
-             <property name="orientation">
-              <enum>Qt::Orientation::Vertical</enum>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </item>
-         <item>
-          <layout class="QVBoxLayout" name="zoneOuestLayout_2">
-           <item>
-            <widget class="QLabel" name="label_zoneOuest_2">
-             <property name="styleSheet">
-              <string notr="true"> 	color: rgb(0, 0, 90);
-
-text-align: center;
-font-weight: bold;</string>
-             </property>
-             <property name="text">
-              <string>Ouest</string>
-             </property>
-             <property name="alignment">
-              <set>Qt::AlignmentFlag::AlignCenter</set>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QProgressBar" name="progressZoneOuest_2">
-             <property name="minimumSize">
-              <size>
-               <width>30</width>
-               <height>120</height>
-              </size>
-             </property>
-             <property name="styleSheet">
-              <string notr="true">QProgressBar:vertical {
-    width: 25px;
-    border: 2px solid #9b59b6;
-    border-radius: 5px;
-  background-color: rgb(224, 238, 255);
-    text-align: center;
-    padding: 5px;
-margin-left:70 px;
-=======
     border-radius: 4px;
 }</string>
               </property>
@@ -7053,42 +6593,10 @@ margin-left:70 px;
     background-color: rgb(224, 238, 255);
     text-align: center;
     padding: 5px;
->>>>>>> 7ce8a15 (Initial commit: all local work)
 }
 QProgressBar::chunk:vertical {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 #9b59b6, stop:1 #8e44ad);
-<<<<<<< HEAD
-    border-radius: 3px;
-}</string>
-             </property>
-             <property name="value">
-              <number>0</number>
-             </property>
-             <property name="textVisible">
-              <bool>true</bool>
-             </property>
-             <property name="orientation">
-              <enum>Qt::Orientation::Vertical</enum>
-             </property>
-             <property name="format">
-              <string>%p%</string>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <layout class="QHBoxLayout" name="exportStatsLayout_2">
-         <item>
-          <spacer name="horizontalSpacer_4">
-           <property name="orientation">
-            <enum>Qt::Orientation::Horizontal</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-=======
     border-radius: 4px;
 }</string>
               </property>
@@ -7134,15 +6642,11 @@ QProgressBar::chunk:vertical {
             </sizepolicy>
            </property>
            <property name="minimumSize">
->>>>>>> 7ce8a15 (Initial commit: all local work)
             <size>
              <width>40</width>
              <height>20</height>
             </size>
            </property>
-<<<<<<< HEAD
-          </spacer>
-=======
            <property name="maximumSize">
             <size>
              <width>16777215</width>
@@ -7151,10 +6655,10 @@ QProgressBar::chunk:vertical {
            </property>
            <property name="styleSheet">
             <string notr="true">background-color: qlineargradient(x1:0, y1:0.5, x2:1, y2:0.5,
-    stop:0 rgba(0, 102, 204, 200),
-    stop:1 rgba(0, 153, 255, 200));
+    stop:0 rgba(89, 0, 200, 180),
+    stop:1 rgba(140, 0, 255, 180));
 border-radius: 4px;
-border: 2px solid rgba(0, 70, 160, 230);
+border: 2px solid rgba(89, 0, 200, 220);
 margin-left: 4px;
 margin-right: 8px;
 margin-top: 2px;
@@ -7167,7 +6671,6 @@ margin-bottom: 2px;</string>
             <enum>QFrame::Shadow::Plain</enum>
            </property>
           </widget>
->>>>>>> 7ce8a15 (Initial commit: all local work)
          </item>
          <item>
           <widget class="QPushButton" name="btnExportStatsPDF_2">
@@ -7198,9 +6701,10 @@ margin-bottom: 2px;</string>
       </property>
       <property name="styleSheet">
        <string notr="true">
-background-color: rgb(224, 238, 255);
-border:1PX solid  rgb(0, 0, 115);
-border-radius:10px;</string>
+background-color: qlineargradient(x1:0, y1:0, x2:0.3, y2:1,
+  stop:0 #e8eaf6, stop:0.2 #c5cae9, stop:0.5 #e3f2fd, stop:0.8 #c5cae9, stop:1 #e8eaf6);
+border: 2px solid #3949ab;
+border-radius: 16px;</string>
       </property>
       <property name="frameShape">
        <enum>QFrame::Shape::StyledPanel</enum>
@@ -7211,38 +6715,54 @@ border-radius:10px;</string>
       <layout class="QVBoxLayout" name="verticalLayout_map">
        <item>
         <widget class="QLabel" name="label_map_title">
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>40</height>
+          </size>
+         </property>
          <property name="styleSheet">
-          <string notr="true"/>
+          <string notr="true">color: white;
+font-size: 17px;
+font-weight: bold;
+letter-spacing: 2px;
+padding: 8px 14px;
+border: none;
+background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+  stop:0 #1a237e, stop:0.5 #283593, stop:1 #1a237e);
+border-radius: 10px;</string>
          </property>
          <property name="text">
-          <string> CARTE DU PORT - VISION GLOBALE</string>
+          <string>  ⚓ CARTE DU PORT</string>
          </property>
         </widget>
        </item>
        <item>
-        <widget class="QPushButton" name="btnRefreshMap">
+        <widget class="QPushButton" name="btnExportMapPdf">
          <property name="maximumSize">
           <size>
            <width>200</width>
-           <height>30</height>
+           <height>32</height>
           </size>
          </property>
          <property name="styleSheet">
-          <string notr="true">QPushButton {
-    background-color: rgba(0, 0, 127,0.7);
-    border: 1px solid #59abc8;
-    border-radius: 8px;
-    padding: 5px 10px;
-   
-    font-size: 11px;
-    font-weight: bold;
+          <string notr="true">#btnExportMapPdf {
+    background-color: rgba(80, 0, 0, 0.7);
+    border: 1px solid rgba(89, 171, 200, 0.95);
+    border-radius: 10px;
+    padding: 6px 12px;
+    color: white;
+    font-weight: 600;
 }
-QPushButton:hover {
-        background-color: rgba(0, 0, 127,0.7);
-}</string>
+
+#btnExportMapPdf:hover {
+    background-color: rgb(162, 15, 18);
+    border-color: rgba(255, 140, 0, 0.9);
+}
+</string>
          </property>
          <property name="text">
-          <string> Rafraîchir la carte</string>
+          <string>📄 Exporter PDF</string>
          </property>
         </widget>
        </item>
@@ -7255,25 +6775,27 @@ QPushButton:hover {
           </size>
          </property>
          <property name="styleSheet">
-          <string notr="true">background-color: rgb(224, 238, 255);
-border-radius: 12px;
-border: 2px solid #34495e;</string>
+          <string notr="true">background-color: qradialgradient(cx:0.5, cy:0.5, radius:0.9,
+  fx:0.4, fy:0.4,
+  stop:0 #e1f5fe, stop:0.3 #b3e5fc, stop:0.6 #e1f5fe, stop:1 #e8eaf6);
+border-radius: 16px;
+border: 2px solid #7986cb;</string>
          </property>
          <layout class="QGridLayout" name="gridLayout_map">
           <property name="leftMargin">
-           <number>20</number>
+           <number>12</number>
           </property>
           <property name="topMargin">
-           <number>20</number>
+           <number>12</number>
           </property>
           <property name="rightMargin">
-           <number>20</number>
+           <number>12</number>
           </property>
           <property name="bottomMargin">
-           <number>20</number>
+           <number>12</number>
           </property>
           <property name="spacing">
-           <number>15</number>
+           <number>8</number>
           </property>
           <item row="2" column="1">
            <widget class="QFrame" name="zoneSud_map">
@@ -7396,26 +6918,29 @@ qproperty-alignment: AlignCenter;</string>
              </size>
             </property>
             <property name="styleSheet">
-             <string notr="true">background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-stop:0 rgba(52, 152, 219, 0.3), stop:1 rgba(41, 128, 185, 0.5));
+             <string notr="true">background-color: qradialgradient(cx:0.5, cy:0.5, radius:0.5,
+  fx:0.5, fy:0.5,
+  stop:0 rgba(21, 101, 192, 0.3),
+  stop:0.4 rgba(21, 101, 192, 0.15),
+  stop:0.8 rgba(21, 101, 192, 0.05),
+  stop:1 transparent);
 border-radius: 60px;
-border: 3px dashed #3498db;</string>
+border: 3px dashed #5c6bc0;</string>
             </property>
             <layout class="QVBoxLayout" name="verticalLayout_centre">
              <item>
               <widget class="QLabel" name="label_centre_map">
                <property name="styleSheet">
-                <string notr="true">color: #3498db;
+                <string notr="true">color: #1a237e;
 font-weight: bold;
-font-size: 14px;
-qproperty-alignment: AlignCenter;</string>
+font-size: 18px;
+letter-spacing: 4px;
+qproperty-alignment: AlignCenter;
+border: none;
+background: transparent;</string>
                </property>
                <property name="text">
-<<<<<<< HEAD
-                <string>âš“ PORT</string>
-=======
-                <string> PORT</string>
->>>>>>> 7ce8a15 (Initial commit: all local work)
+                <string>⛵ PORT</string>
                </property>
               </widget>
              </item>
@@ -7535,11 +7060,19 @@ qproperty-alignment: AlignCenter;</string>
         <widget class="QLabel" name="label_legend">
          <property name="styleSheet">
           <string notr="true">
-font-size: 10px;
-qproperty-alignment: AlignCenter;</string>
+font-size: 11px;
+qproperty-alignment: AlignCenter;
+background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+  stop:0 rgba(255,255,255,0.95), stop:0.5 rgba(227,242,253,0.9), stop:1 rgba(255,255,255,0.95));
+border-radius: 12px;
+padding: 8px 20px;
+border: 1px solid #7986cb;
+color: #1a237e;
+font-weight: bold;
+letter-spacing: 0.5px;</string>
          </property>
          <property name="text">
-          <string>Légende : 🟩 Peu occupé | 🟨 Moyennement | 🟧 Maintenance | 🟥 Très occupé</string>
+          <string>🟢 Libre      🟠 Maintenance      🔴 Occupé</string>
          </property>
         </widget>
        </item>
@@ -7547,12 +7080,16 @@ qproperty-alignment: AlignCenter;</string>
         <widget class="QLabel" name="label_map_info">
          <property name="styleSheet">
           <string notr="true">
-font-size: 10px;
+font-size: 9px;
 font-style: italic;
-qproperty-alignment: AlignCenter;</string>
+qproperty-alignment: AlignCenter;
+color: #3949ab;
+background: transparent;
+border: none;
+padding: 2px 0px 8px 0px;</string>
          </property>
          <property name="text">
-          <string>Cliquez sur une zone pour voir les détails des quais</string>
+          <string>📍 Survolez un quai pour voir ses détails</string>
          </property>
         </widget>
        </item>
@@ -7572,47 +7109,6 @@ qproperty-alignment: AlignCenter;</string>
       </property>
       <property name="text">
        <string>Gestion des quais</string>
-      </property>
-     </widget>
-<<<<<<< HEAD
-     <widget class="QPushButton" name="btnRefreshStats_5">
-      <property name="geometry">
-       <rect>
-        <x>1090</x>
-        <y>130</y>
-        <width>91</width>
-        <height>31</height>
-       </rect>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">image: url(:/res/rafraichir.png);
-background-color:transparent;
-border:none;
-</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
-=======
->>>>>>> 7ce8a15 (Initial commit: all local work)
-     <widget class="QPushButton" name="btnRefreshStats_6">
-      <property name="geometry">
-       <rect>
-        <x>20</x>
-        <y>130</y>
-        <width>91</width>
-        <height>41</height>
-       </rect>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">image: url(:/res/rafraichir.png);
-background-color:transparent;
-border:none;
-</string>
-      </property>
-      <property name="text">
-       <string/>
       </property>
      </widget>
     </widget>
@@ -10328,13 +9824,8 @@ background-color:transparent;
     <rect>
      <x>0</x>
      <y>0</y>
-<<<<<<< HEAD
-     <width>1521</width>
-     <height>25</height>
-=======
      <width>1612</width>
-     <height>22</height>
->>>>>>> 7ce8a15 (Initial commit: all local work)
+     <height>26</height>
     </rect>
    </property>
   </widget>

@@ -30,7 +30,7 @@ Connection* Connection::getInstance() {
 bool Connection::createconnect() {
     try {
         // 🔧 PARAMÈTRES DE CONNEXION - À MODIFIER SELON VOTRE CONFIG
-        QString nomSourceDonnees = "AQUATEC";  // Nom de votre source ODBC
+        QString nomSourceDonnees = "projet";  // Nom de votre source ODBC
         QString nomUtilisateur = "nour1";            // Nom d'utilisateur Oracle
         QString motDePasse = "nour123";              // Mot de passe Oracle
 
