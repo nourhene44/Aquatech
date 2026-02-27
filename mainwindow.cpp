@@ -2481,22 +2481,27 @@ void MainWindow::on_pushButton_pdfb_clicked()
     for (int i = 0; i < colCount; ++i)
         colWidths[i] = static_cast<int>(totalW * proportions[i]);
 
-    int rowHeight = 36;
-    int headerHeight = 40;
+    int rowHeight = 40;
+    int headerHeight = 48;
     int xMargin = leftMargin;
 
     // ── Draw header row ──
-    QFont headerFont("Arial", 10, QFont::Bold);
-    headerFont.setPointSize(10);
+    QFont headerFont("Arial", 11, QFont::Bold);
+    headerFont.setPointSize(11);
     painter.setFont(headerFont);
+
+    // Header gradient style (more CSS-like)
+    QLinearGradient headerGrad(0, yStart, 0, yStart + headerHeight);
+    headerGrad.setColorAt(0.0, QColor("#0b5ea8"));
+    headerGrad.setColorAt(1.0, QColor("#2e86c1"));
 
     int x = xMargin;
     for (int c = 0; c < colCount; ++c) {
         QRect cellRect(x, yStart, colWidths[c], headerHeight);
-        painter.fillRect(cellRect, QColor(0, 82, 155));
+        painter.fillRect(cellRect, headerGrad);
         painter.setPen(Qt::white);
-        painter.drawText(cellRect.adjusted(8, 0, -8, 0), Qt::AlignCenter | Qt::TextWordWrap, headers[c]);
-        painter.setPen(QPen(QColor(220, 220, 220), 1));
+        painter.drawText(cellRect.adjusted(12, 0, -12, 0), Qt::AlignVCenter | Qt::AlignLeft, headers[c]);
+        painter.setPen(QPen(QColor(200, 210, 220), 1));
         painter.drawRect(cellRect);
         x += colWidths[c];
     }
@@ -2532,13 +2537,12 @@ void MainWindow::on_pushButton_pdfb_clicked()
         }
 
         // Alternate row background
-        QColor bg = (r % 2 == 0) ? QColor(250, 250, 252) : QColor(255, 255, 255);
-
+        QColor bg = (r % 2 == 0) ? QColor(250, 250, 252) : QColor(245, 251, 255);
         x = xMargin;
         for (int c = 0; c < colCount; ++c) {
             QRect cellRect(x, y, colWidths[c], rowHeight);
             painter.fillRect(cellRect, bg);
-            painter.setPen(QPen(QColor(230, 230, 230), 1));
+            painter.setPen(QPen(QColor(220, 225, 230), 1));
             painter.drawRect(cellRect);
 
             QString text;
@@ -2546,7 +2550,7 @@ void MainWindow::on_pushButton_pdfb_clicked()
             if (item) text = item->text();
 
             painter.setPen(Qt::black);
-            painter.drawText(cellRect.adjusted(8, 0, -8, 0), Qt::AlignVCenter | Qt::AlignLeft | Qt::TextWordWrap, text);
+            painter.drawText(cellRect.adjusted(12, 6, -12, -6), Qt::AlignVCenter | Qt::AlignLeft | Qt::TextWordWrap, text);
             x += colWidths[c];
         }
         y += rowHeight;
@@ -2785,14 +2789,291 @@ void MainWindow::on_pushButton_pdfb_clicked()
 
 void MainWindow::on_pushButton_pdfb_2_clicked()
 {
-    // Exporter la table des quais (page_3) en PDF
+    // Exporter la table des quais (page_3) en PDF avec style similaire à l'export bateaux
     if (!ui || !ui->tableWidgetQuai) {
         return;
     }
 
-    exportWidgetToPdf(ui->tableWidgetQuai,
-                      QStringLiteral("quais.pdf"),
-                      QStringLiteral("Exporter les quais en PDF"));
+    if (ui->tableWidgetQuai->rowCount() == 0) {
+        QMessageBox::warning(this, "Export PDF", "Le tableau est vide, rien à exporter.");
+        return;
+    }
+
+    QString defaultPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation)
+                          + "/Quais_" + QDate::currentDate().toString("yyyy-MM-dd") + ".pdf";
+
+    QString filePath = QFileDialog::getSaveFileName(this, "Enregistrer le PDF", defaultPath, "PDF (*.pdf)");
+    if (filePath.isEmpty()) return;
+
+    QPdfWriter writer(filePath);
+    writer.setPageSize(QPageSize(QPageSize::A4));
+    writer.setPageOrientation(QPageLayout::Landscape);
+    writer.setResolution(300);
+
+    QPainter painter(&writer);
+    if (!painter.isActive()) {
+        QMessageBox::critical(this, "Erreur", "Impossible de créer le fichier PDF.");
+        return;
+    }
+
+    const int pageW = writer.width();
+    const int pageH = writer.height();
+
+    const int leftMargin = 50;
+    const int rightMargin = 50;
+    const int topMargin = 100;
+    const int bottomMargin = 80;
+    const int contentW = pageW - leftMargin - rightMargin;
+
+    // Title
+    QFont titleFont("Arial", 20, QFont::Bold);
+    titleFont.setPointSize(20);
+    painter.setFont(titleFont);
+    painter.setPen(QColor(0, 82, 155));
+    painter.drawText(QRect(leftMargin, topMargin - 40, contentW, 60), Qt::AlignCenter, "AQUATEC – Liste des Quais");
+
+    // Date
+    QFont dateFont("Arial", 9);
+    dateFont.setPointSize(9);
+    painter.setFont(dateFont);
+    painter.setPen(Qt::darkGray);
+    painter.drawText(QRect(leftMargin, topMargin + 20, contentW, 30), Qt::AlignCenter,
+                     "Exporté le " + QDateTime::currentDateTime().toString("dd/MM/yyyy hh:mm"));
+
+    int yStart = topMargin + 80;
+
+    QStringList headers = { "ID Quai", "Nom Quai", "Zone Port", "Zone Couverte", "Longueur Max", "Capacité", "Statut" };
+    const int colCount = headers.size();
+
+    QVector<int> colWidths(colCount);
+    int totalW = contentW;
+    QVector<double> proportions = { 0.07, 0.30, 0.12, 0.10, 0.10, 0.10, 0.21 };
+    for (int i = 0; i < colCount; ++i)
+        colWidths[i] = static_cast<int>(totalW * proportions[i]);
+
+    int rowHeight = 36;
+    int headerHeight = 40;
+    int xMargin = leftMargin;
+
+    // Header row
+    QFont headerFont("Arial", 10, QFont::Bold);
+    headerFont.setPointSize(10);
+    painter.setFont(headerFont);
+
+    int x = xMargin;
+    for (int c = 0; c < colCount; ++c) {
+        QRect cellRect(x, yStart, colWidths[c], headerHeight);
+        painter.fillRect(cellRect, QColor(0, 82, 155));
+        painter.setPen(Qt::white);
+        painter.drawText(cellRect.adjusted(8, 0, -8, 0), Qt::AlignCenter | Qt::TextWordWrap, headers[c]);
+        painter.setPen(QPen(QColor(220, 220, 220), 1));
+        painter.drawRect(cellRect);
+        x += colWidths[c];
+    }
+
+    // Data rows (from ui table)
+    QFont cellFont("Arial", 9);
+    cellFont.setPointSize(9);
+    painter.setFont(cellFont);
+
+    int y = yStart + headerHeight;
+    int rowCount = ui->tableWidgetQuai->rowCount();
+
+    for (int r = 0; r < rowCount; ++r) {
+        if (y + rowHeight > pageH - 100) {
+            writer.newPage();
+            y = 100;
+
+            // Redraw header on new page
+            painter.setFont(headerFont);
+            x = xMargin;
+            for (int c = 0; c < colCount; ++c) {
+                QRect cellRect(x, y, colWidths[c], headerHeight);
+                painter.fillRect(cellRect, QColor(0, 0, 112));
+                painter.setPen(Qt::white);
+                painter.drawText(cellRect.adjusted(10, 0, -10, 0), Qt::AlignCenter | Qt::TextWordWrap, headers[c]);
+                painter.setPen(QColor(0, 0, 112));
+                painter.drawRect(cellRect);
+                x += colWidths[c];
+            }
+            y += headerHeight;
+            painter.setFont(cellFont);
+        }
+
+        QColor bg = (r % 2 == 0) ? QColor(250, 250, 252) : QColor(255, 255, 255);
+
+        x = xMargin;
+        for (int c = 0; c < colCount; ++c) {
+            QRect cellRect(x, y, colWidths[c], rowHeight);
+            painter.fillRect(cellRect, bg);
+            painter.setPen(QPen(QColor(230, 230, 230), 1));
+            painter.drawRect(cellRect);
+
+            QString text;
+            // Map columns to table columns (ignoring the Actions column which is last)
+            QTableWidgetItem *item = ui->tableWidgetQuai->item(r, c);
+            if (item) text = item->text();
+
+            painter.setPen(Qt::black);
+            painter.drawText(cellRect.adjusted(8, 0, -8, 0), Qt::AlignVCenter | Qt::AlignLeft | Qt::TextWordWrap, text);
+            x += colWidths[c];
+        }
+        y += rowHeight;
+    }
+
+    // Footer on table page
+    painter.setPen(Qt::darkGray);
+    QFont footerFont("Arial", 9);
+    footerFont.setPointSize(9);
+    painter.setFont(footerFont);
+    painter.drawText(QRect(leftMargin, pageH - bottomMargin + 10, contentW, bottomMargin - 10), Qt::AlignCenter,
+                     QString("Total: %1 quais").arg(rowCount));
+
+    // PAGE 2 : STATISTICS (zones + statut)
+    writer.newPage();
+
+    // Gather stats from DB (preferable to reading UI only)
+    int totalQuais = 0;
+    QMap<QString,int> zoneCounts;
+    QMap<QString,int> statutCounts;
+
+    Connection *conn = Connection::getInstance();
+    if (conn && conn->ensureOpen()) {
+        QSqlDatabase db = conn->getDatabase();
+
+        QSqlQuery qz(db);
+        if (qz.exec("SELECT Zone_Port, COUNT(*) FROM QUAIS GROUP BY Zone_Port")) {
+            while (qz.next()) {
+                QString zone = qz.value(0).toString();
+                int cnt = qz.value(1).toInt();
+                zoneCounts[zone] = cnt;
+                totalQuais += cnt;
+            }
+        }
+
+        QSqlQuery qs(db);
+        if (qs.exec("SELECT Statut, COUNT(*) FROM QUAIS GROUP BY Statut")) {
+            while (qs.next()) {
+                QString st = qs.value(0).toString();
+                int cnt = qs.value(1).toInt();
+                statutCounts[st] = cnt;
+            }
+        }
+    } else {
+        // Fallback: compute from UI table
+        totalQuais = rowCount;
+        for (int r = 0; r < rowCount; ++r) {
+            QString zone = ui->tableWidgetQuai->item(r, 2) ? ui->tableWidgetQuai->item(r, 2)->text() : QString();
+            QString st = ui->tableWidgetQuai->item(r, 6) ? ui->tableWidgetQuai->item(r, 6)->text() : QString();
+            zoneCounts[zone] += 1;
+            statutCounts[st] += 1;
+        }
+    }
+
+    // Draw pie for zones on the right (styled)
+    int statsLeft = leftMargin + 20;
+    painter.setPen(QColor(0, 82, 155));
+    QFont secFont("Arial", 13, QFont::Bold);
+    secFont.setPointSize(13);
+    painter.setFont(secFont);
+    painter.drawText(QRect(statsLeft, 40, contentW, 30), Qt::AlignLeft, QString::fromUtf8("Répartition par Zone"));
+
+    int pieX = statsLeft;
+    int pieY = 90;
+    int pieSz = qMin(360, pageH - 200);
+    QRectF pieRect(pieX, pieY, pieSz, pieSz);
+
+    // Build color palette
+    QVector<QColor> colors = { QColor("#4A90D9"), QColor("#27ae60"), QColor("#F5A623"), QColor("#9b59b6"), QColor("#D0021B") };
+    int colorIdx = 0;
+
+    if (totalQuais > 0) {
+        int startA = 90 * 16;
+        for (auto it = zoneCounts.constBegin(); it != zoneCounts.constEnd(); ++it) {
+            int cnt = it.value();
+            if (cnt <= 0) continue;
+            int spanA = qRound(360.0 * cnt / totalQuais * 16);
+            QColor col = colors[colorIdx % colors.size()];
+            painter.setPen(QPen(Qt::white, 2));
+            painter.setBrush(col);
+            painter.drawPie(pieRect, startA, -spanA);
+            startA -= spanA;
+            colorIdx++;
+        }
+    } else {
+        painter.setPen(QPen(QColor(0, 0, 112), 2));
+        painter.setBrush(QColor(240, 240, 240));
+        painter.drawEllipse(pieRect);
+    }
+
+    // Legend (styled with circular bullets)
+    int legendX = pieX + pieSz + 24;
+    int legendY = pieY + 10;
+    QFont legendFont("Arial", 10);
+    legendFont.setPointSize(10);
+    painter.setFont(legendFont);
+    int itemH = 28;
+    colorIdx = 0;
+    for (auto it = zoneCounts.constBegin(); it != zoneCounts.constEnd(); ++it) {
+        QColor col = colors[colorIdx % colors.size()];
+        painter.setBrush(col);
+        painter.setPen(Qt::NoPen);
+        QRectF bulletRect(legendX, legendY + (itemH - 12) / 2.0, 12, 12);
+        painter.drawEllipse(bulletRect);
+        painter.setPen(Qt::black);
+        painter.drawText(QRect(legendX + 18, legendY, 320, itemH), Qt::AlignVCenter | Qt::AlignLeft,
+                         QString("%1: %2 (%3%)").arg(it.key()).arg(it.value()).arg(totalQuais>0?QString::number(qRound(100.0*it.value()/totalQuais)):QString("0")));
+        legendY += itemH + 8;
+        colorIdx++;
+    }
+
+    // Draw statut bars below
+    int barsX = statsLeft;
+    int barsY = pieY + pieSz + 40;
+    painter.setFont(secFont);
+    painter.setPen(QColor(0, 82, 155));
+    painter.drawText(QRect(barsX, barsY - 30, contentW, 30), Qt::AlignLeft, QString::fromUtf8("Répartition par Statut"));
+
+    int barMaxW = contentW - 200;
+    int barH = 28;
+    int gap = 18;
+    QMap<QString,QColor> statutColor = {
+        {"Libre", QColor("#66bb6a")},
+        {"Occupe", QColor("#ef5350")},
+        {"Maintenance", QColor("#ffa726")}
+    };
+
+    for (auto it = statutCounts.constBegin(); it != statutCounts.constEnd(); ++it) {
+        int cnt = it.value();
+        int pct = totalQuais>0 ? qRound(100.0 * cnt / totalQuais) : 0;
+        QColor col = statutColor.contains(it.key()) ? statutColor[it.key()] : QColor("#90a4ae");
+
+        QRect bgRect(barsX, barsY, barMaxW, barH);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(240, 245, 250));
+        painter.drawRoundedRect(bgRect, 6, 6);
+
+        int fillW = qMax(30, qRound(static_cast<double>(pct) / 100.0 * barMaxW));
+        QRect fillRect(barsX, barsY, fillW, barH);
+        painter.setBrush(col);
+        painter.drawRoundedRect(fillRect, 6, 6);
+
+        painter.setPen(Qt::black);
+        painter.drawText(QRect(barsX + barMaxW + 12, barsY, 160, barH), Qt::AlignVCenter | Qt::AlignLeft,
+                         QString("%1 (%2%)").arg(it.key()).arg(pct));
+
+        barsY += barH + gap;
+    }
+
+    // Footer
+    painter.setPen(Qt::darkGray);
+    painter.setFont(footerFont);
+    painter.drawText(QRect(leftMargin, pageH - bottomMargin + 10, contentW, bottomMargin - 10), Qt::AlignCenter,
+                     "AQUATEC - Rapport généré le " + QDateTime::currentDateTime().toString("dd/MM/yyyy hh:mm"));
+
+    painter.end();
+
+    QMessageBox::information(this, "Export PDF", QString("PDF exporté avec succès !\n%1").arg(filePath));
 }
 
 void MainWindow::on_btnExportStatsPDF_2_clicked()

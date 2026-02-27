@@ -3770,17 +3770,7 @@ border:1PX solid  rgb(0, 0, 115);
             </size>
            </property>
            <property name="styleSheet">
-            <string notr="true">border-radius: 100px;
-        background: qconicalgradient(cx:0.5, cy:0.5, angle:90,
-            stop:0.0 #3498db,
-            stop:0.25 #27ae60,
-            stop:0.25 #f39c12,
-            stop:0.55 #9b59b6,
-            stop:0.55 #e74c3c,
-            stop:0.85 #1abc9c,
-            stop:0.85 rgba(26, 188, 156, 0.3) 100%);
-        border: 5px solid  rgb(74, 82, 90);
-</string>
+            <string notr="true"/>
            </property>
            <property name="text">
             <string/>
@@ -4556,61 +4546,61 @@ background-color:transparent;</string>
       <attribute name="horizontalHeaderDefaultSectionSize">
        <number>125</number>
       </attribute>
-    <column>
-     <property name="text">
-      <string>ID Bateau</string>
-     </property>
-    </column>
-    <column>
-     <property name="text">
-      <string>Nom Bateau</string>
-     </property>
-    </column>
-    <column>
-     <property name="text">
-      <string>Proprietaire</string>
-     </property>
-    </column>
-    <column>
-     <property name="text">
-      <string>Largeur</string>
-     </property>
-    </column>
-    <column>
-     <property name="text">
-      <string>Type</string>
-     </property>
-    </column>
-    <column>
-     <property name="text">
-      <string>Statut</string>
-     </property>
-    </column>
-    <column>
-     <property name="text">
-      <string>Capacité</string>
-     </property>
-    </column>
-    <column>
-     <property name="text">
-      <string>Date entrée</string>
-     </property>
-    </column>
-    <column>
-     <property name="text">
-      <string>Date dernière maintenance</string>
-     </property>
-    </column>
-    <column>
-     <property name="text">
-      <string>Fréquence maintenance</string>
-     </property>
-    </column>
-    <column>
-     <property name="text">
-      <string>Actions</string>
-     </property>
-    </column>
+      <column>
+       <property name="text">
+        <string>ID Bateau</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Nom Bateau</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Proprietaire</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Largeur</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Type</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Statut</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Capacité</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Date entrée</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Date dernière maintenance</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Fréquence maintenance</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Actions</string>
+       </property>
+      </column>
      </widget>
      <widget class="QLabel" name="label_5b">
       <property name="geometry">
@@ -9825,7 +9815,7 @@ background-color:transparent;
      <x>0</x>
      <y>0</y>
      <width>1612</width>
-     <height>26</height>
+     <height>25</height>
     </rect>
    </property>
   </widget>
