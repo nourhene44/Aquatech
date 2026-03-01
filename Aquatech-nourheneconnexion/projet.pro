@@ -12,12 +12,18 @@ SOURCES += \
     GQuai.cpp \
     captures.cpp \
     connection.cpp \
+    quotas.cpp \
+    actiondelegate.cpp \
+    actionswidget.cpp \
     main.cpp
 
 HEADERS += \
     GQuai.h \
     captures.h \
-    connection.h
+    connection.h \
+    quotas.h \
+    actiondelegate.h \
+    actionswidget.h
 
 FORMS += \
     mainwindow.ui

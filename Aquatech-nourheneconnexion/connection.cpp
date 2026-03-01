@@ -21,3 +21,18 @@ bool Connection::createconnect()
 
     return  test;
 }
+
+QString Connection::lastError() const
+{
+    return m_lastError;
+}
+
+QString Connection::selectedDriver() const
+{
+    return m_selectedDriver;
+}
+
+QStringList Connection::availableDrivers() const
+{
+    return m_availableDrivers;
+}

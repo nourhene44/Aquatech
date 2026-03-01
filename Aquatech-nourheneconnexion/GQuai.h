@@ -6,6 +6,7 @@
 #include <QMessageBox>
 
 #include "connection.h"
+#include "quotas.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -96,10 +97,9 @@ private slots:
     void on_cap_btnBackToCapturesMainSurpeche_clicked();
     void on_cap_btnBackToCapturesMainTendance_clicked();
     void on_cap_btnValiider_3_clicked(); // form submit button
-
-    // new controls for table2 editing
-    void on_cap_btnModifier_2_clicked();
-    void on_cap_btnValider_2_clicked();
+    
+    // Gestion des quotas
+    void on_cap_btnModifyQuota_clicked();  // Button to modify quota values
 
     // Alertes
     void on_pushButton_7b_clicked(); // Afficher le panneau des alertes (framealertb)
@@ -114,12 +114,6 @@ private slots:
     void on_pushButton_2_clicked();  // Retour
     void on_pushButton_9_clicked();  // Voir les statistiques
 
-    // statistics helpers for page_4
-    void on_btnRefreshStats_2_clicked();
-    void updateStatsTopSpecies();
-
-    // quotas persistence
-    void loadQuotasFromCaptures();
 
 private:
     Ui::MainWindow *ui;
@@ -127,11 +121,18 @@ private:
     void showFrame(QWidget* frameToShow);
     void setupFrames();
     void normalizeUiTexts();
+    void initializeQuotasTable();  // Create QUOTAS table if it doesn't exist
     void loadCapturesTable();  // populate the captures QTableWidget from database
     void editCaptureRow(int row);   // invoked when edit button pressed
     void deleteCaptureRow(int row); // invoked when delete button pressed
+    void refreshSingleCapture(int row); // refresh single capture row from database
+    void loadQuotasTable();  // populate the quotas QTableWidget (cap_tableWidget_2) from database
+    void modifyQuotaRow(int row);  // invoked when modify button pressed for quotas
 
-    // (Database load/validation helpers removed)
+    // CRUD Slot handlers for action buttons
+    void onCaptureEditClicked(int row);
+    void onCaptureDeleteClicked(int row);
+    void onCaptureRefreshClicked(int row);
 };
 
 #endif // GQUAI_H

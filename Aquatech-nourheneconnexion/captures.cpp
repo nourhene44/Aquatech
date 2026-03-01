@@ -39,8 +39,8 @@ bool Captures::ajouter()
     query.bindValue(":idCapture", idCapture);
     // use NULL for -1 to bypass FK constraint during testing
     if (idBateau == -1) {
-        // bind explicit null integer for NUMBER column
-        query.bindValue(":idBateau", QVariant(QVariant::Int));
+        // bind NULL value for NUMBER column
+        query.bindValue(":idBateau", QVariant());
     } else {
         query.bindValue(":idBateau", idBateau);
     }
@@ -83,6 +83,27 @@ bool Captures::supprimer()
 
 bool Captures::modifier()
 {
+    // ID_BATEAU can be NULL; only validate FK existence when a non-null value is provided.
+    if (idBateau > 0) {
+        QSqlQuery boatExistsQuery;
+        const QString fkCheckSql = QStringLiteral("SELECT COUNT(1) FROM HR.BATEAUX WHERE ID_BATEAU = :idBateau");
+        boatExistsQuery.prepare(fkCheckSql);
+        boatExistsQuery.bindValue(":idBateau", idBateau);
+        if (!boatExistsQuery.exec() || !boatExistsQuery.next()) {
+            m_lastError = boatExistsQuery.lastError().text();
+            m_lastQuery = fkCheckSql;
+            qDebug() << "modifier() FK check failed:" << m_lastError << "query=" << m_lastQuery;
+            return false;
+        }
+
+        if (boatExistsQuery.value(0).toInt() <= 0) {
+            m_lastError = QStringLiteral("ID_BATEAU inexistant dans BATEAUX: %1").arg(idBateau);
+            m_lastQuery = fkCheckSql;
+            qDebug() << "modifier() FK check failed:" << m_lastError << "query=" << m_lastQuery;
+            return false;
+        }
+    }
+
     QSqlQuery query;
     // update the DATE_CAPTURE column and other fields
     // make sure the fish type column name matches the table
@@ -93,12 +114,10 @@ bool Captures::modifier()
                   "POIDS = :poids, "
                   "DATE_CAPTURE = :dateCapture "
                   "WHERE ID_CAPTURE = :idCapture");
-    // use NULL for -1 to bypass FK constraint during testing
-    if (idBateau == -1) {
-        // null integer value keeps data type correct
-        query.bindValue(":idBateau", QVariant(QVariant::Int));
-    } else {
+    if (idBateau > 0) {
         query.bindValue(":idBateau", idBateau);
+    } else {
+        query.bindValue(":idBateau", QVariant());
     }
     query.bindValue(":type", typePoisson);
     query.bindValue(":quantite", quantite);
@@ -148,11 +167,38 @@ QSqlQueryModel *Captures::rechercherParId(int id)
 QList<QStringList> Captures::getAllCapturesAsRows()
 {
     QList<QStringList> rows;
-    QSqlQuery query("SELECT ID_CAPTURE, ID_BATEAU, TYPE_POISSON, QUANTITE, POIDS, DATE_CAPTURE FROM captures ORDER BY ID_CAPTURE DESC");
+    m_lastError.clear();
+    m_lastQuery.clear();
+
+    QSqlQuery query;
+    const QString sqlHr = QStringLiteral("SELECT ID_CAPTURE, ID_BATEAU, TYPE_POISSON, QUANTITE, POIDS, DATE_CAPTURE FROM HR.CAPTURES ORDER BY ID_CAPTURE DESC");
+    const QString sqlDefault = QStringLiteral("SELECT ID_CAPTURE, ID_BATEAU, TYPE_POISSON, QUANTITE, POIDS, DATE_CAPTURE FROM CAPTURES ORDER BY ID_CAPTURE DESC");
+
+    bool ok = false;
+    query.prepare(sqlHr);
+    if (query.exec()) {
+        ok = true;
+        m_lastQuery = sqlHr;
+    } else {
+        qDebug() << "getAllCapturesAsRows HR.CAPTURES failed:" << query.lastError().text() << "query=" << sqlHr;
+        query.prepare(sqlDefault);
+        if (query.exec()) {
+            ok = true;
+            m_lastQuery = sqlDefault;
+        }
+    }
+
+    if (!ok) {
+        m_lastError = query.lastError().text();
+        m_lastQuery = sqlDefault;
+        qDebug() << "getAllCapturesAsRows failed:" << m_lastError << "query=" << m_lastQuery;
+        return rows;
+    }
+
     while (query.next()) {
         QStringList row;
         row << query.value(0).toString()      // ID_CAPTURE
-            << query.value(1).toString()      // ID_BATEAU
+            << (query.value(1).isNull() ? QStringLiteral("") : query.value(1).toString())  // ID_BATEAU (NULL safe)
             << query.value(2).toString()      // TYPE_POISSON
             << query.value(3).toString()      // QUANTITE
             << query.value(4).toString()      // POIDS

@@ -2,12 +2,20 @@
 #include "ui_mainwindow.h"
 #include <QAbstractButton>
 #include <QComboBox>
+#include <QDateEdit>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QDoubleSpinBox>
+#include <QFormLayout>
 #include <QGroupBox>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QDate>
+#include <QMap>
+#include <QPair>
 
 #include <QDateTime>
 #include <QMessageBox>
@@ -17,10 +25,11 @@
 // Database
 #include "connection.h"
 #include "captures.h"
+#include "quotas.h"
+#include "actiondelegate.h"
+#include "actionswidget.h"
 #include <QSqlQuery>
 #include <QSqlError>
-#include <QPair>
-#include <QRegularExpression>
 
 // Toggle global: activer/désactiver les opérations CRUD.
 // Change to true for the application to actually insert/update/delete.
@@ -31,6 +40,49 @@ static inline bool handleCrudDisabled(QWidget* parent)
     if (kCrudEnabled) return true;
     QMessageBox::information(parent, QStringLiteral("CRUD désactivé"), QStringLiteral("Les opérations CRUD sont désactivées dans cette build."));
     return false;
+}
+
+static bool loadBoatsIntoComboBox(QComboBox *combo)
+{
+    if (!combo) {
+        return false;
+    }
+
+    combo->clear();
+    combo->addItem(QStringLiteral("— Aucun bateau —"), QVariant());
+
+    QSqlQuery boatsQuery;
+    const QString boatsSqlDefault = QStringLiteral("SELECT ID_BATEAU, NOM_BATEAU FROM BATEAUX ORDER BY ID_BATEAU");
+    const QString boatsSqlHr = QStringLiteral("SELECT ID_BATEAU, NOM_BATEAU FROM HR.BATEAUX ORDER BY ID_BATEAU");
+
+    bool ok = false;
+    if (boatsQuery.exec(boatsSqlDefault)) {
+        ok = true;
+    } else {
+        qDebug() << "loadBoatsIntoComboBox BATEAUX failed:" << boatsQuery.lastError().text()
+                 << "query=" << boatsSqlDefault;
+        if (boatsQuery.exec(boatsSqlHr)) {
+            ok = true;
+        } else {
+            qDebug() << "loadBoatsIntoComboBox HR.BATEAUX failed:" << boatsQuery.lastError().text()
+                     << "query=" << boatsSqlHr;
+        }
+    }
+
+    if (!ok) {
+        return false;
+    }
+
+    while (boatsQuery.next()) {
+        const QVariant idBateau = boatsQuery.value(0);
+        const QString nomBateau = boatsQuery.value(1).toString().trimmed();
+        const QString label = nomBateau.isEmpty()
+            ? idBateau.toString()
+            : QStringLiteral("%1 (%2)").arg(nomBateau, idBateau.toString());
+        combo->addItem(label, idBateau);
+    }
+
+    return true;
 }
 
 static QString normalizeMojibake(QString text)
@@ -256,11 +308,10 @@ MainWindow::MainWindow(QWidget *parent)
     }
 
      setupFrames();
-
-    // ensure cap_tableWidget_2 starts non-editable (UI also sets it, but double-check)
-    if (ui && ui->cap_tableWidget_2) {
-        ui->cap_tableWidget_2->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    }
+    
+    // Initialize QUOTAS table (create if it doesn't exist)
+    initializeQuotasTable();
+    
     // Page clients : laisser le panneau chatbot visible (si la page est affichée)
 
     // Démarrer sur le login GBateau (si présent), sinon sur le menu GBateau
@@ -319,17 +370,86 @@ void MainWindow::setupFrames()
 {
     if (ui->frame_3b) ui->frame_3b->hide();        // Frame QR caché
     ui->frameb->show(); // Frame Connexion visible si tu veux
+}
 
-    // whenever page_4 becomes visible, update the top‑5 stats and quotas
-    if (ui->stackedWidget) {
-        connect(ui->stackedWidget, &QStackedWidget::currentChanged,
-                this, [this](int index) {
-                    if (ui && ui->stackedWidget && ui->page_4 &&
-                        ui->stackedWidget->widget(index) == ui->page_4) {
-                        updateStatsTopSpecies();
-                        loadQuotasFromCaptures();
-                    }
-                });
+void MainWindow::initializeQuotasTable()
+{
+    // Create QUOTAS table if it doesn't exist
+    // This function is called at startup to ensure the table exists and has data
+    
+    QSqlQuery query;
+    
+    // Step 1: Try to create the QUOTAS table
+    // Using CREATE TABLE IF NOT EXISTS (Oracle 11g+)
+    query.prepare(
+        "BEGIN "
+        "  BEGIN "
+        "    CREATE TABLE \"QUOTAS\" ( "
+        "      \"TYPE_POISSON\" VARCHAR2(50) PRIMARY KEY, "
+        "      \"QUOTA\" NUMBER(10,2) NOT NULL "
+        "    ); "
+        "  EXCEPTION "
+        "    WHEN OTHERS THEN "
+        "      NULL; "
+        "  END; "
+        "END; "
+    );
+    
+    if (!query.exec()) {
+        qWarning() << "Could not create QUOTAS table:" << query.lastError().text();
+        // Continue anyway - table might already exist
+    }
+    
+    QSqlDatabase::database().commit();
+    
+    // Step 2: Check if table has data
+    QSqlQuery checkQuery;
+    checkQuery.prepare("SELECT COUNT(*) FROM \"QUOTAS\"");
+    
+    bool hasData = false;
+    if (checkQuery.exec() && checkQuery.next()) {
+        int count = checkQuery.value(0).toInt();
+        hasData = (count > 0);
+    }
+    
+    // Step 3: Insert default data if table is empty
+    if (!hasData) {
+        QSqlQuery insertQuery;
+        
+        // Define default quotas for all fish types
+        QList<QPair<int, QPair<QString, double>>> defaultQuotas;
+        defaultQuotas.append(qMakePair(1, qMakePair(QString("Sardine"), 200.0)));
+        defaultQuotas.append(qMakePair(2, qMakePair(QString("Maquereau"), 150.0)));
+        defaultQuotas.append(qMakePair(3, qMakePair(QString("Merlu"), 180.0)));
+        defaultQuotas.append(qMakePair(4, qMakePair(QString("Thon"), 300.0)));
+        defaultQuotas.append(qMakePair(5, qMakePair(QString("Loup"), 120.0)));
+        defaultQuotas.append(qMakePair(6, qMakePair(QString("Calamar"), 100.0)));
+        defaultQuotas.append(qMakePair(7, qMakePair(QString("Crevette"), 80.0)));
+        defaultQuotas.append(qMakePair(8, qMakePair(QString("Rouget"), 90.0)));
+        defaultQuotas.append(qMakePair(9, qMakePair(QString("Poulpes"), 110.0)));
+        
+        // Insert default data
+        for (const auto& quota : defaultQuotas) {
+            QString fishType = quota.second.first;
+            double value = quota.second.second;
+            
+            insertQuery.prepare(
+                "INSERT INTO \"QUOTAS\" (\"TYPE_POISSON\", \"QUOTA\") "
+                "VALUES (:fishType, :value)"
+            );
+            insertQuery.bindValue(":fishType", fishType);
+            insertQuery.bindValue(":value", value);
+            
+            if (!insertQuery.exec()) {
+                qWarning() << "Could not insert quota for" << fishType 
+                          << ":" << insertQuery.lastError().text();
+            }
+        }
+        
+        QSqlDatabase::database().commit();
+        qDebug() << "QUOTAS table initialized with default data";
+    } else {
+        qDebug() << "QUOTAS table already has data";
     }
 }
 
@@ -371,8 +491,10 @@ void MainWindow::on_p5b_clicked()
     }
 
     ui->stackedWidget->setCurrentWidget(ui->cap_pagecaptures);
-
-    // loadCaptures(); (removed)
+    
+    // Load captures and quotas tables when navigating to captures page
+    loadCapturesTable();
+    loadQuotasTable();
 }
 void MainWindow::on_pushButton_3b_50_clicked(){
     if (ui && ui->stackedWidget && ui->cap_pagecaptures) {
@@ -625,24 +747,51 @@ void MainWindow::loadCapturesTable()
 
     QTableWidget *tbl = ui->cap_tableWidget;
     tbl->setRowCount(0);
-    // add two action columns for edit and delete
+
+    // Setup columns with Actions column
     if (tbl->columnCount() == 0) {
-        tbl->setColumnCount(8);
+        tbl->setColumnCount(7); // ID, Bateau, Type, Qty, Poids, Date, Actions
         QStringList headers;
-        headers << "ID Capture" << "ID Bateau" << "Type Poisson" << "Quantite" << "Poids" << "Date" << "✏️" << "❌";
+        headers << "ID Capture" << "ID Bateau" << "Type Poisson" << "Quantité" << "Poids" << "Date" << "Actions";
         tbl->setHorizontalHeaderLabels(headers);
+        tbl->setColumnWidth(6, 280); // Wider actions column for 3 buttons
     }
 
+    // Load data from database
     QList<QStringList> rows = Captures::getAllCapturesAsRows();
     for (int i = 0; i < rows.size(); ++i) {
         tbl->insertRow(i);
         const QStringList &row = rows.at(i);
+        
+        // Add data columns (ID, Bateau, Type, Qty, Poids, Date)
         for (int col = 0; col < row.size() && col < 6; ++col) {
             QTableWidgetItem *item = new QTableWidgetItem(row.at(col));
+            item->setFlags(item->flags() & ~Qt::ItemIsEditable); // Make read-only
             tbl->setItem(i, col, item);
         }
-
     }
+
+    // Add action buttons for each row using setCellWidget (buttons always visible)
+    for (int row = 0; row < tbl->rowCount(); ++row) {
+        ActionsButtonWidget *buttonsWidget = new ActionsButtonWidget(row, tbl);
+        tbl->setCellWidget(row, 6, buttonsWidget);
+        
+        // Connect button signals to CRUD slot handlers
+        connect(buttonsWidget, &ActionsButtonWidget::editClicked, 
+                this, &MainWindow::onCaptureEditClicked);
+        connect(buttonsWidget, &ActionsButtonWidget::deleteClicked, 
+                this, &MainWindow::onCaptureDeleteClicked);
+        connect(buttonsWidget, &ActionsButtonWidget::refreshClicked, 
+                this, &MainWindow::onCaptureRefreshClicked);
+    }
+
+    // Set column widths for better visibility
+    tbl->setColumnWidth(0, 80);   // ID
+    tbl->setColumnWidth(1, 80);   // ID Bateau
+    tbl->setColumnWidth(2, 100);  // Type
+    tbl->setColumnWidth(3, 80);   // Quantité
+    tbl->setColumnWidth(4, 80);   // Poids
+    tbl->setColumnWidth(5, 100);  // Date
 }
 
 void MainWindow::on_cap_btnValiider_3_clicked()
@@ -750,105 +899,6 @@ void MainWindow::on_cap_btnValiider_3_clicked()
         QMessageBox::warning(this, QStringLiteral("Erreur"), message);
     }
 }
-
-// custom slot implementations for cap_tableWidget_2 editing
-void MainWindow::on_cap_btnModifier_2_clicked()
-{
-    if (ui && ui->cap_tableWidget_2) {
-        ui->cap_tableWidget_2->setEditTriggers(QAbstractItemView::AllEditTriggers);
-        QMessageBox::information(this, QStringLiteral("Modifier"),
-                                 QStringLiteral("Vous pouvez maintenant modifier les cellules."));
-    }
-}
-
-void MainWindow::on_cap_btnValider_2_clicked()
-{
-    if (!ui || !ui->cap_tableWidget_2) return;
-
-    ui->cap_tableWidget_2->setEditTriggers(QAbstractItemView::NoEditTriggers);
-
-    // Met à jour la colonne QUOTA_FIXE dans CAPTURES pour chaque espèce
-    QSqlQuery q;
-    bool anyError = false;
-    const int rows = ui->cap_tableWidget_2->rowCount();
-    QRegularExpression reNum("([0-9]+(?:\\.[0-9]+)?)");
-
-    for (int r = 0; r < rows; ++r) {
-        QString species;
-        if (auto *vh = ui->cap_tableWidget_2->verticalHeaderItem(r)) {
-            species = vh->text().trimmed();
-        }
-        if (species.isEmpty()) {
-            // try to read from first column cell if vertical header absent
-            if (auto *it = ui->cap_tableWidget_2->item(r, 0))
-                species = it->text().trimmed();
-        }
-
-        QString quotaText;
-        if (auto *item = ui->cap_tableWidget_2->item(r, 0)) {
-            quotaText = item->text().trimmed();
-        }
-
-        double quotaValue = 0.0;
-        QRegularExpressionMatch m = reNum.match(quotaText);
-        if (m.hasMatch()) {
-            quotaValue = m.captured(1).toDouble();
-        }
-
-        if (species.isEmpty()) continue;
-
-        // Met à jour toutes les lignes CAPTURES pour cette espèce
-        q.prepare("UPDATE CAPTURES SET QUOTA_FIXE = :quota WHERE TYPE_POISSON = :species");
-        q.bindValue(":quota", quotaValue);
-        q.bindValue(":species", species);
-        if (!q.exec()) {
-            qWarning() << "Failed to update QUOTA_FIXE for" << species << ":" << q.lastError().text();
-            anyError = true;
-        }
-    }
-
-    if (anyError) {
-        QMessageBox::warning(this, QStringLiteral("Valider"), QStringLiteral("Certaines modifications n'ont pas pu être sauvegardées."));
-    } else {
-        QMessageBox::information(this, QStringLiteral("Valider"), QStringLiteral("Modifications validées et sauvegardées."));
-    }
-    // Recharge les quotas depuis la base pour affichage à jour
-    loadQuotasFromCaptures();
-}
-
-// Recharge les quotas depuis la table CAPTURES et met à jour cap_tableWidget_2
-void MainWindow::loadQuotasFromCaptures()
-{
-    if (!ui || !ui->cap_tableWidget_2) return;
-    QSqlQuery q("SELECT DISTINCT TYPE_POISSON, QUOTA_FIXE FROM CAPTURES");
-    QMap<QString, QString> quotas;
-    while (q.next()) {
-        QString species = q.value(0).toString();
-        QString quota = q.value(1).isNull() ? QString() : q.value(1).toString();
-        quotas[species] = quota;
-    }
-    // Parcourt les lignes du tableau et met à jour la colonne quota si trouvé
-    for (int r = 0; r < ui->cap_tableWidget_2->rowCount(); ++r) {
-        QString species;
-        if (auto *vh = ui->cap_tableWidget_2->verticalHeaderItem(r)) {
-            species = vh->text().trimmed();
-        }
-        if (species.isEmpty()) {
-            if (auto *it = ui->cap_tableWidget_2->item(r, 0))
-                species = it->text().trimmed();
-        }
-        if (species.isEmpty()) continue;
-        QString quota = quotas.value(species, QString());
-        if (!quota.isEmpty()) {
-            if (!ui->cap_tableWidget_2->item(r, 0))
-                ui->cap_tableWidget_2->setItem(r, 0, new QTableWidgetItem(quota + "kg"));
-            else
-                ui->cap_tableWidget_2->item(r, 0)->setText(quota + "kg");
-        }
-    }
-}
-}
-
 
 void MainWindow::on_p1b_clicked()
 {
@@ -1161,6 +1211,181 @@ void MainWindow::on_pushButton_3b_clicked()
     }
 }
 
+void MainWindow::loadQuotasTable()
+{
+    if (!ui || !ui->cap_tableWidget_2) {
+        qWarning() << "loadQuotasTable: UI or cap_tableWidget_2 is null";
+        return;
+    }
+
+    QTableWidget *tbl = ui->cap_tableWidget_2;
+    
+    // IMPORTANT: NE PAS appeler setRowCount(0) - cela efface les noms des poissons!
+    // Les noms des poissons sont définis dans l'UI (Sardine, Maquereau, etc.)
+    // Nous garderons le nombre de rows tel quel, et remplissons seulement les cellules
+    
+    // Charger les quotas depuis la BD
+    // Query en cherchant par TYPE_POISSON pour matcher avec les row headers
+    QSqlQuery query;
+    query.prepare("SELECT \"TYPE_POISSON\", \"QUOTA\" FROM QUOTAS ORDER BY \"TYPE_POISSON\"");
+    
+    // Créer une map pour accès rapide des quotas par type de poisson
+    QMap<QString, double> quotasMap;
+    
+    if (query.exec()) {
+        while (query.next()) {
+            QString typePoisson = query.value(0).toString();
+            double valeur = query.value(1).toDouble();
+            quotasMap[typePoisson] = valeur;
+        }
+    }
+    
+    // Remplir le tableau avec les quotas
+    // Itérer sur les rows qui existent déjà (définis dans l'UI)
+    int rowCount = tbl->rowCount();
+    
+    for (int i = 0; i < rowCount; ++i) {
+        // Récupérer le nom du poisson depuis le vertical header (row label)
+        QString fishType = tbl->verticalHeaderItem(i)->text();
+        
+        // Chercher le quota correspondant dans la BD
+        double quotaValue = 0.0;
+        if (quotasMap.contains(fishType)) {
+            quotaValue = quotasMap[fishType];
+        }
+        
+        // Mettre à jour le tableau avec la valeur du quota
+        QTableWidgetItem *item = new QTableWidgetItem(QString::number(quotaValue, 'f', 2));
+        item->setFlags(item->flags() | Qt::ItemIsEditable);  // Éditable
+        tbl->setItem(i, 0, item);
+    }
+}
+
+void MainWindow::modifyQuotaRow(int row)
+{
+    if (!ui || !ui->cap_tableWidget_2) {
+        return;
+    }
+
+    QTableWidget *tbl = ui->cap_tableWidget_2;
+    
+    // GetRowHeader (le nom du poisson)
+    if (!tbl->verticalHeaderItem(row)) {
+        QMessageBox::warning(this, QStringLiteral("Erreur"), QStringLiteral("Impossible de trouver le type de poisson."));
+        return;
+    }
+    
+    QString fishType = tbl->verticalHeaderItem(row)->text();
+    
+    // Get the quota value from the table (colonne 0)
+    QTableWidgetItem *item = tbl->item(row, 0);
+    if (!item) {
+        QMessageBox::warning(this, QStringLiteral("Erreur"), QStringLiteral("Impossible de trouver la valeur de quota."));
+        return;
+    }
+
+    QString quotaStr = item->text().trimmed();
+    
+    // Validation: vérifier que la chaîne n'est pas vide
+    if (quotaStr.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("Erreur"), 
+                            QStringLiteral("La valeur de quota ne peut pas être vide."));
+        return;
+    }
+    
+    // Gérer les séparateurs décimaux (vigule ou point)
+    quotaStr.replace(QStringLiteral(","), QStringLiteral("."));
+    
+    // Convertir en double
+    bool ok;
+    double quota = quotaStr.toDouble(&ok);
+    
+    // Validation: vérifier que la conversion a fonctionné
+    if (!ok) {
+        QMessageBox::warning(this, QStringLiteral("Erreur de Saisie"), 
+                            QStringLiteral("La valeur doit être un nombre (ex: 200 ou 200.50)"));
+        return;
+    }
+    
+    // Validation: vérifier que la valeur est positive
+    if (quota < 0) {
+        QMessageBox::warning(this, QStringLiteral("Erreur de Validation"), 
+                            QStringLiteral("La valeur de quota doit être positive (supérieur à 0)."));
+        return;
+    }
+    
+    // Validation: vérifier que la valeur n'est pas trop grande (max 1 million kg par exemple)
+    if (quota > 1000000) {
+        QMessageBox::warning(this, QStringLiteral("Erreur de Validation"), 
+                            QStringLiteral("La valeur du quota est trop élevée (max: 1000000)."));
+        return;
+    }
+    
+    // Update database
+    // First, check if the quota exists
+    QSqlQuery query;
+    query.prepare("SELECT COUNT(*) FROM QUOTAS WHERE \"TYPE_POISSON\" = :fishType");
+    query.bindValue(":fishType", fishType);
+    
+    bool quotaExists = false;
+    if (query.exec() && query.next()) {
+        quotaExists = (query.value(0).toInt() > 0);
+    }
+    
+    if (quotaExists) {
+        // Update existing quota
+        QSqlQuery updateQuery;
+        updateQuery.prepare("UPDATE QUOTAS SET \"QUOTA\" = :quota WHERE \"TYPE_POISSON\" = :fishType");
+        updateQuery.bindValue(":quota", quota);
+        updateQuery.bindValue(":fishType", fishType);
+        
+        if (!updateQuery.exec()) {
+            QString errMsg = updateQuery.lastError().text();
+            QMessageBox::warning(this, QStringLiteral("Erreur Base de Données"), 
+                                QStringLiteral("Impossible de modifier le quota: ") + errMsg);
+            return;
+        }
+        QMessageBox::information(this, QStringLiteral("Succès"), 
+                                QStringLiteral("Quota modifié avec succès!"));
+    } else {
+        // Create new quota entry
+        QSqlQuery insertQuery;
+        insertQuery.prepare("INSERT INTO QUOTAS (\"TYPE_POISSON\", \"QUOTA\") "
+                           "VALUES (:fishType, :quota)");
+        insertQuery.bindValue(":fishType", fishType);
+        insertQuery.bindValue(":quota", quota);
+        
+        if (!insertQuery.exec()) {
+            QString errMsg = insertQuery.lastError().text();
+            QMessageBox::warning(this, QStringLiteral("Erreur Base de Données"), 
+                                QStringLiteral("Impossible d'ajouter le quota: ") + errMsg);
+            return;
+        }
+        QSqlDatabase::database().commit();
+        QMessageBox::information(this, QStringLiteral("Succès"), 
+                            QStringLiteral("Quota pour ") + fishType + QStringLiteral(" mis à jour avec succès."));
+    }
+}
+
+void MainWindow::on_cap_btnModifyQuota_clicked()
+{
+    if (!ui || !ui->cap_tableWidget_2) {
+        return;
+    }
+
+    QTableWidget *tbl = ui->cap_tableWidget_2;
+    int currentRow = tbl->currentRow();
+    
+    if (currentRow < 0) {
+        QMessageBox::warning(this, QStringLiteral("Erreur"), QStringLiteral("Veuillez sélectionner une ligne à modifier."));
+        return;
+    }
+
+    modifyQuotaRow(currentRow);
+    // Reload the table to refresh
+    loadQuotasTable();
+}
+
 void MainWindow::on_pushButton_7b_clicked()
 {
     // Bouton "Paramètres des alertes" : afficher le panneau framealertb (lookup by name)
@@ -1198,75 +1423,6 @@ void MainWindow::on_pushButton_9_clicked()
     if (ui->stackedWidget) {
         ui->stackedWidget->setCurrentWidget(ui->page_4);
     }
-    // when showing the statistics page, refresh the top-species frame
-    updateStatsTopSpecies();
-}
-
-// refresh button on stats page
-void MainWindow::on_btnRefreshStats_2_clicked()
-{
-    updateStatsTopSpecies();
-}
-
-// compute top 5 species by quantity and update the 'zonesb_2' frame
-void MainWindow::updateStatsTopSpecies()
-{
-    if (!ui) return;
-
-    // query totals per fish type
-    QSqlQuery query;
-    if (!query.exec("SELECT TYPE_POISSON, SUM(QUANTITE) AS total "
-                    "FROM captures GROUP BY TYPE_POISSON "
-                    "ORDER BY total DESC")) {
-        qWarning() << "Failed to load species stats:" << query.lastError().text();
-        return;
-    }
-
-    QList<QPair<QString,int>> rows;
-    int grandTotal = 0;
-    while (query.next()) {
-        QString cat = query.value(0).toString();
-        int tot = query.value(1).toInt();
-        rows.append(qMakePair(cat, tot));
-        grandTotal += tot;
-    }
-
-    if (grandTotal == 0) {
-        // no data; clear everything
-        for (int i = 0; i < 5; ++i) {
-            if (i == 0) continue; // reuse below
-        }
-    }
-
-    int limit = qMin(rows.size(), 5);
-
-    // helper arrays for the five bars (labels may carry species name)
-    struct Widgets { QLabel* label; QProgressBar* bar; QLabel* value; };
-    Widgets widgets[5] = {
-        { ui->label_zoneNordb_2, ui->progressZoneNordb_2, ui->value_zoneNordb_2 },
-        { ui->label_zoneSudb_2,  ui->progressZoneSudb_2,  ui->value_zoneSudb_2  },
-        { ui->label_zoneEstb_2,  ui->progressZoneEstb_2,  ui->value_zoneEstb_2  },
-        { ui->label_zoneOuestb_3,ui->progressZoneOuestb_3,ui->value_zoneOuestb_3},
-        { ui->label_zoneOuestb_2,ui->progressZoneOuestb_2,ui->value_zoneOuestb_2}
-    };
-
-    for (int i = 0; i < 5; ++i) {
-        if (!widgets[i].label || !widgets[i].bar || !widgets[i].value)
-            continue; // safety
-
-        if (i < limit && grandTotal > 0) {
-            const auto &p = rows[i];
-            widgets[i].label->setText(p.first);
-            int qty = p.second;
-            int pct = (grandTotal > 0) ? (qty * 100) / grandTotal : 0;
-            widgets[i].bar->setValue(pct);
-            widgets[i].value->setText(QString("%1/%2").arg(qty).arg(grandTotal));
-        } else {
-            widgets[i].label->setText(QStringLiteral("--"));
-            widgets[i].bar->setValue(0);
-            widgets[i].value->setText(QStringLiteral("0/0"));
-        }
-    }
 }
 
 // Return the shared Connection instance
@@ -1278,4 +1434,236 @@ void MainWindow::closeOracleConnection(Connection* conn)
     Q_UNUSED(conn);
     // Nothing to do: Connection singleton will be closed on app exit
 }
+
+// ========================================
+// CRUD Action Button Slot Handlers
+// ========================================
+
+void MainWindow::onCaptureEditClicked(int row)
+{
+    editCaptureRow(row);
+}
+
+void MainWindow::onCaptureDeleteClicked(int row)
+{
+    deleteCaptureRow(row);
+}
+
+void MainWindow::onCaptureRefreshClicked(int row)
+{
+    refreshSingleCapture(row);
+}
+
+void MainWindow::editCaptureRow(int row)
+{
+    if (!ui || !ui->cap_tableWidget) {
+        QMessageBox::warning(this, QStringLiteral("Erreur"), QStringLiteral("Table not found"));
+        return;
+    }
+
+    QTableWidget *tbl = ui->cap_tableWidget;
+    if (row < 0 || row >= tbl->rowCount()) {
+        QMessageBox::warning(this, QStringLiteral("Erreur"), QStringLiteral("Invalid row"));
+        return;
+    }
+
+    // Get ID_CAPTURE from first column
+    QTableWidgetItem *idItem = tbl->item(row, 0);
+    if (!idItem) {
+        QMessageBox::warning(this, QStringLiteral("Erreur"), QStringLiteral("Cannot find ID_CAPTURE"));
+        return;
+    }
+
+    const int idCapture = idItem->text().toInt();
+
+    // Read current values from selected row
+    const QString idBateauText = (tbl->item(row, 1) ? tbl->item(row, 1)->text().trimmed() : QString());
+    const QString typePoisson = (tbl->item(row, 2) ? tbl->item(row, 2)->text().trimmed() : QString());
+    const int quantite = (tbl->item(row, 3) ? tbl->item(row, 3)->text().toInt() : 0);
+    const double poids = (tbl->item(row, 4) ? tbl->item(row, 4)->text().toDouble() : 0.0);
+    const QString dateText = (tbl->item(row, 5) ? tbl->item(row, 5)->text().trimmed() : QString());
+    QDate captureDate = QDate::fromString(dateText, Qt::ISODate);
+    if (!captureDate.isValid()) {
+        captureDate = QDate::currentDate();
+    }
+
+    // Build small edit dialog
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("Modifier la Capture"));
+    dialog.setModal(true);
+
+    QFormLayout *formLayout = new QFormLayout(&dialog);
+
+    QLineEdit *idCaptureEdit = new QLineEdit(QString::number(idCapture), &dialog);
+    idCaptureEdit->setReadOnly(true);
+
+    QComboBox *boatCombo = new QComboBox(&dialog);
+    loadBoatsIntoComboBox(boatCombo);
+
+    // Pre-select boat by ID_BATEAU using findData(idBateau)
+    if (!idBateauText.isEmpty()) {
+        bool idOk = false;
+        const int idBateau = idBateauText.toInt(&idOk);
+        if (idOk) {
+            const int boatIndex = boatCombo->findData(idBateau);
+            if (boatIndex >= 0) {
+                boatCombo->setCurrentIndex(boatIndex);
+            }
+        }
+    } else {
+        boatCombo->setCurrentIndex(0);
+    }
+
+    QComboBox *typeCombo = new QComboBox(&dialog);
+    typeCombo->setEditable(true);
+    if (ui && ui->cap_comboBox_4) {
+        for (int i = 0; i < ui->cap_comboBox_4->count(); ++i) {
+            typeCombo->addItem(ui->cap_comboBox_4->itemText(i));
+        }
+    }
+    if (!typePoisson.isEmpty()) {
+        int typeIndex = typeCombo->findText(typePoisson);
+        if (typeIndex >= 0) {
+            typeCombo->setCurrentIndex(typeIndex);
+        } else {
+            typeCombo->setCurrentText(typePoisson);
+        }
+    }
+
+    QSpinBox *quantiteSpin = new QSpinBox(&dialog);
+    quantiteSpin->setRange(0, 1000000);
+    quantiteSpin->setValue(quantite);
+
+    QDoubleSpinBox *poidsSpin = new QDoubleSpinBox(&dialog);
+    poidsSpin->setRange(0.0, 1000000.0);
+    poidsSpin->setDecimals(2);
+    poidsSpin->setValue(poids);
+
+    QDateEdit *dateEdit = new QDateEdit(captureDate, &dialog);
+    dateEdit->setCalendarPopup(true);
+    dateEdit->setDisplayFormat(QStringLiteral("yyyy-MM-dd"));
+
+    QDialogButtonBox *buttonBox = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
+
+    formLayout->addRow(QStringLiteral("ID Capture:"), idCaptureEdit);
+    formLayout->addRow(QStringLiteral("ID Bateau:"), boatCombo);
+    formLayout->addRow(QStringLiteral("Type Poisson:"), typeCombo);
+    formLayout->addRow(QStringLiteral("Quantité:"), quantiteSpin);
+    formLayout->addRow(QStringLiteral("Poids:"), poidsSpin);
+    formLayout->addRow(QStringLiteral("Date Capture:"), dateEdit);
+    formLayout->addRow(buttonBox);
+
+    connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    if (dialog.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    if (!handleCrudDisabled(this)) {
+        return;
+    }
+
+    // Save modifications
+    QSqlQuery updateQuery;
+    updateQuery.prepare(
+        "UPDATE CAPTURES "
+        "SET ID_BATEAU=:idBateau, TYPE_POISSON=:type, QUANTITE=:qte, POIDS=:poids, DATE_CAPTURE=:date "
+        "WHERE ID_CAPTURE=:idCapture"
+    );
+
+    const QVariant selectedBoatId = boatCombo->currentData();
+    if (selectedBoatId.isNull() || !selectedBoatId.isValid()) {
+        updateQuery.bindValue(QStringLiteral(":idBateau"), QVariant());
+    } else {
+        updateQuery.bindValue(QStringLiteral(":idBateau"), selectedBoatId);
+    }
+    updateQuery.bindValue(QStringLiteral(":type"), typeCombo->currentText().trimmed());
+    updateQuery.bindValue(QStringLiteral(":qte"), quantiteSpin->value());
+    updateQuery.bindValue(QStringLiteral(":poids"), poidsSpin->value());
+    updateQuery.bindValue(QStringLiteral(":date"), dateEdit->date());
+    updateQuery.bindValue(QStringLiteral(":idCapture"), idCapture);
+
+    if (!updateQuery.exec()) {
+        QMessageBox::warning(
+            this,
+            QStringLiteral("Erreur Base de Données"),
+            QStringLiteral("Impossible de modifier la capture: ") + updateQuery.lastError().text());
+        return;
+    }
+
+    QSqlDatabase::database().commit();
+    loadCapturesTable();
+    QMessageBox::information(this, QStringLiteral("Succès"), QStringLiteral("Capture modifiée avec succès!"));
+}
+
+void MainWindow::deleteCaptureRow(int row)
+{
+    if (!ui || !ui->cap_tableWidget) {
+        QMessageBox::warning(this, QStringLiteral("Erreur"), QStringLiteral("Table not found"));
+        return;
+    }
+
+    QTableWidget *tbl = ui->cap_tableWidget;
+    if (row < 0 || row >= tbl->rowCount()) {
+        QMessageBox::warning(this, QStringLiteral("Erreur"), QStringLiteral("Invalid row"));
+        return;
+    }
+
+    // Get ID_CAPTURE
+    QTableWidgetItem *idItem = tbl->item(row, 0);
+    if (!idItem) {
+        QMessageBox::warning(this, QStringLiteral("Erreur"), QStringLiteral("Cannot find ID_CAPTURE"));
+        return;
+    }
+
+    int idCapture = idItem->text().toInt();
+
+    // Confirm deletion
+    QMessageBox::StandardButton reply = QMessageBox::question(
+        this, 
+        QStringLiteral("Confirmation"),
+        QStringLiteral("Êtes-vous sûr de vouloir supprimer la capture #%1 ?").arg(idCapture),
+        QMessageBox::Yes | QMessageBox::No
+    );
+
+    if (reply != QMessageBox::Yes) {
+        return;
+    }
+
+    // Execute DELETE query
+    QSqlQuery deleteQuery;
+    deleteQuery.prepare("DELETE FROM CAPTURES WHERE \"ID_CAPTURE\" = :idCapture");
+    deleteQuery.bindValue(":idCapture", idCapture);
+
+    if (deleteQuery.exec()) {
+        QSqlDatabase::database().commit();
+        QMessageBox::information(this, QStringLiteral("Succès"), 
+                                QStringLiteral("Capture supprimée avec succès!"));
+        
+        // Refresh the table
+        loadCapturesTable();
+    } else {
+        QString errMsg = deleteQuery.lastError().text();
+        QMessageBox::warning(this, QStringLiteral("Erreur Base de Données"), 
+                            QStringLiteral("Impossible de supprimer la capture: ") + errMsg);
+    }
+}
+
+void MainWindow::refreshSingleCapture(int row)
+{
+    Q_UNUSED(row);
+    if (!ui || !ui->cap_tableWidget) {
+        QMessageBox::warning(this, QStringLiteral("Erreur"), QStringLiteral("Table not found"));
+        return;
+    }
+
+    // Simply reload the entire table - this refreshes the single row
+    loadCapturesTable();
+    
+    QMessageBox::information(this, QStringLiteral("Actualisation"), 
+                            QStringLiteral("Données rechargées depuis la base de données."));
+}
+
+
 

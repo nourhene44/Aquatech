@@ -11,11 +11,17 @@ CONFIG += c++17
 SOURCES += \
     main.cpp \
     mainwindow2.cpp \
-    GQuai.cpp
+    GQuai.cpp \
+    captures.cpp \
+    connection.cpp \
+    quotas.cpp
 
 HEADERS += \
     mainwindow2.h \
-    GQuai.h
+    GQuai.h \
+    captures.h \
+    connection.h \
+    quotas.h
 
 FORMS += \
     mainwindow2.ui
