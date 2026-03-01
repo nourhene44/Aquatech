@@ -7,6 +7,7 @@
 #include <QTimer>
 #include "connection.h"
 #include "quai.h"
+#include "pecheurs.h"
 
 class QNetworkAccessManager;
 
@@ -69,10 +70,10 @@ private slots:
     void on_pushButton_3b_8_clicked();
     void on_pushButton_3b_2_clicked();
     void on_pushButton_3b_14_clicked();
-    void on_pushButton_b_2b_clicked();
-    void on_pushButton_b_3b_clicked();
+    void legacy_pushButton_b_2b_clicked();
+    void legacy_pushButton_b_3b_clicked();
     void on_pushButton_b_clicked();
-    void on_pushButton_b_4b_clicked();
+    void legacy_pushButton_b_4b_clicked();
     void on_pushButton_20b_clicked();
     void on_pushButton_13b_clicked();
     void on_pushButton_14b_clicked();
@@ -84,7 +85,7 @@ private slots:
     void on_p2b_clicked();
     void on_p1b_clicked();
     void on_p3b_clicked();
-    void on_pushButton_3b_clicked();
+    void legacy_pushButton_3b_clicked();
     void on_p1_2b_clicked();
     void on_pushButton_12b_clicked();
     void on_pushButton_9b_clicked();
@@ -106,14 +107,14 @@ private slots:
     void on_cap_btnShowTendance_clicked();
     void on_cap_btnBackToCapturesMainSurpeche_clicked();
     void on_cap_btnBackToCapturesMainTendance_clicked();
-    void on_pushButton_7b_clicked();
-    void on_btnai_clicked();
-    void on_btnSend_2_clicked();
+    void legacy_pushButton_7b_clicked();
+    void legacy_btnai_clicked();
+    void legacy_btnSend_2_clicked();
     void on_pushButton_7c_clicked();
     void on_pushButton_6_clicked();
     void on_pushButton_2_clicked();
     void on_pushButton_9_clicked();
-    void on_btnRefreshStats_2_clicked();
+    void refreshStats_2();
     void on_lineEdit_3_textChanged(const QString &text);
     void on_comboBox_3_currentIndexChanged(int index);
     void on_comboBox_4_currentIndexChanged(int index);
@@ -122,10 +123,16 @@ private slots:
     void on_pushButton_pdfb_clicked();
     void on_pushButton_pdfb_2_clicked();
     void on_btnExportStatsPDF_2_clicked();
-    void on_comboChartType_2_currentIndexChanged(int index);
+    void legacy_comboChartType_2_currentIndexChanged(int index);
     void on_pushButton_2c_clicked();
     void on_pushButton_5e_clicked();
     void on_bap_clicked();
+    void on_bep_clicked();
+    void on_pushButton_5p_clicked();
+    void on_pushButton_6p_clicked();
+    void on_lineEdit_4p_textChanged(const QString &text);
+    void on_comboBox_5p_currentTextChanged(const QString &text);
+    void on_comboBox_6p_currentTextChanged(const QString &text);
     void on_pushButton_2b_clicked();
     void on_pushButton_11_clicked();
     void on_btnExportMapPdf_clicked();
@@ -143,6 +150,7 @@ protected:
 
 private:
     Ui::MainWindow *ui;
+    int m_editingPecheurId = -1;
     QLabel* m_curveLineLabelQuaiStats = nullptr;
     QTimer* m_statsTimer = nullptr;
     QTimer* m_weatherTimer = nullptr;
@@ -156,6 +164,10 @@ private:
     void supprimerBateauFromRow(int row);
     void filterBateaux();
     void updateStatsBateaux();
+    Pecheurs pecheurFromForm() const;
+    void loadPecheurs();
+    void loadPecheurFromTable();
+    void resetAjouterButton();
 
     void showFrame(QWidget* frameToShow);
     void setupFrames();

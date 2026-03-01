@@ -13,13 +13,15 @@ SOURCES += \
     main.cpp \
     mainwindow.cpp \
     quai.cpp \
-    bateaauuu.cpp
+    bateaauuu.cpp \
+    pecheurs.cpp
 
 HEADERS += \
     connection.h \
     mainwindow.h \
     quai.h \
-    bateaauuu.h
+    bateaauuu.h \
+    pecheurs.h
 
 FORMS += \
     mainwindow.ui

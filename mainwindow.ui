@@ -23,8 +23,8 @@
     </property>
     <property name="geometry">
      <rect>
-      <x>-10</x>
-      <y>-10</y>
+      <x>0</x>
+      <y>0</y>
       <width>1741</width>
       <height>821</height>
      </rect>
@@ -117,7 +117,7 @@ border-radius:50PX}
 </string>
     </property>
     <property name="currentIndex">
-     <number>5</number>
+     <number>6</number>
     </property>
     <widget class="QWidget" name="loginb">
      <widget class="QLabel" name="label_b">
@@ -2358,302 +2358,6 @@ font-size:18px</string>
        <string>Gestion Des Pêcheurs</string>
       </property>
      </widget>
-     <widget class="QFrame" name="framep">
-      <property name="enabled">
-       <bool>true</bool>
-      </property>
-      <property name="geometry">
-       <rect>
-        <x>220</x>
-        <y>140</y>
-        <width>301</width>
-        <height>651</height>
-       </rect>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">font-size:16px;
-font-weight:600;</string>
-      </property>
-      <property name="frameShape">
-       <enum>QFrame::Shape::StyledPanel</enum>
-      </property>
-      <property name="frameShadow">
-       <enum>QFrame::Shadow::Raised</enum>
-      </property>
-      <widget class="QLineEdit" name="lineEditp">
-       <property name="geometry">
-        <rect>
-         <x>20</x>
-         <y>40</y>
-         <width>251</width>
-         <height>31</height>
-        </rect>
-       </property>
-       <property name="text">
-        <string/>
-       </property>
-       <property name="placeholderText">
-        <string>ID Pêcheurs</string>
-       </property>
-      </widget>
-      <widget class="QLineEdit" name="lineEdit_2p">
-       <property name="geometry">
-        <rect>
-         <x>20</x>
-         <y>100</y>
-         <width>241</width>
-         <height>31</height>
-        </rect>
-       </property>
-       <property name="text">
-        <string/>
-       </property>
-       <property name="placeholderText">
-        <string>Nom Pêcheur</string>
-       </property>
-      </widget>
-      <widget class="QComboBox" name="comboBoxp">
-       <property name="geometry">
-        <rect>
-         <x>130</x>
-         <y>240</y>
-         <width>151</width>
-         <height>41</height>
-        </rect>
-       </property>
-       <property name="editable">
-        <bool>true</bool>
-       </property>
-       <property name="currentText">
-        <string>Capitaine</string>
-       </property>
-       <item>
-        <property name="text">
-         <string>Capitaine</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
-         <string>Marin</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
-         <string>Autre</string>
-        </property>
-       </item>
-      </widget>
-      <widget class="QComboBox" name="comboBox_2">
-       <property name="geometry">
-        <rect>
-         <x>130</x>
-         <y>300</y>
-         <width>151</width>
-         <height>41</height>
-        </rect>
-       </property>
-       <property name="editable">
-        <bool>true</bool>
-       </property>
-       <property name="currentText">
-        <string>Disponible</string>
-       </property>
-       <item>
-        <property name="text">
-         <string>Disponible</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
-         <string>Indisponible</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
-         <string>En Congé</string>
-        </property>
-       </item>
-      </widget>
-      <widget class="QLineEdit" name="lineEdit_3p">
-       <property name="geometry">
-        <rect>
-         <x>20</x>
-         <y>160</y>
-         <width>241</width>
-         <height>28</height>
-        </rect>
-       </property>
-       <property name="text">
-        <string/>
-       </property>
-       <property name="placeholderText">
-        <string>Prénom Pêcheur</string>
-       </property>
-      </widget>
-      <widget class="QPushButton" name="btnFaceIDp">
-       <property name="geometry">
-        <rect>
-         <x>60</x>
-         <y>550</y>
-         <width>191</width>
-         <height>41</height>
-        </rect>
-       </property>
-       <property name="toolTip">
-        <string>Capturer le visage pour reconnaissance faciale</string>
-       </property>
-       <property name="styleSheet">
-        <string notr="true"/>
-       </property>
-       <property name="text">
-        <string> Enregistrer visage</string>
-       </property>
-      </widget>
-      <widget class="QPushButton" name="bmip">
-       <property name="geometry">
-        <rect>
-         <x>160</x>
-         <y>600</y>
-         <width>121</width>
-         <height>41</height>
-        </rect>
-       </property>
-       <property name="styleSheet">
-        <string notr="true">#bmip{background-color:rgba(0, 80, 0, 0.7);}
-#bmip:hover{
-	
-	background-color: rgb(70, 140, 58);}</string>
-       </property>
-       <property name="text">
-        <string> Mission</string>
-       </property>
-      </widget>
-      <widget class="QPushButton" name="bap">
-       <property name="geometry">
-        <rect>
-         <x>20</x>
-         <y>600</y>
-         <width>101</width>
-         <height>41</height>
-        </rect>
-       </property>
-       <property name="text">
-        <string>Ajouter</string>
-       </property>
-      </widget>
-      <widget class="QLabel" name="label_5p">
-       <property name="geometry">
-        <rect>
-         <x>20</x>
-         <y>250</y>
-         <width>71</width>
-         <height>21</height>
-        </rect>
-       </property>
-       <property name="text">
-        <string>Rôle:</string>
-       </property>
-      </widget>
-      <widget class="QLabel" name="label_6p">
-       <property name="geometry">
-        <rect>
-         <x>20</x>
-         <y>300</y>
-         <width>121</width>
-         <height>31</height>
-        </rect>
-       </property>
-       <property name="text">
-        <string>Disponibilité:</string>
-       </property>
-      </widget>
-      <widget class="QLabel" name="label_7p_3">
-       <property name="geometry">
-        <rect>
-         <x>20</x>
-         <y>400</y>
-         <width>131</width>
-         <height>20</height>
-        </rect>
-       </property>
-       <property name="styleSheet">
-        <string notr="true">border:none;
-background_color:transparent</string>
-       </property>
-       <property name="text">
-        <string>Date Inscription:</string>
-       </property>
-      </widget>
-      <widget class="QLineEdit" name="lineEditp_2">
-       <property name="geometry">
-        <rect>
-         <x>20</x>
-         <y>200</y>
-         <width>251</width>
-         <height>31</height>
-        </rect>
-       </property>
-       <property name="text">
-        <string/>
-       </property>
-       <property name="placeholderText">
-        <string>Email</string>
-       </property>
-      </widget>
-      <widget class="QDateTimeEdit" name="dateTimeEdit">
-       <property name="geometry">
-        <rect>
-         <x>113</x>
-         <y>430</y>
-         <width>171</width>
-         <height>36</height>
-        </rect>
-       </property>
-      </widget>
-      <widget class="QLineEdit" name="lineEdit_2p_2">
-       <property name="geometry">
-        <rect>
-         <x>20</x>
-         <y>360</y>
-         <width>261</width>
-         <height>31</height>
-        </rect>
-       </property>
-       <property name="text">
-        <string/>
-       </property>
-       <property name="placeholderText">
-        <string> Nom Bateau Affectée</string>
-       </property>
-      </widget>
-      <widget class="QLabel" name="label_7p_4">
-       <property name="geometry">
-        <rect>
-         <x>20</x>
-         <y>470</y>
-         <width>131</width>
-         <height>20</height>
-        </rect>
-       </property>
-       <property name="styleSheet">
-        <string notr="true">border:none;
-background_color:transparent</string>
-       </property>
-       <property name="text">
-        <string>Date Affectation:</string>
-       </property>
-      </widget>
-      <widget class="QDateTimeEdit" name="dateTimeEdit_2">
-       <property name="geometry">
-        <rect>
-         <x>110</x>
-         <y>500</y>
-         <width>171</width>
-         <height>36</height>
-        </rect>
-       </property>
-      </widget>
-     </widget>
      <widget class="QTableWidget" name="tableWidgetp">
       <property name="geometry">
        <rect>
@@ -2665,6 +2369,12 @@ background_color:transparent</string>
       </property>
       <property name="styleSheet">
        <string notr="true"/>
+      </property>
+      <property name="verticalScrollBarPolicy">
+       <enum>Qt::ScrollBarPolicy::ScrollBarAlwaysOff</enum>
+      </property>
+      <property name="horizontalScrollBarPolicy">
+       <enum>Qt::ScrollBarPolicy::ScrollBarAlwaysOff</enum>
       </property>
       <attribute name="horizontalHeaderDefaultSectionSize">
        <number>100</number>
@@ -2706,7 +2416,12 @@ background_color:transparent</string>
       </column>
       <column>
        <property name="text">
-        <string>Date</string>
+        <string>Date Inscription</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Date Affectation</string>
        </property>
       </column>
       <column>
@@ -2963,11 +2678,14 @@ font-size: 14px;</string>
      <widget class="QPushButton" name="pushButton_4p">
       <property name="geometry">
        <rect>
-        <x>1470</x>
-        <y>190</y>
-        <width>61</width>
-        <height>51</height>
+        <x>-100</x>
+        <y>-100</y>
+        <width>1</width>
+        <height>1</height>
        </rect>
+      </property>
+      <property name="visible">
+       <bool>false</bool>
       </property>
       <property name="styleSheet">
        <string notr="true">border:none;
@@ -2981,37 +2699,43 @@ background-color:transparent;</string>
      <widget class="QPushButton" name="pushButton_5p">
       <property name="geometry">
        <rect>
-        <x>1450</x>
-        <y>180</y>
-        <width>61</width>
-        <height>61</height>
+        <x>-100</x>
+        <y>-100</y>
+        <width>1</width>
+        <height>1</height>
        </rect>
+      </property>
+      <property name="visible">
+       <bool>false</bool>
       </property>
       <property name="styleSheet">
        <string notr="true">border:none;
-image: url(:/res/supprimer.png);
+
 background-color:transparent;</string>
       </property>
       <property name="text">
-       <string/>
+       <string>❌</string>
       </property>
      </widget>
      <widget class="QPushButton" name="pushButton_6p">
       <property name="geometry">
        <rect>
-        <x>1420</x>
-        <y>180</y>
-        <width>61</width>
-        <height>61</height>
+        <x>-100</x>
+        <y>-100</y>
+        <width>1</width>
+        <height>1</height>
        </rect>
+      </property>
+      <property name="visible">
+       <bool>false</bool>
       </property>
       <property name="styleSheet">
        <string notr="true">border:none;
-image: url(:/res/stylo.png);
+
 background-color:transparent;</string>
       </property>
       <property name="text">
-       <string/>
+       <string>✏️</string>
       </property>
      </widget>
      <widget class="QFrame" name="frame_typesp">
@@ -3222,22 +2946,22 @@ border:1.5px solid  rgb(0, 0, 115);            border-radius: 15px;</string>
       </item>
       <item>
        <property name="text">
-        <string>✅ Disponible</string>
+        <string>Disponible</string>
        </property>
       </item>
       <item>
        <property name="text">
-        <string>⏳ Disponible bientôt</string>
+        <string>Disponible bientôt</string>
        </property>
       </item>
       <item>
        <property name="text">
-        <string>❌ Indisponible</string>
+        <string>Indisponible</string>
        </property>
       </item>
       <item>
        <property name="text">
-        <string>🏖️ En congé</string>
+        <string>En congé</string>
        </property>
       </item>
      </widget>
@@ -3288,7 +3012,7 @@ background-color:transparent;
      <widget class="QFrame" name="framefaceidp">
       <property name="geometry">
        <rect>
-        <x>550</x>
+        <x>580</x>
         <y>160</y>
         <width>881</width>
         <height>531</height>
@@ -3522,7 +3246,6 @@ border-radius: 15px;</string>
     font-weight: 700;
     font-size: 15px;
     margin-bottom:20px;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
     padding: 10px 20px;</string>
        </property>
        <property name="text">
@@ -3676,8 +3399,330 @@ font-size:18px</string>
        </property>
       </widget>
      </widget>
+     <widget class="QFrame" name="framep">
+      <property name="enabled">
+       <bool>true</bool>
+      </property>
+      <property name="geometry">
+       <rect>
+        <x>230</x>
+        <y>150</y>
+        <width>301</width>
+        <height>591</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">font-size:16px;
+font-weight:600;</string>
+      </property>
+      <property name="frameShape">
+       <enum>QFrame::Shape::StyledPanel</enum>
+      </property>
+      <property name="frameShadow">
+       <enum>QFrame::Shadow::Raised</enum>
+      </property>
+      <widget class="QLineEdit" name="lineEditp">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>20</y>
+         <width>251</width>
+         <height>31</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string/>
+       </property>
+       <property name="placeholderText">
+        <string>ID</string>
+       </property>
+      </widget>
+      <widget class="QLineEdit" name="lineEdit_2p">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>60</y>
+         <width>251</width>
+         <height>31</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string/>
+       </property>
+       <property name="placeholderText">
+        <string>Nom</string>
+       </property>
+      </widget>
+      <widget class="QComboBox" name="comboBoxp">
+       <property name="geometry">
+        <rect>
+         <x>120</x>
+         <y>190</y>
+         <width>161</width>
+         <height>41</height>
+        </rect>
+       </property>
+       <property name="editable">
+        <bool>true</bool>
+       </property>
+       <property name="currentText">
+        <string>Maitre de peche</string>
+       </property>
+       <item>
+        <property name="text">
+         <string>Maitre de peche</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Apprenti pecheur</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Marin-pecheur</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Contremaitre</string>
+        </property>
+       </item>
+      </widget>
+      <widget class="QComboBox" name="comboBox_2">
+       <property name="geometry">
+        <rect>
+         <x>120</x>
+         <y>240</y>
+         <width>161</width>
+         <height>41</height>
+        </rect>
+       </property>
+       <property name="editable">
+        <bool>true</bool>
+       </property>
+       <property name="currentText">
+        <string>Disponible</string>
+       </property>
+       <item>
+        <property name="text">
+         <string>Disponible</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Disponible bientot</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Indisponible</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>En conge</string>
+        </property>
+       </item>
+      </widget>
+      <widget class="QLineEdit" name="lineEdit_3p">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>100</y>
+         <width>251</width>
+         <height>28</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string/>
+       </property>
+       <property name="placeholderText">
+        <string>Prénom</string>
+       </property>
+      </widget>
+      <widget class="QPushButton" name="btnFaceIDp">
+       <property name="geometry">
+        <rect>
+         <x>60</x>
+         <y>490</y>
+         <width>191</width>
+         <height>41</height>
+        </rect>
+       </property>
+       <property name="toolTip">
+        <string>Capturer le visage pour reconnaissance faciale</string>
+       </property>
+       <property name="styleSheet">
+        <string notr="true"/>
+       </property>
+       <property name="text">
+        <string> Enregistrer visage</string>
+       </property>
+      </widget>
+      <widget class="QPushButton" name="bmip">
+       <property name="geometry">
+        <rect>
+         <x>160</x>
+         <y>540</y>
+         <width>121</width>
+         <height>41</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">#bmip{background-color:rgba(0, 80, 0, 0.7);}
+#bmip:hover{
+	
+	background-color: rgb(70, 140, 58);}</string>
+       </property>
+       <property name="text">
+        <string> Mission</string>
+       </property>
+      </widget>
+      <widget class="QPushButton" name="bap">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>540</y>
+         <width>101</width>
+         <height>41</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Ajouter</string>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_5p">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>200</y>
+         <width>71</width>
+         <height>21</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Rôle:</string>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_6p">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>240</y>
+         <width>101</width>
+         <height>31</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Disponibilité:</string>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_7p_3">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>290</y>
+         <width>131</width>
+         <height>20</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">border:none;
+background-color:transparent</string>
+       </property>
+       <property name="text">
+        <string>Date Inscription:</string>
+       </property>
+      </widget>
+      <widget class="QLineEdit" name="lineEditp_2">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>140</y>
+         <width>251</width>
+         <height>31</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string/>
+       </property>
+       <property name="placeholderText">
+        <string>Email</string>
+       </property>
+      </widget>
+      <widget class="QDateTimeEdit" name="dateTimeEdit">
+       <property name="geometry">
+        <rect>
+         <x>113</x>
+         <y>320</y>
+         <width>171</width>
+         <height>36</height>
+        </rect>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_7p_4">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>360</y>
+         <width>131</width>
+         <height>20</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">border:none;
+background-color:transparent</string>
+       </property>
+       <property name="text">
+        <string>Date Affectation:</string>
+       </property>
+      </widget>
+      <widget class="QDateTimeEdit" name="dateTimeEdit_2">
+       <property name="geometry">
+        <rect>
+         <x>110</x>
+         <y>390</y>
+         <width>171</width>
+         <height>36</height>
+        </rect>
+       </property>
+      </widget>
+      <widget class="QLabel" name="label_7p_5">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>440</y>
+         <width>131</width>
+         <height>20</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">border:none;
+background-color:transparent</string>
+       </property>
+       <property name="text">
+        <string>ID Bateau:</string>
+       </property>
+      </widget>
+      <widget class="QComboBox" name="comboBox_9">
+       <property name="geometry">
+        <rect>
+         <x>110</x>
+         <y>440</y>
+         <width>171</width>
+         <height>31</height>
+        </rect>
+       </property>
+       <property name="editable">
+        <bool>true</bool>
+       </property>
+       <property name="currentText">
+        <string/>
+       </property>
+      </widget>
+     </widget>
      <zorder>label_p</zorder>
-     <zorder>framep</zorder>
      <zorder>tableWidgetp</zorder>
      <zorder>comboBox_5p</zorder>
      <zorder>lineEdit_4p</zorder>
@@ -3695,6 +3740,7 @@ font-size:18px</string>
      <zorder>framefaceidp</zorder>
      <zorder>frame_12</zorder>
      <zorder>brmp</zorder>
+     <zorder>framep</zorder>
     </widget>
     <widget class="QWidget" name="gestionbateaub">
      <widget class="QLabel" name="label_alert_statusb">
