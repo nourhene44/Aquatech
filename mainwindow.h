@@ -1,4 +1,4 @@
-#ifndef MAINWINDOW_H
+﻿#ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
 #include <QMainWindow>
@@ -34,7 +34,7 @@ public slots:
     void editQuaiFromTable(int row);
 
 private slots:
-    // Tous vos slots de navigation existants (conservés)
+    // Tous vos slots de navigation existants (conserv├⌐s)
     void on_pushButton_3b_17_clicked();
     void on_pushButton_3b_54_clicked();
     void on_pushButton_3b_48_clicked();
@@ -126,6 +126,9 @@ private slots:
     void on_btnExportStatsPDF_2_clicked();
     void legacy_comboChartType_2_currentIndexChanged(int index);
     void on_pushButton_2c_clicked();
+    void on_lineEdit_7c_textChanged(const QString &text);
+    void on_comboBoxc_2_currentTextChanged(const QString &text);
+    void on_dateEdit_2c_dateChanged(const QDate &date);
     void on_pushButton_5e_clicked();
     void on_bap_clicked();
     void on_bep_clicked();
@@ -139,7 +142,7 @@ private slots:
     void on_btnExportMapPdf_clicked();
 
 public:
-    // Ajout des méthodes manquantes pour la gestion des quais
+    // Ajout des m├⌐thodes manquantes pour la gestion des quais
     void refreshQuaiTable();
     void ensureQuaiActionsColumn(const QString& css);
     void showQuaiFormPage();
@@ -151,8 +154,13 @@ protected:
 
 private:
     Ui::MainWindow *ui;
+<<<<<<< .git\copilot-merge\ours_mainwindow.h
     QString m_editingPecheurId;
     int m_editingEmployeId = -1;
+=======
+    int m_editingPecheurId = -1;
+    QString m_editingClientId;
+>>>>>>> .git\copilot-merge\theirs_mainwindow.h
     QLabel* m_curveLineLabelQuaiStats = nullptr;
     QTimer* m_statsTimer = nullptr;
     QTimer* m_weatherTimer = nullptr;
@@ -164,6 +172,10 @@ private:
     void loadBateaux();
     void modifierBateauFromRow(int row);
     void supprimerBateauFromRow(int row);
+
+    // --- Client CRUD (Actions column) ---
+    void modifierClientFromRow(int row);
+    void supprimerClientFromRow(int row);
     void filterBateaux();
     void updateStatsBateaux();
     Pecheurs pecheurFromForm() const;
@@ -189,6 +201,13 @@ private:
     bool exportWidgetToPdf(QWidget *widget,
                            const QString &defaultFileName,
                            const QString &dialogTitle);
+
+    // Mise en forme tableaux
+    void adjustClientTableColumns();
+    void adjustTopClientsStatsColumns();
+
+    // Gestion des clients (recherche + statistiques)
+    void refreshClientsPage();
 };
 
 #endif // MAINWINDOW_H
