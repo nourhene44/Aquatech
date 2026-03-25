@@ -8,6 +8,7 @@
 #include "connection.h"
 #include "quai.h"
 #include "pecheurs.h"
+#include "employe.h"
 
 class QNetworkAccessManager;
 
@@ -150,7 +151,8 @@ protected:
 
 private:
     Ui::MainWindow *ui;
-    int m_editingPecheurId = -1;
+    QString m_editingPecheurId;
+    int m_editingEmployeId = -1;
     QLabel* m_curveLineLabelQuaiStats = nullptr;
     QTimer* m_statsTimer = nullptr;
     QTimer* m_weatherTimer = nullptr;
@@ -168,6 +170,11 @@ private:
     void loadPecheurs();
     void loadPecheurFromTable();
     void resetAjouterButton();
+
+    // --- Employe CRUD ---
+    void loadEmployes();
+    void editEmployeFromTable(int row);
+    void ensureEmployeActionsColumn(const QString& css);
 
     void showFrame(QWidget* frameToShow);
     void setupFrames();

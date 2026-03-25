@@ -7,6 +7,7 @@
 #include <QVBoxLayout>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QRadioButton>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QDate>
@@ -51,6 +52,7 @@
 
 static QString weatherDescriptionFr(int weatherCode);
 static QString weatherIconEmoji(int weatherCode);
+static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui);
 
 static bool handleCrudDisabled(QWidget* parent)
 {
@@ -89,6 +91,14 @@ static QComboBox* pecheurBateauCombo(Ui::MainWindow* ui)
 {
     if (!ui) return nullptr;
     return ui->comboBox_9;
+}
+
+static QString pecheurSexeCode(Ui::MainWindow* ui)
+{
+    if (!ui) return QString();
+    if (ui->radioButton_2p && ui->radioButton_2p->isChecked()) return QStringLiteral("M");
+    if (ui->radioButtonp && ui->radioButtonp->isChecked()) return QStringLiteral("F");
+    return QString();
 }
 
 static QString cleanFilterLabel(QString text)
@@ -164,6 +174,152 @@ static QPixmap buildDisponibiliteCirclePixmap(int disponible, int bientot, int i
     painter.drawEllipse(pieRect);
 
     return pixmap;
+}
+
+static QString canonicalEmployeRole(const QString& raw)
+{
+    QString key = raw.trimmed().toLower();
+    key.replace(QStringLiteral("é"), QStringLiteral("e"));
+    key.replace(QStringLiteral("è"), QStringLiteral("e"));
+    key.replace(QStringLiteral("ê"), QStringLiteral("e"));
+    key.replace(QStringLiteral("à"), QStringLiteral("a"));
+    key.replace(QStringLiteral("ù"), QStringLiteral("u"));
+    key.replace(QStringLiteral("î"), QStringLiteral("i"));
+    key.replace(QStringLiteral("ô"), QStringLiteral("o"));
+    key.replace(QStringLiteral("ç"), QStringLiteral("c"));
+    key.remove(QLatin1Char('_'));
+    key.remove(QLatin1Char(' '));
+
+    if (key.contains(QStringLiteral("gard"))) return QStringLiteral("Gardien");
+    if (key.contains(QStringLiteral("tech"))) return QStringLiteral("Technicien");
+    if (key.contains(QStringLiteral("respons"))) return QStringLiteral("Responsable");
+    if (key.contains(QStringLiteral("ouvri"))) return QStringLiteral("Ouvrier");
+    if (key.contains(QStringLiteral("pech"))) return QStringLiteral("Pecheur");
+    return raw.trimmed();
+}
+
+static int employeRoleCodeForIdUi(const QString& roleRaw)
+{
+    const QString role = canonicalEmployeRole(roleRaw);
+    if (role == QStringLiteral("Gardien")) return 3;
+    if (role == QStringLiteral("Technicien")) return 4;
+    if (role == QStringLiteral("Responsable")) return 5;
+    if (role == QStringLiteral("Ouvrier")) return 6;
+    return 0;
+}
+
+static QPixmap buildEmployeRoleCirclePixmap(int gardien,
+                                            int technicien,
+                                            int responsable,
+                                            int ouvrier,
+                                            int size)
+{
+    const int separatorWidth = 2;
+    const int outerBorderWidth = 4;
+
+    const int safeSize = qMax(40, size);
+    QPixmap pixmap(safeSize, safeSize);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+
+    QPen separatorPen(QColor(255, 255, 255), separatorWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+    painter.setPen(separatorPen);
+
+    const qreal inset = static_cast<qreal>(outerBorderWidth) / 2.0;
+    const QRectF pieRect(inset, inset, safeSize - 2.0 * inset, safeSize - 2.0 * inset);
+    const int total = gardien + technicien + responsable + ouvrier;
+    const int totalUnits = 360 * 16;
+
+    int sGardien = 0;
+    int sTechnicien = 0;
+    int sResponsable = 0;
+    int sOuvrier = 0;
+
+    if (total > 0) {
+        sGardien = qRound((static_cast<double>(gardien) / static_cast<double>(total)) * totalUnits);
+        sTechnicien = qRound((static_cast<double>(technicien) / static_cast<double>(total)) * totalUnits);
+        sResponsable = qRound((static_cast<double>(responsable) / static_cast<double>(total)) * totalUnits);
+        sOuvrier = qMax(0, totalUnits - (sGardien + sTechnicien + sResponsable));
+    } else {
+        sGardien = totalUnits / 4;
+        sTechnicien = totalUnits / 4;
+        sResponsable = totalUnits / 4;
+        sOuvrier = totalUnits - (sGardien + sTechnicien + sResponsable);
+    }
+
+    QVector<QPair<QColor, int>> slices = {
+        { QColor(QStringLiteral("#3498db")), sGardien },
+        { QColor(QStringLiteral("#27ae60")), sTechnicien },
+        { QColor(QStringLiteral("#f39c12")), sResponsable },
+        { QColor(QStringLiteral("#9b59b6")), sOuvrier }
+    };
+
+    int startAngle = 90 * 16;
+    for (const auto& slice : slices) {
+        if (slice.second <= 0) continue;
+        painter.setBrush(slice.first);
+        const int span = -slice.second;
+        painter.drawPie(pieRect, startAngle, span);
+        startAngle += span;
+    }
+
+    painter.setBrush(Qt::NoBrush);
+    QPen borderPen(QColor(255, 255, 255), outerBorderWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+    painter.setPen(borderPen);
+    painter.drawEllipse(pieRect);
+
+    return pixmap;
+}
+
+static void updateEmployeRoleStats(Ui::MainWindow* ui,
+                                   int gardien,
+                                   int technicien,
+                                   int responsable,
+                                   int ouvrier)
+{
+    if (!ui) return;
+
+    const int total = gardien + technicien + responsable + ouvrier;
+    const auto pct = [total](int value) {
+        if (total <= 0) return QStringLiteral("0.0");
+        return QString::number((100.0 * static_cast<double>(value)) / static_cast<double>(total), 'f', 1);
+    };
+
+    QLabel* obsoletePecheurLegend = ui->stackedWidget
+        ? ui->stackedWidget->findChild<QLabel*>(QStringLiteral("label_legend_othere"))
+        : nullptr;
+    if (obsoletePecheurLegend) {
+        obsoletePecheurLegend->clear();
+        obsoletePecheurLegend->hide();
+    }
+
+    if (ui->label_total_typese) {
+        ui->label_total_typese->setText(QStringLiteral("Total: %1 employés").arg(total));
+    }
+    if (ui->label_legend_chalutiere) {
+        ui->label_legend_chalutiere->setText(
+            QStringLiteral("● Gardien: %1 (%2%)").arg(gardien).arg(pct(gardien)));
+    }
+    if (ui->label_legend_palangriere) {
+        ui->label_legend_palangriere->setText(
+            QStringLiteral("● Technicien: %1 (%2%)").arg(technicien).arg(pct(technicien)));
+    }
+    if (ui->label_legend_caseyeure) {
+        ui->label_legend_caseyeure->setText(
+            QStringLiteral("● Responsable: %1 (%2%)").arg(responsable).arg(pct(responsable)));
+    }
+    if (ui->label_legend_traditionale) {
+        ui->label_legend_traditionale->setText(
+            QStringLiteral("● Ouvrier: %1 (%2%)").arg(ouvrier).arg(pct(ouvrier)));
+    }
+    if (ui->progressTypeCirclee) {
+        const int size = qMin(ui->progressTypeCirclee->width(), ui->progressTypeCirclee->height());
+        ui->progressTypeCirclee->setStyleSheet(QStringLiteral("border: none; background: transparent;"));
+        ui->progressTypeCirclee->setPixmap(buildEmployeRoleCirclePixmap(gardien, technicien, responsable, ouvrier, size));
+    }
 }
 
 static void updateDisponibiliteStats(
@@ -403,6 +559,136 @@ static bool insertRowByMapping(QWidget* parent,
     return true;
 }
 
+// Mise à jour générique d'une ligne (UPDATE) à partir de clés logiques et de synonymes
+
+static bool updateRowByMapping(QWidget* parent,
+                               QSqlDatabase db,
+                               const QString& tableName,
+                               const QString& idLogicalKey,
+                               const QVariant& idValue,
+                               const QHash<QString, QVariant>& values,
+                               const QHash<QString, QStringList>& synonyms,
+                               QString* errorOut)
+{
+    if (!db.isValid() || tableName.isEmpty()) {
+        if (errorOut) *errorOut = QStringLiteral("Base de données ou table invalide");
+        return false;
+    }
+
+    const QStringList dbCols = getColumnNames(db, tableName);
+    if (dbCols.isEmpty()) {
+        if (errorOut) *errorOut = QStringLiteral("Impossible de récupérer les colonnes de la table %1").arg(tableName);
+        return false;
+    }
+
+    // Résoudre la colonne d'identifiant
+    QStringList idSyns = synonyms.value(idLogicalKey);
+    if (idSyns.isEmpty()) idSyns << idLogicalKey;
+    const QString idCol = matchColumnBySynonyms(dbCols, idSyns);
+    if (idCol.isEmpty()) {
+        if (errorOut) *errorOut = QStringLiteral("Colonne identifiant introuvable pour %1").arg(idLogicalKey);
+        return false;
+    }
+
+    QStringList setClauses;
+    QList<QVariant> bindValues;
+
+    for (auto it = values.constBegin(); it != values.constEnd(); ++it) {
+        const QString logical = it.key();
+        if (logical == idLogicalKey)
+            continue; // l'ID est utilisé uniquement dans le WHERE
+
+        QStringList syns = synonyms.value(logical);
+        if (syns.isEmpty()) syns << logical;
+
+        const QString col = matchColumnBySynonyms(dbCols, syns);
+        if (col.isEmpty()) {
+            continue; // champ ignoré si colonne introuvable
+        }
+
+        setClauses << QStringLiteral("%1 = ?").arg(col);
+        bindValues << it.value();
+    }
+
+    if (setClauses.isEmpty()) {
+        if (errorOut) *errorOut = QStringLiteral("Aucun champ valide pour la mise à jour dans %1").arg(tableName);
+        return false;
+    }
+
+    const QString sql = QStringLiteral("UPDATE %1 SET %2 WHERE %3 = ?")
+                             .arg(tableName,
+                                  setClauses.join(QLatin1Char(',')),
+                                  idCol);
+
+    QSqlQuery query(db);
+    query.prepare(sql);
+    for (const QVariant& v : std::as_const(bindValues)) {
+        query.addBindValue(v);
+    }
+    query.addBindValue(idValue);
+
+    if (!query.exec()) {
+        if (errorOut) {
+            *errorOut = query.lastError().text();
+        } else {
+            QMessageBox::critical(parent,
+                                  QStringLiteral("Mise à jour"),
+                                  QStringLiteral("Erreur SQL: %1").arg(query.lastError().text()));
+        }
+        return false;
+    }
+
+    return true;
+}
+
+// Suppression générique d'une ligne (DELETE) à partir d'une clé logique et de synonymes
+
+static bool deleteRowById(QWidget* parent,
+                          QSqlDatabase db,
+                          const QString& tableName,
+                          const QString& idLogicalKey,
+                          const QVariant& idValue,
+                          const QHash<QString, QStringList>& synonyms,
+                          QString* errorOut)
+{
+    if (!db.isValid() || tableName.isEmpty()) {
+        if (errorOut) *errorOut = QStringLiteral("Base de données ou table invalide");
+        return false;
+    }
+
+    const QStringList dbCols = getColumnNames(db, tableName);
+    if (dbCols.isEmpty()) {
+        if (errorOut) *errorOut = QStringLiteral("Impossible de récupérer les colonnes de la table %1").arg(tableName);
+        return false;
+    }
+
+    QStringList idSyns = synonyms.value(idLogicalKey);
+    if (idSyns.isEmpty()) idSyns << idLogicalKey;
+    const QString idCol = matchColumnBySynonyms(dbCols, idSyns);
+    if (idCol.isEmpty()) {
+        if (errorOut) *errorOut = QStringLiteral("Colonne identifiant introuvable pour %1").arg(idLogicalKey);
+        return false;
+    }
+
+    const QString sql = QStringLiteral("DELETE FROM %1 WHERE %2 = ?").arg(tableName, idCol);
+    QSqlQuery query(db);
+    query.prepare(sql);
+    query.addBindValue(idValue);
+
+    if (!query.exec()) {
+        if (errorOut) {
+            *errorOut = query.lastError().text();
+        } else {
+            QMessageBox::critical(parent,
+                                  QStringLiteral("Suppression"),
+                                  QStringLiteral("Erreur SQL: %1").arg(query.lastError().text()));
+        }
+        return false;
+    }
+
+    return true;
+}
+
 static void reloadTableWidgetFromDb(QTableWidget* table,
                                      QSqlDatabase db,
                                      const QString& tableName,
@@ -596,7 +882,8 @@ void MainWindow::normalizeUiTexts()
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
-    , m_editingPecheurId(-1)
+    , m_editingPecheurId()
+    , m_editingEmployeId(-1)
 {
     ui->setupUi(this);
 
@@ -614,16 +901,80 @@ MainWindow::MainWindow(QWidget *parent)
     // Fix accents (é/è/…) + emojis on all pages.
     normalizeUiTexts();
 
+    // Page employés : masquer les anciens boutons flottants (édition/suppression/refresh)
+    // et utiliser uniquement la colonne Actions de la table.
+    if (auto *btnEditLegacy = this->findChild<QPushButton*>(QStringLiteral("pushButton_6e_2"))) btnEditLegacy->hide();
+    if (auto *btnDeleteLegacy = this->findChild<QPushButton*>(QStringLiteral("pushButton_4p_5"))) btnDeleteLegacy->hide();
+    if (auto *btnRefreshLegacy = this->findChild<QPushButton*>(QStringLiteral("pushButton_5p_6"))) btnRefreshLegacy->hide();
+
     if (ui->comboBoxp) ui->comboBoxp->setEditable(false);
     if (ui->comboBox_2) ui->comboBox_2->setEditable(false);
+    if (ui->lineEditp) {
+        ui->lineEditp->setReadOnly(false);
+        ui->lineEditp->setEnabled(true);
+        ui->lineEditp->setMinimumWidth(140);
+    }
 
-    const QDate today = QDate::currentDate();
-    if (ui->dateTimeEdit) ui->dateTimeEdit->setDate(today);
-    if (ui->dateTimeEdit_2) ui->dateTimeEdit_2->setDate(today);
+    const QDateTime now = QDateTime::currentDateTime();
+    const QDate today = now.date();
+    if (ui->dateTimeEdit) {
+        ui->dateTimeEdit->setDateTime(now);
+        ui->dateTimeEdit->setReadOnly(false);
+    }
+    if (ui->dateTimeEdit_2) {
+        ui->dateTimeEdit_2->setDateTime(now);
+        ui->dateTimeEdit_2->setMinimumDate(today);
+    }
+
+    const auto refreshPecheurGeneratedId = [this]() {
+        if (!ui || !ui->lineEditp || !m_editingPecheurId.isEmpty()) return;
+        const QString sexe = pecheurSexeCode(ui);
+        if (sexe.isEmpty()) {
+            ui->lineEditp->clear();
+            return;
+        }
+
+        const QString generatedId = Pecheurs::genererNouvelId(sexe);
+        if (!generatedId.isEmpty()) {
+            ui->lineEditp->setText(generatedId);
+        }
+    };
+
+    if (ui->radioButton_2p) {
+        connect(ui->radioButton_2p, &QRadioButton::toggled, this, [refreshPecheurGeneratedId](bool checked) {
+            if (checked) refreshPecheurGeneratedId();
+        });
+    }
+    if (ui->radioButtonp) {
+        connect(ui->radioButtonp, &QRadioButton::toggled, this, [refreshPecheurGeneratedId](bool checked) {
+            if (checked) refreshPecheurGeneratedId();
+        });
+    }
+    if (ui->radioButton_2p && ui->radioButtonp && !ui->radioButton_2p->isChecked() && !ui->radioButtonp->isChecked()) {
+        ui->radioButton_2p->setChecked(true);
+    }
+    refreshPecheurGeneratedId();
+
+    const auto refreshEmployeGeneratedId = [this]() {
+        if (!ui || !ui->lineEdit_12e || m_editingEmployeId > 0) return;
+        const QString role = ui->comboBox_11e ? ui->comboBox_11e->currentText().trimmed() : QString();
+        const int generatedId = Employe::genererNouvelId(role);
+        if (generatedId > 0) {
+            ui->lineEdit_12e->setText(QString::number(generatedId));
+        }
+    };
+
+    if (ui->comboBox_11e) {
+        connect(ui->comboBox_11e, &QComboBox::currentTextChanged, this, [refreshEmployeGeneratedId](const QString&) {
+            refreshEmployeGeneratedId();
+        });
+    }
+    refreshEmployeGeneratedId();
 
     // Remplir automatiquement les tables depuis la base au démarrage
     QSqlDatabase db = Connection::getInstance()->getDatabase();
     if (ui->tableWidgetc) {
+        // Chargement initial des clients
         reloadTableWidgetFromDb(ui->tableWidgetc, db, QStringLiteral("clients"),
             {QStringLiteral("id"), QStringLiteral("nom"), QStringLiteral("prenom"), QStringLiteral("statut"), QStringLiteral("profil"), QStringLiteral("date"), QStringLiteral("telephone")},
             {});
@@ -632,12 +983,8 @@ MainWindow::MainWindow(QWidget *parent)
         if (actionsCol >= 0) ui->tableWidgetc->setColumnWidth(actionsCol, 140);
     }
     if (ui->tableWidgetee) {
-        reloadTableWidgetFromDb(ui->tableWidgetee, db, QStringLiteral("employes"),
-            {QStringLiteral("id"), QStringLiteral("nom"), QStringLiteral("prenom"), QStringLiteral("telephone"), QStringLiteral("salaire"), QStringLiteral("equipe"), QStringLiteral("etat"), QStringLiteral("role"), QStringLiteral("zone")},
-            {});
-        ensureActionsColumnPopulated(ui->tableWidgetee, QStringLiteral("QPushButton { border:2px solid rgb(0, 0, 112); border-radius:6px; background-color: rgba(0, 0, 127,0.7); color: white; padding: 8px 16px; font-family: 'Segoe UI Emoji', 'Segoe UI', 'Arial', sans-serif; font-size: 26px; font-weight: bold;} QPushButton:hover { background-color: rgba(0, 0, 127,0.7); border-color: #59abc8;} QPushButton:pressed { background-color:rgba(0, 0, 127,0.9); }"));
-        int actionsCol2 = ui->tableWidgetee->columnCount() - 1;
-        if (actionsCol2 >= 0) ui->tableWidgetee->setColumnWidth(actionsCol2, 140);
+        // Chargement initial des employés via helper dédié (résolution de table + synonymes)
+        loadEmployes();
     }
     loadBateaux();
     // Chargement initial de la table des quais avec actions connectées
@@ -684,6 +1031,25 @@ if (ui->pushButton_pdfb_5) {
     }
     if (ui->pushButton_11p) {
         connect(ui->pushButton_11p, &QPushButton::clicked, this, &MainWindow::on_pushButton_11p_clicked);
+    }
+
+    // Filtres employés : recherche + état + statut
+    if (ui->pushButton_9e) {
+        connect(ui->pushButton_9e, &QPushButton::clicked, this, [this]() { loadEmployes(); });
+    }
+    if (ui->lineEdit_12e_2e) {
+        connect(ui->lineEdit_12e_2e, &QLineEdit::textChanged, this, [this](const QString&) { loadEmployes(); });
+    }
+    if (ui->comboBox_16e_2) {
+        connect(ui->comboBox_16e_2, &QComboBox::currentTextChanged, this, [this](const QString&) { loadEmployes(); });
+    }
+    if (ui->comboBox_17e) {
+        connect(ui->comboBox_17e, &QComboBox::currentTextChanged, this, [this](const QString&) { loadEmployes(); });
+    }
+    if (ui->pushButton_11e) {
+        connect(ui->pushButton_11e, &QPushButton::clicked, this, [this]() {
+            exportEmployesPdfReport(this, ui);
+        });
     }
 
     // Recherche bateaux : connecter le bouton loupe et le champ texte
@@ -811,7 +1177,359 @@ void MainWindow::on_p6b_clicked()
         ui->stackedWidget->setCurrentWidget(ui->pagee);
     }
 
-    // loadEmployes(); (removed)
+    loadEmployes();
+}
+
+// ----------------------
+// CRUD Employés (helpers) – style atelier
+// ----------------------
+
+void MainWindow::loadEmployes()
+{
+    if (!ui || !ui->tableWidgetee) {
+        return;
+    }
+
+    QScopedPointer<QSqlQueryModel> model(Employe::afficher());
+    if (!model) {
+        return;
+    }
+
+    QTableWidget *table = ui->tableWidgetee;
+    const int dataCols = model->columnCount();
+    if (dataCols <= 0) {
+        QMessageBox::critical(this,
+                              QStringLiteral("Employés"),
+                              QStringLiteral("Chargement échoué: %1").arg(Employe::lastError()));
+        return;
+    }
+
+    while (model->canFetchMore()) {
+        model->fetchMore();
+    }
+    const int rowCount = model->rowCount();
+
+    const QString recherche = ui->lineEdit_12e_2e ? ui->lineEdit_12e_2e->text().trimmed().simplified() : QString();
+    const QString etatSelection = cleanFilterLabel(ui->comboBox_16e_2 ? ui->comboBox_16e_2->currentText() : QString());
+    const QString statutSelection = cleanFilterLabel(ui->comboBox_17e ? ui->comboBox_17e->currentText() : QString());
+
+    auto isTousSelection = [](const QString& text) {
+        const QString key = normalizeKey(text);
+        return key.isEmpty() || key == QStringLiteral("tous");
+    };
+
+    auto findModelCol = [model = model.data()](std::initializer_list<QString> names) -> int {
+        for (int c = 0; c < model->columnCount(); ++c) {
+            const QString h = normalizeKey(model->headerData(c, Qt::Horizontal).toString());
+            for (const QString &name : names) {
+                const QString n = normalizeKey(name);
+                if (h == n || h.startsWith(n)) {
+                    return c;
+                }
+            }
+        }
+        return -1;
+    };
+
+    const int colNom = findModelCol({QStringLiteral("Nom")});
+    const int colPrenom = findModelCol({QStringLiteral("Prénom"), QStringLiteral("Prenom")});
+    const int colRole = findModelCol({QStringLiteral("Rôle"), QStringLiteral("Role")});
+    const int colEtat = findModelCol({QStringLiteral("État"), QStringLiteral("Etat")});
+    const int colStatut = findModelCol({QStringLiteral("Statut")});
+
+    int countGardien = 0;
+    int countTechnicien = 0;
+    int countResponsable = 0;
+    int countOuvrier = 0;
+
+    table->clearContents();
+    table->setRowCount(0);
+    table->setColumnCount(dataCols + 1);
+
+    // En-têtes
+    for (int c = 0; c < dataCols; ++c) {
+        auto *item = new QTableWidgetItem(model->headerData(c, Qt::Horizontal).toString());
+        table->setHorizontalHeaderItem(c, item);
+    }
+    table->setHorizontalHeaderItem(dataCols, new QTableWidgetItem(QStringLiteral("Actions")));
+
+    // Données filtrées
+    int visibleRow = 0;
+    for (int r = 0; r < rowCount; ++r) {
+        const QString nom = (colNom >= 0) ? model->data(model->index(r, colNom)).toString().trimmed() : QString();
+        const QString prenom = (colPrenom >= 0) ? model->data(model->index(r, colPrenom)).toString().trimmed() : QString();
+        const QString role = (colRole >= 0) ? model->data(model->index(r, colRole)).toString().trimmed() : QString();
+        const QString etat = (colEtat >= 0) ? model->data(model->index(r, colEtat)).toString().trimmed() : QString();
+        const QString statut = (colStatut >= 0) ? model->data(model->index(r, colStatut)).toString().trimmed() : QString();
+
+        bool matchRecherche = true;
+        if (!recherche.isEmpty()) {
+            const QStringList termes = recherche.split(' ', Qt::SkipEmptyParts);
+            if (termes.size() >= 2) {
+                const QString t1 = termes.at(0);
+                const QString t2 = termes.mid(1).join(QStringLiteral(" "));
+                const bool sens1 = nom.contains(t1, Qt::CaseInsensitive) && prenom.contains(t2, Qt::CaseInsensitive);
+                const bool sens2 = nom.contains(t2, Qt::CaseInsensitive) && prenom.contains(t1, Qt::CaseInsensitive);
+                matchRecherche = sens1 || sens2;
+            } else {
+                const QString t = termes.isEmpty() ? recherche : termes.first();
+                matchRecherche = nom.contains(t, Qt::CaseInsensitive) || prenom.contains(t, Qt::CaseInsensitive);
+            }
+        }
+
+        bool matchEtat = true;
+        if (!isTousSelection(etatSelection)) {
+            matchEtat = (normalizeKey(etat) == normalizeKey(etatSelection));
+        }
+
+        bool matchStatut = true;
+        if (!isTousSelection(statutSelection)) {
+            matchStatut = (normalizeKey(statut) == normalizeKey(statutSelection));
+        }
+
+        if (!(matchRecherche && matchEtat && matchStatut)) {
+            continue;
+        }
+
+        table->insertRow(visibleRow);
+        for (int c = 0; c < dataCols; ++c) {
+            const QVariant value = model->data(model->index(r, c));
+            auto *cellItem = new QTableWidgetItem(value.toString());
+            table->setItem(visibleRow, c, cellItem);
+        }
+
+        const QString roleCanonical = canonicalEmployeRole(role);
+        if (roleCanonical == QStringLiteral("Gardien")) ++countGardien;
+        else if (roleCanonical == QStringLiteral("Technicien")) ++countTechnicien;
+        else if (roleCanonical == QStringLiteral("Responsable")) ++countResponsable;
+        else if (roleCanonical == QStringLiteral("Ouvrier")) ++countOuvrier;
+
+        ++visibleRow;
+    }
+
+    table->setAlternatingRowColors(false);
+    table->setShowGrid(false);
+    table->setStyleSheet(
+        "QTableWidget {"
+        "background-color: rgb(224, 238, 255);"
+        "alternate-background-color: rgb(224, 238, 255);"
+        "border: none;"
+        "}"
+        "QTableWidget::item {"
+        "padding: 4px;"
+        "border: none;"
+        "}"
+        "QTableWidget::item:selected {"
+        "background-color: rgba(0, 85, 127, 0.20);"
+        "color: #0b2d4a;"
+        "}");
+
+    ensureEmployeActionsColumn(QStringLiteral(
+        "QPushButton {"
+        " border: 2px solid rgb(0, 0, 112);"
+        " border-radius: 10px;"
+        " background-color: rgb(224, 238, 255);"
+        " color: rgb(0, 0, 112);"
+        " padding: 0px;"
+        " }"
+        "QPushButton:hover { background-color: rgb(214, 230, 252); border-color: #59abc8; }"
+        "QPushButton:pressed { background-color: rgb(200, 220, 245); }"));
+
+    updateEmployeRoleStats(ui,
+                           countGardien,
+                           countTechnicien,
+                           countResponsable,
+                           countOuvrier);
+}
+
+void MainWindow::ensureEmployeActionsColumn(const QString &buttonStyle)
+{
+    Q_UNUSED(buttonStyle);
+
+    if (!ui || !ui->tableWidgetee) {
+        return;
+    }
+
+    QTableWidget *table = ui->tableWidgetee;
+
+    const int actionsCol = table->columnCount() - 1;
+    if (actionsCol < 0) {
+        return;
+    }
+
+    table->setColumnWidth(actionsCol, 114);
+
+    for (int row = 0; row < table->rowCount(); ++row) {
+        QWidget *container = new QWidget(table);
+        container->setAttribute(Qt::WA_TranslucentBackground, true);
+        container->setStyleSheet(QStringLiteral("background-color: transparent;"));
+
+        auto *layout = new QHBoxLayout(container);
+        layout->setContentsMargins(2, 2, 2, 2);
+        layout->setSpacing(7);
+
+        auto *editBtn = new QPushButton(container);
+        auto *deleteBtn = new QPushButton(container);
+
+        editBtn->setText(QStringLiteral("📝"));
+        deleteBtn->setText(QStringLiteral("❌"));
+
+        editBtn->setFixedSize(42, 32);
+        deleteBtn->setFixedSize(42, 32);
+
+        QFont btnFont(QStringLiteral("Segoe UI Emoji"));
+        btnFont.setPointSize(15);
+        btnFont.setBold(true);
+        editBtn->setFont(btnFont);
+        deleteBtn->setFont(btnFont);
+        editBtn->setFlat(true);
+        deleteBtn->setFlat(true);
+
+        const QString pecheurButtonStyle = QStringLiteral(
+            "QPushButton {"
+            " border: 2px solid rgb(0, 0, 112);"
+            " border-radius: 6px;"
+            " background-color: rgb(224, 238, 255);"
+            " color: rgb(0, 0, 112);"
+            " padding: 0px;"
+            " }"
+            "QPushButton:hover { background-color: rgb(224, 238, 255); }"
+            "QPushButton:pressed { background-color: rgb(224, 238, 255); }");
+        editBtn->setStyleSheet(pecheurButtonStyle);
+        deleteBtn->setStyleSheet(pecheurButtonStyle);
+
+        layout->addStretch();
+        layout->addWidget(editBtn, 0, Qt::AlignVCenter);
+        layout->addWidget(deleteBtn, 0, Qt::AlignVCenter);
+        layout->addStretch();
+        container->setLayout(layout);
+        table->setCellWidget(row, actionsCol, container);
+        table->setRowHeight(row, 42);
+
+        QObject::connect(editBtn, &QPushButton::clicked, this, [this, row]() {
+            editEmployeFromTable(row);
+        });
+
+        QObject::connect(deleteBtn, &QPushButton::clicked, this, [this, table, row]() {
+            if (!table->item(row, 0)) {
+                return;
+            }
+
+            const QString idText = table->item(row, 0)->text().trimmed();
+            const QString nom = table->item(row, 1) ? table->item(row, 1)->text().trimmed() : QString();
+            const QString prenom = table->item(row, 2) ? table->item(row, 2)->text().trimmed() : QString();
+
+            bool okInt = false;
+            const int idInt = idText.toInt(&okInt);
+            if (!okInt || idInt <= 0) {
+                QMessageBox::warning(this, QStringLiteral("Suppression employé"), QStringLiteral("ID employé invalide."));
+                return;
+            }
+
+            QMessageBox::StandardButton reply = QMessageBox::question(
+                this,
+                QStringLiteral("Suppression"),
+                QStringLiteral("Supprimer l'employé :\n%1 %2 (ID: %3) ?").arg(nom, prenom, idText),
+                QMessageBox::Yes | QMessageBox::No);
+
+            if (reply != QMessageBox::Yes) {
+                return;
+            }
+
+            if (!Employe::supprimer(idInt)) {
+                QMessageBox::critical(this,
+                                      QStringLiteral("Suppression employé"),
+                                      QStringLiteral("Suppression échouée: %1").arg(Employe::lastError()));
+                return;
+            }
+
+            QMessageBox::information(this, QStringLiteral("Suppression employé"), QStringLiteral("Suppression réussie."));
+            loadEmployes();
+        });
+    }
+}
+
+void MainWindow::editEmployeFromTable(int row)
+{
+    if (!ui || !ui->tableWidgetee) {
+        return;
+    }
+
+    QTableWidget *table = ui->tableWidgetee;
+    if (row < 0 || row >= table->rowCount()) {
+        return;
+    }
+
+    auto colByNames = [table](std::initializer_list<QString> names) -> int {
+        for (int c = 0; c < table->columnCount(); ++c) {
+            QTableWidgetItem *header = table->horizontalHeaderItem(c);
+            if (!header) continue;
+            const QString h = normalizeKey(header->text());
+            for (const QString &name : names) {
+                if (h == normalizeKey(name) || h.startsWith(normalizeKey(name))) {
+                    return c;
+                }
+            }
+        }
+        return -1;
+    };
+
+    const int colId = colByNames({QStringLiteral("ID")});
+    const int colNom = colByNames({QStringLiteral("Nom")});
+    const int colPrenom = colByNames({QStringLiteral("Prénom"), QStringLiteral("Prenom")});
+    const int colTelephone = colByNames({QStringLiteral("Téléphone"), QStringLiteral("Telephone"), QStringLiteral("Tel")});
+    const int colRole = colByNames({QStringLiteral("Rôle"), QStringLiteral("Role")});
+    const int colEquipe = colByNames({QStringLiteral("Équipe"), QStringLiteral("Equipe")});
+    const int colEtat = colByNames({QStringLiteral("État"), QStringLiteral("Etat")});
+    const int colStatut = colByNames({QStringLiteral("Statut")});
+    const int colSalaire = colByNames({QStringLiteral("Salaire")});
+
+    const QString idText = (colId >= 0 && table->item(row, colId)) ? table->item(row, colId)->text().trimmed() : QString();
+    const QString nom = (colNom >= 0 && table->item(row, colNom)) ? table->item(row, colNom)->text().trimmed() : QString();
+    const QString prenom = (colPrenom >= 0 && table->item(row, colPrenom)) ? table->item(row, colPrenom)->text().trimmed() : QString();
+    const QString telephone = (colTelephone >= 0 && table->item(row, colTelephone)) ? table->item(row, colTelephone)->text().trimmed() : QString();
+    const QString role = (colRole >= 0 && table->item(row, colRole)) ? table->item(row, colRole)->text().trimmed() : QString();
+    const QString equipe = (colEquipe >= 0 && table->item(row, colEquipe)) ? table->item(row, colEquipe)->text().trimmed() : QString();
+    const QString etat = (colEtat >= 0 && table->item(row, colEtat)) ? table->item(row, colEtat)->text().trimmed() : QString();
+    const QString statut = (colStatut >= 0 && table->item(row, colStatut)) ? table->item(row, colStatut)->text().trimmed() : QString();
+    const QString salaire = (colSalaire >= 0 && table->item(row, colSalaire)) ? table->item(row, colSalaire)->text().trimmed() : QString();
+
+    if (ui->lineEdit_12e) ui->lineEdit_12e->setText(idText);
+    if (ui->lineEdit_13e) ui->lineEdit_13e->setText(nom);
+    if (ui->lineEdit_16e) ui->lineEdit_16e->setText(prenom);
+    if (ui->lineEdit_14e) ui->lineEdit_14e->setText(telephone);
+    if (ui->lineEdit_14e_2) ui->lineEdit_14e_2->setText(salaire);
+
+    if (ui->comboBox_15e) {
+        int idx = ui->comboBox_15e->findText(equipe);
+        if (idx >= 0) ui->comboBox_15e->setCurrentIndex(idx);
+    }
+    if (ui->comboBox_16e) {
+        int idx = ui->comboBox_16e->findText(etat);
+        if (idx >= 0) ui->comboBox_16e->setCurrentIndex(idx);
+    }
+    if (ui->comboBox_11e) {
+        int idx = ui->comboBox_11e->findText(role);
+        if (idx >= 0) ui->comboBox_11e->setCurrentIndex(idx);
+    }
+    if (ui->comboBox_14e) {
+        int idx = ui->comboBox_14e->findText(statut);
+        if (idx >= 0) ui->comboBox_14e->setCurrentIndex(idx);
+    }
+
+    bool okInt = false;
+    m_editingEmployeId = idText.toInt(&okInt);
+    if (!okInt) {
+        // Si l'ID n'est pas numérique, on stocke simplement un marqueur négatif pour désactiver la mise à jour
+        m_editingEmployeId = -1;
+    }
+
+    if (ui->lineEdit_12e) ui->lineEdit_12e->setReadOnly(false);
+    if (ui->pushButton_5e) ui->pushButton_5e->setText(QStringLiteral("Modifier"));
+
+    QMessageBox::information(this,
+                             QStringLiteral("Modification employé"),
+                             QStringLiteral("Formulaire rempli. Cliquez sur Modifier pour sauvegarder les modifications."));
 }
 
 void MainWindow::on_p5b_clicked()
@@ -1506,8 +2224,14 @@ void MainWindow::on_pushButton_5e_clicked()
 {
     if (!handleCrudDisabled(this) || !ui) return;
 
+    const bool editingEmploye = (m_editingEmployeId > 0);
+    const QString idConstraintMessage = QStringLiteral(
+        "Le champ ID Employé est obligatoire et doit respecter le format YYRNNNN.\n"
+        "YY : année courante (ex. 26)\n"
+        "R : code rôle (Gardien=3, Technicien=4, Responsable=5, Ouvrier=6)\n"
+        "NNNN : numéro unique auto-incrémenté.");
+
     if (!validateRequiredFields(this, {
-            {QStringLiteral("ID Employé"), ui->lineEdit_12e, [this]{ return !ui->lineEdit_12e || ui->lineEdit_12e->text().trimmed().isEmpty(); }},
             {QStringLiteral("Nom"), ui->lineEdit_13e, [this]{ return !ui->lineEdit_13e || ui->lineEdit_13e->text().trimmed().isEmpty(); }},
             {QStringLiteral("Prénom"), ui->lineEdit_16e, [this]{ return !ui->lineEdit_16e || ui->lineEdit_16e->text().trimmed().isEmpty(); }},
             {QStringLiteral("Téléphone"), ui->lineEdit_14e, [this]{ return !ui->lineEdit_14e || ui->lineEdit_14e->text().trimmed().isEmpty(); }},
@@ -1516,72 +2240,138 @@ void MainWindow::on_pushButton_5e_clicked()
         return;
     }
 
-    Connection *conn = Connection::getInstance();
-    if (!conn->ensureOpen()) {
-        QMessageBox::critical(this, QStringLiteral("DB"), QStringLiteral("Connexion DB échouée: %1").arg(conn->lastErrorText()));
-        return;
-    }
-    QSqlDatabase db = conn->getDatabase();
+    // Récupération des valeurs du formulaire (style atelier)
+    const QString idText = ui->lineEdit_12e ? ui->lineEdit_12e->text().trimmed() : QString();
+    int id = toIntOrZero(idText);
+    const QString nom = ui->lineEdit_13e ? ui->lineEdit_13e->text().trimmed() : QString();
+    const QString prenom = ui->lineEdit_16e ? ui->lineEdit_16e->text().trimmed() : QString();
+    const QString telephone = ui->lineEdit_14e ? ui->lineEdit_14e->text().trimmed() : QString();
+    bool salaireOk = false;
+    const double salaire = ui->lineEdit_14e_2 ? ui->lineEdit_14e_2->text().trimmed().toDouble(&salaireOk) : 0.0;
+    const QString equipe = ui->comboBox_15e ? ui->comboBox_15e->currentText().trimmed() : QString();
+    const QString etat = ui->comboBox_16e ? ui->comboBox_16e->currentText().trimmed() : QString();
+    const QString role = ui->comboBox_11e ? ui->comboBox_11e->currentText().trimmed() : QString();
+    const QString statut = ui->comboBox_14e ? ui->comboBox_14e->currentText().trimmed() : QString();
 
-    const QString tableName = resolveTableName(db, {QStringLiteral("EMPLOYE"), QStringLiteral("EMPLOYES"), QStringLiteral("EMPLOYEE"), QStringLiteral("EMPLOYEES"), QStringLiteral("T_EMPLOYE")});
-    if (tableName.isEmpty()) {
-        QMessageBox::critical(this, QStringLiteral("DB"), QStringLiteral("Table employés introuvable (EMPLOYE/EMPLOYES...)."));
-        return;
-    }
-
-    QHash<QString, QVariant> values;
-    values.insert(QStringLiteral("id"), ui->lineEdit_12e ? ui->lineEdit_12e->text().trimmed() : QString());
-    values.insert(QStringLiteral("nom"), ui->lineEdit_13e ? ui->lineEdit_13e->text().trimmed() : QString());
-    values.insert(QStringLiteral("prenom"), ui->lineEdit_16e ? ui->lineEdit_16e->text().trimmed() : QString());
-    values.insert(QStringLiteral("telephone"), ui->lineEdit_14e ? ui->lineEdit_14e->text().trimmed() : QString());
-    values.insert(QStringLiteral("salaire"), ui->lineEdit_14e_2 ? ui->lineEdit_14e_2->text().trimmed() : QString());
-    values.insert(QStringLiteral("equipe"), ui->comboBox_15e ? ui->comboBox_15e->currentText().trimmed() : QString());
-    values.insert(QStringLiteral("etat"), ui->comboBox_16e ? ui->comboBox_16e->currentText().trimmed() : QString());
-    values.insert(QStringLiteral("role"), ui->comboBox_11e ? ui->comboBox_11e->currentText().trimmed() : QString());
-    values.insert(QStringLiteral("zone"), ui->comboBox_14e ? ui->comboBox_14e->currentText().trimmed() : QString());
-
-    const QHash<QString, QStringList> syn = {
-        {QStringLiteral("id"), {QStringLiteral("id"), QStringLiteral("idemploye"), QStringLiteral("employeeid"), QStringLiteral("id_employe")}},
-        {QStringLiteral("nom"), {QStringLiteral("nom"), QStringLiteral("name"), QStringLiteral("lastname")}},
-        {QStringLiteral("prenom"), {QStringLiteral("prenom"), QStringLiteral("firstname")}},
-        {QStringLiteral("telephone"), {QStringLiteral("telephone"), QStringLiteral("tel"), QStringLiteral("phone")}},
-        {QStringLiteral("salaire"), {QStringLiteral("salaire"), QStringLiteral("salary")}},
-        {QStringLiteral("equipe"), {QStringLiteral("equipe"), QStringLiteral("team")}},
-        {QStringLiteral("etat"), {QStringLiteral("etat"), QStringLiteral("etat_employe"), QStringLiteral("state")}},
-        {QStringLiteral("role"), {QStringLiteral("role"), QStringLiteral("poste"), QStringLiteral("fonction")}},
-        {QStringLiteral("zone"), {QStringLiteral("zone"), QStringLiteral("statut"), QStringLiteral("status")}},
-    };
-
-    QString err;
-    if (!insertRowByMapping(this, db, tableName, values, syn, &err)) {
-        QMessageBox::critical(this, QStringLiteral("Ajout employé"), QStringLiteral("Insertion échouée: %1").arg(err));
-        return;
+    if (!editingEmploye && id <= 0) {
+        id = Employe::genererNouvelId(role);
+        if (id > 0 && ui->lineEdit_12e) {
+            ui->lineEdit_12e->setText(QString::number(id));
+        }
     }
 
-    if (ui->tableWidgetee) {
-        reloadTableWidgetFromDb(ui->tableWidgetee, db, tableName,
-                                {QStringLiteral("id"), QStringLiteral("nom"), QStringLiteral("prenom"), QStringLiteral("telephone"), QStringLiteral("salaire"), QStringLiteral("equipe"), QStringLiteral("etat"), QStringLiteral("role"), QStringLiteral("zone")},
-                                syn);
-        ensureActionsColumnPopulated(ui->tableWidgetee, QStringLiteral("QPushButton { border:2px solid rgb(0, 0, 112); border-radius:6px; background-color: rgba(0, 0, 127,0.7); color: white; padding: 8px 16px; font-family: 'Segoe UI Emoji', 'Segoe UI', 'Arial', sans-serif; font-size: 26px; font-weight: bold;} QPushButton:hover { background-color: rgba(0, 0, 127,0.7); border-color: #59abc8;} QPushButton:pressed { background-color:rgba(0, 0, 127,0.9); }") );
-        int actionsCol2 = ui->tableWidgetee->columnCount() - 1;
-        if (actionsCol2 >= 0) ui->tableWidgetee->setColumnWidth(actionsCol2, 140);
-        ensureActionsColumnPopulated(ui->tableWidgetee, QStringLiteral("QPushButton { border:2px solid rgb(0, 0, 112); border-radius:12px; background-color: rgba(0, 0, 127,0.7); color: white; padding: 16px 24px; font-family: 'Segoe UI Emoji', 'Segoe UI', 'Arial', sans-serif; font-size: 38px; font-weight: bold;} QPushButton:hover { background-color: rgba(0, 0, 127,0.7); border-color: #59abc8;} QPushButton:pressed { background-color:rgba(0, 0, 127,0.9); }") );
-        ensureActionsColumnPopulated(ui->tableWidgetee, QStringLiteral("QPushButton { border:2px solid rgb(0, 0, 112); border-radius:12px; background-color: rgba(0, 0, 127,0.7); color: white; padding: 10px 18px; font-family: 'Segoe UI Emoji', 'Segoe UI', 'Arial', sans-serif; font-size: 26px; font-weight: bold;} QPushButton:hover { background-color: rgba(0, 0, 127,0.7); border-color: #59abc8;} QPushButton:pressed { background-color:rgba(0, 0, 127,0.9); }") );
-        ensureActionsColumnPopulated(ui->tableWidgetee, QStringLiteral("QPushButton { border:2px solid rgb(0, 0, 112); border-radius:8px; background-color: rgba(0, 0, 127,0.7); color: white; padding: 4px 8px; font-family: 'Segoe UI Emoji', 'Segoe UI', 'Arial', sans-serif; font-size: 18px; font-weight: bold;} QPushButton:hover { background-color: rgba(0, 0, 127,0.7); border-color: #59abc8;} QPushButton:pressed { background-color:rgba(0, 0, 127,0.9); }") );
+    static const QRegularExpression nomPattern(QStringLiteral("^[A-Za-zÀ-ÿ\\s'-]+$"));
+    static const QRegularExpression telPattern(QStringLiteral("^\\d{8,15}$"));
+
+    if (id <= 0) {
+        QMessageBox::warning(this, QStringLiteral("Saisie employé"), idConstraintMessage);
+        if (ui->lineEdit_12e) ui->lineEdit_12e->setFocus();
+        return;
+    }
+    const int yy = QDate::currentDate().year() % 100;
+    const int roleDigit = employeRoleCodeForIdUi(role);
+    const int idYear = id / 100000;
+    const int idRole = (id / 10000) % 10;
+    const int idSeq = id % 10000;
+
+    if (roleDigit == 0 || idYear != yy || idRole != roleDigit || idSeq <= 0 || idSeq > 9999) {
+        QMessageBox::warning(this, QStringLiteral("Saisie employé"), idConstraintMessage);
+        if (ui->lineEdit_12e) ui->lineEdit_12e->setFocus();
+        return;
+    }
+    if (!nomPattern.match(nom).hasMatch()) {
+        QMessageBox::warning(this, QStringLiteral("Saisie employé"), QStringLiteral("Nom invalide (lettres uniquement)."));
+        if (ui->lineEdit_13e) ui->lineEdit_13e->setFocus();
+        return;
+    }
+    if (!nomPattern.match(prenom).hasMatch()) {
+        QMessageBox::warning(this, QStringLiteral("Saisie employé"), QStringLiteral("Prénom invalide (lettres uniquement)."));
+        if (ui->lineEdit_16e) ui->lineEdit_16e->setFocus();
+        return;
+    }
+    if (!telPattern.match(telephone).hasMatch()) {
+        QMessageBox::warning(this, QStringLiteral("Saisie employé"), QStringLiteral("Téléphone invalide (8 à 15 chiffres)."));
+        if (ui->lineEdit_14e) ui->lineEdit_14e->setFocus();
+        return;
+    }
+    if (!salaireOk || salaire < 0.0) {
+        QMessageBox::warning(this, QStringLiteral("Saisie employé"), QStringLiteral("Salaire invalide (nombre >= 0)."));
+        if (ui->lineEdit_14e_2) ui->lineEdit_14e_2->setFocus();
+        return;
+    }
+
+    Employe emp(id, nom, prenom, role, equipe, etat, statut, salaire, telephone);
+
+    if (editingEmploye) {
+        if (!emp.modifierAvecAncienId(m_editingEmployeId)) {
+            QMessageBox::critical(this,
+                                  QStringLiteral("Modification employé"),
+                                  QStringLiteral("Modification échouée: %1").arg(Employe::lastError()));
+            return;
+        }
+        QMessageBox::information(this, QStringLiteral("Modification employé"), QStringLiteral("Modification réussie."));
+    } else {
+        if (!emp.ajouter()) {
+            QMessageBox::critical(this,
+                                  QStringLiteral("Ajout employé"),
+                                  QStringLiteral("Insertion échouée: %1").arg(Employe::lastError()));
+            return;
+        }
+        QMessageBox::information(this, QStringLiteral("Ajout employé"), QStringLiteral("Ajout réussi."));
+    }
+
+    // Rafraîchir la table et réinitialiser l'état d'édition
+    loadEmployes();
+
+    if (editingEmploye) {
+        m_editingEmployeId = -1;
+        if (ui->lineEdit_12e) ui->lineEdit_12e->setReadOnly(false);
+        if (ui->pushButton_5e) ui->pushButton_5e->setText(QStringLiteral("Ajouter"));
+        const int generatedId = Employe::genererNouvelId(ui->comboBox_11e ? ui->comboBox_11e->currentText().trimmed() : QString());
+        if (generatedId > 0 && ui->lineEdit_12e) {
+            ui->lineEdit_12e->setText(QString::number(generatedId));
+        }
     }
 }
 
 Pecheurs MainWindow::pecheurFromForm() const
 {
-    const int id = toIntOrZero(ui->lineEditp ? ui->lineEditp->text() : QString());
+    const QDateTime now = QDateTime::currentDateTime();
+    QString id = ui->lineEditp ? ui->lineEditp->text().trimmed().toUpper() : QString();
     const QString nom = ui->lineEdit_2p ? ui->lineEdit_2p->text() : QString();
     const QString prenom = ui->lineEdit_3p ? ui->lineEdit_3p->text() : QString();
+    QString sexe = pecheurSexeCode(ui);
     const QString role = ui->comboBoxp ? ui->comboBoxp->currentText() : QString();
     const QString dispo = ui->comboBox_2 ? ui->comboBox_2->currentText() : QString();
     const QString email = ui->lineEditp_2 ? ui->lineEditp_2->text() : QString();
-    const int heures = ui->dateTimeEdit ? ui->dateTimeEdit->time().hour() : 0;
-    const QDate dateInscription = ui->dateTimeEdit ? ui->dateTimeEdit->date() : QDate();
+    const bool editingPecheur = !m_editingPecheurId.isEmpty();
+
+    if (sexe.isEmpty() && id.size() >= 5) {
+        const QString inferred = id.mid(4, 1).toUpper();
+        if (inferred == QStringLiteral("M") || inferred == QStringLiteral("F")) {
+            sexe = inferred;
+        }
+    }
+
+    if (!editingPecheur) {
+        if (!sexe.isEmpty()) {
+            const QString generatedId = Pecheurs::genererNouvelId(sexe);
+            if (!generatedId.isEmpty()) {
+                id = generatedId;
+                if (ui->lineEditp) {
+                    ui->lineEditp->setText(id);
+                }
+            }
+        }
+    }
+
+    const int heures = (editingPecheur && ui->dateTimeEdit) ? ui->dateTimeEdit->time().hour() : now.time().hour();
+    const QDate dateInscription = (editingPecheur && ui->dateTimeEdit) ? ui->dateTimeEdit->date() : now.date();
     const QDate dateAffectation = ui->dateTimeEdit_2 ? ui->dateTimeEdit_2->date() : QDate();
+
+    if (!editingPecheur && ui->dateTimeEdit) {
+        ui->dateTimeEdit->setDateTime(now);
+    }
 
     QString bateauText;
     if (QLineEdit* bateauEdit = pecheurBateauLineEdit(ui)) {
@@ -1591,7 +2381,7 @@ Pecheurs MainWindow::pecheurFromForm() const
     }
     const int idBateau = bateauIdFromText(bateauText);
 
-    return Pecheurs(id, nom, prenom, role, dispo, email, heures, dateInscription, dateAffectation, idBateau);
+    return Pecheurs(id, nom, prenom, sexe, role, dispo, email, heures, dateInscription, dateAffectation, idBateau);
 }
 
 void MainWindow::loadPecheurs()
@@ -1631,7 +2421,7 @@ void MainWindow::loadPecheurs()
         const int currentRow = row;
         table->insertRow(row);
 
-        table->setItem(row, 0, new QTableWidgetItem(QString::number(record.id)));
+        table->setItem(row, 0, new QTableWidgetItem(record.id));
         table->setItem(row, 1, new QTableWidgetItem(record.nom));
         table->setItem(row, 2, new QTableWidgetItem(record.prenom));
         table->setItem(row, 3, new QTableWidgetItem(record.role));
@@ -1713,7 +2503,10 @@ void MainWindow::loadPecheurs()
         ++row;
     }
 
-    table->setColumnWidth(0, 60);
+    if (table->horizontalHeader()) {
+        table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
+    }
+    table->setColumnWidth(0, 110);
     table->setColumnWidth(1, 100);
     table->setColumnWidth(2, 100);
     table->setColumnWidth(3, 140);
@@ -1752,13 +2545,19 @@ void MainWindow::on_bap_clicked()
 {
     if (!handleCrudDisabled(this)) return;
     const Pecheurs p = pecheurFromForm();
-    const int id = toIntOrZero(ui && ui->lineEditp ? ui->lineEditp->text() : QString());
+    const QString id = ui && ui->lineEditp ? ui->lineEditp->text().trimmed().toUpper() : QString();
 
     const QString nom = ui && ui->lineEdit_2p ? ui->lineEdit_2p->text().trimmed() : QString();
     const QString prenom = ui && ui->lineEdit_3p ? ui->lineEdit_3p->text().trimmed() : QString();
     const QString email = ui && ui->lineEditp_2 ? ui->lineEditp_2->text().trimmed() : QString();
+    const QString sexe = pecheurSexeCode(ui);
 
-    if (id <= 0) {
+    if (m_editingPecheurId.isEmpty() && sexe.isEmpty()) {
+        QMessageBox::warning(this, "Champs", "Veuillez sélectionner le sexe (Homme/Femme)");
+        return;
+    }
+
+    if (id.isEmpty()) {
         QMessageBox::warning(this, "Champs", "Veuillez saisir ID");
         if (ui && ui->lineEditp) ui->lineEditp->setFocus();
         return;
@@ -1782,7 +2581,7 @@ void MainWindow::on_bap_clicked()
         return;
     }
 
-    if (m_editingPecheurId > 0) {
+    if (!m_editingPecheurId.isEmpty()) {
         if (p.modifierAvecAncienId(m_editingPecheurId)) {
             loadPecheurs();
             resetAjouterButton();
@@ -1837,7 +2636,21 @@ void MainWindow::loadPecheurFromTable()
     const QString dateAffStr = ui->tableWidgetp->item(currentRow, 8) ? ui->tableWidgetp->item(currentRow, 8)->text() : QString();
     const int heures = toIntOrZero(ui->tableWidgetp->item(currentRow, 9) ? ui->tableWidgetp->item(currentRow, 9)->text() : QString());
 
+    m_editingPecheurId = id.trimmed().toUpper();
+
     if (ui->lineEditp) ui->lineEditp->setText(id);
+
+    const QString idUpper = id.trimmed().toUpper();
+    if (idUpper.size() >= 3) {
+        const QString codeSexe = idUpper.mid(2, 1);
+        if (ui->radioButton_2p && ui->radioButtonp) {
+            if (codeSexe == QStringLiteral("1")) {
+                ui->radioButton_2p->setChecked(true);
+            } else if (codeSexe == QStringLiteral("2")) {
+                ui->radioButtonp->setChecked(true);
+            }
+        }
+    }
     if (ui->lineEdit_2p) ui->lineEdit_2p->setText(nom);
     if (ui->lineEdit_3p) ui->lineEdit_3p->setText(prenom);
 
@@ -1887,10 +2700,20 @@ void MainWindow::loadPecheurFromTable()
         }
     }
 
-    m_editingPecheurId = toIntOrZero(id);
+    const QDateTime now = QDateTime::currentDateTime();
+    if (ui->dateTimeEdit) {
+        ui->dateTimeEdit->setReadOnly(true);
+    }
+    if (ui->dateTimeEdit_2) {
+        ui->dateTimeEdit_2->setMinimumDate(now.date());
+        if (ui->dateTimeEdit_2->date() < now.date()) {
+            ui->dateTimeEdit_2->setDate(now.date());
+        }
+    }
 
     if (ui && ui->lineEditp) {
         ui->lineEditp->setReadOnly(false);
+        ui->lineEditp->setEnabled(true);
     }
 
     if (ui && ui->bap) {
@@ -1905,16 +2728,31 @@ void MainWindow::resetAjouterButton()
     }
     if (ui && ui->lineEditp) {
         ui->lineEditp->setReadOnly(false);
+        ui->lineEditp->setEnabled(true);
+        const QString generatedId = Pecheurs::genererNouvelId(pecheurSexeCode(ui));
+        if (!generatedId.isEmpty()) {
+            ui->lineEditp->setText(generatedId);
+        } else {
+            ui->lineEditp->clear();
+        }
     }
-    m_editingPecheurId = -1;
+    if (ui && ui->dateTimeEdit) {
+        ui->dateTimeEdit->setReadOnly(false);
+        ui->dateTimeEdit->setDateTime(QDateTime::currentDateTime());
+    }
+    m_editingPecheurId.clear();
 }
 
 void MainWindow::on_pushButton_6p_clicked()
 {
     if (!handleCrudDisabled(this)) return;
 
-    if (m_editingPecheurId <= 0 && ui && ui->tableWidgetp && ui->tableWidgetp->currentRow() >= 0) {
+    if (m_editingPecheurId.isEmpty() && ui && ui->tableWidgetp && ui->tableWidgetp->currentRow() >= 0) {
         loadPecheurFromTable();
+        if (ui->lineEditp) {
+            ui->lineEditp->setReadOnly(false);
+            ui->lineEditp->setEnabled(true);
+        }
         QMessageBox::information(this, "Édition", "Formulaire rempli - modifiez les champs et cliquez sur Modifier pour sauvegarder");
     }
     else {
@@ -1952,8 +2790,8 @@ void MainWindow::on_pushButton_5p_clicked()
         return;
     }
 
-    const int id = toIntOrZero(idItem->text());
-    if (id <= 0) {
+    const QString id = idItem->text().trimmed().toUpper();
+    if (id.isEmpty()) {
         QMessageBox::warning(this, "ID", "ID invalide");
         return;
     }
@@ -1974,7 +2812,7 @@ void MainWindow::on_pushButton_5p_clicked()
 
     if (Pecheurs::supprimer(id)) {
         loadPecheurs();
-        m_editingPecheurId = -1;
+        m_editingPecheurId.clear();
         QMessageBox::information(this, "OK", "Suppression réussie");
     } else {
         QMessageBox::critical(this, "Erreur", "Suppression échouée: " + Pecheurs::lastError());
@@ -1997,6 +2835,311 @@ static int findPecheurActionColumnIndex(const QTableWidget* table)
     }
 
     return -1;
+}
+
+static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
+{
+    if (!parent || !ui || !ui->tableWidgetee) return;
+
+    const QString documentsDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    const QString baseDir = documentsDir.isEmpty() ? QDir::homePath() : documentsDir;
+    const QString defaultName = QStringLiteral("Rapport_Employes_Aquatec_2026.pdf");
+    QString filePath = QFileDialog::getSaveFileName(
+        parent,
+        QStringLiteral("Exporter PDF"),
+        QDir(baseDir).filePath(defaultName),
+        QStringLiteral("PDF Files (*.pdf)"));
+
+    if (filePath.trimmed().isEmpty()) {
+        return;
+    }
+    if (!filePath.toLower().endsWith(QStringLiteral(".pdf"))) {
+        filePath += QStringLiteral(".pdf");
+    }
+
+    QPdfWriter writer(filePath);
+    writer.setPageSize(QPageSize(QPageSize::A4));
+    writer.setPageOrientation(QPageLayout::Landscape);
+    writer.setResolution(300);
+    writer.setPageMargins(QMarginsF(8, 8, 8, 8), QPageLayout::Millimeter);
+
+    QPainter painter(&writer);
+    if (!painter.isActive()) {
+        QMessageBox::critical(parent, QStringLiteral("Erreur"), QStringLiteral("Impossible de créer le fichier PDF."));
+        return;
+    }
+
+    QTableWidget* table = ui->tableWidgetee;
+    const int actionColumn = findPecheurActionColumnIndex(table);
+    const bool actionColumnWasHidden = (actionColumn >= 0) ? table->isColumnHidden(actionColumn) : false;
+    if (actionColumn >= 0 && !actionColumnWasHidden) {
+        table->setColumnHidden(actionColumn, true);
+    }
+
+    auto restoreActionColumn = [table, actionColumn, actionColumnWasHidden]() {
+        if (actionColumn >= 0 && !actionColumnWasHidden) {
+            table->setColumnHidden(actionColumn, false);
+        }
+    };
+
+    const QString exportStamp = QDateTime::currentDateTime().toString(QStringLiteral("dd/MM/yyyy HH:mm"));
+    const int pageW = writer.width();
+    const int pageH = writer.height();
+    const int leftMargin = 50;
+    const int rightMargin = 50;
+    const int topMargin = 100;
+    const int bottomMargin = 80;
+    const int contentW = pageW - leftMargin - rightMargin;
+
+    QFont titleFont(QStringLiteral("Arial"), 20, QFont::Bold);
+    QFont subtitleFont(QStringLiteral("Arial"), 9, QFont::Normal);
+    QFont headerFont(QStringLiteral("Arial"), 11, QFont::Bold);
+    QFont cellFont(QStringLiteral("Arial"), 9, QFont::Normal);
+    QFont totalFont(QStringLiteral("Arial"), 9, QFont::Bold);
+    QFont footerFont(QStringLiteral("Arial"), 9, QFont::Normal);
+
+    painter.setFont(titleFont);
+    painter.setPen(QColor(0, 82, 155));
+    painter.drawText(QRect(leftMargin, topMargin - 40, contentW, 60), Qt::AlignCenter,
+                     QStringLiteral("AQUATEC – Liste des Employés"));
+
+    painter.setPen(Qt::darkGray);
+    painter.setFont(subtitleFont);
+    painter.drawText(QRect(leftMargin, topMargin + 20, contentW, 30), Qt::AlignCenter,
+                     QStringLiteral("Exporté le %1").arg(exportStamp));
+
+    int y = topMargin + 80;
+
+    QVector<int> columns;
+    QVector<int> sourceWidths;
+    int totalSourceW = 0;
+    for (int c = 0; c < table->columnCount(); ++c) {
+        if (table->isColumnHidden(c)) continue;
+        if (c == actionColumn) continue;
+        columns.push_back(c);
+        const int w = qMax(40, table->columnWidth(c));
+        sourceWidths.push_back(w);
+        totalSourceW += w;
+    }
+
+    if (columns.isEmpty()) {
+        restoreActionColumn();
+        painter.end();
+        QMessageBox::warning(parent, QStringLiteral("Export PDF"),
+                             QStringLiteral("Aucune colonne à exporter."));
+        return;
+    }
+
+    QVector<int> drawWidths;
+    drawWidths.reserve(columns.size());
+    int usedW = 0;
+    for (int i = 0; i < sourceWidths.size(); ++i) {
+        int dw = qMax(42, static_cast<int>((static_cast<double>(sourceWidths[i]) / static_cast<double>(qMax(1, totalSourceW))) * contentW));
+        drawWidths.push_back(dw);
+        usedW += dw;
+    }
+    if (!drawWidths.isEmpty()) {
+        drawWidths[drawWidths.size() - 1] += (contentW - usedW);
+    }
+
+    const int headerH = 48;
+    auto drawTableHeader = [&]() {
+        int x = leftMargin;
+        painter.setFont(headerFont);
+
+        QLinearGradient headerGrad(0, y, 0, y + headerH);
+        headerGrad.setColorAt(0.0, QColor(QStringLiteral("#0b5ea8")));
+        headerGrad.setColorAt(1.0, QColor(QStringLiteral("#2e86c1")));
+
+        for (int i = 0; i < columns.size(); ++i) {
+            const int c = columns[i];
+            const int w = drawWidths[i];
+            const QRect cellRect(x, y, w, headerH);
+            const QString text = table->horizontalHeaderItem(c) ? table->horizontalHeaderItem(c)->text().trimmed() : QStringLiteral("Colonne %1").arg(c + 1);
+
+            painter.fillRect(cellRect, headerGrad);
+            painter.setPen(Qt::white);
+            painter.drawText(cellRect.adjusted(12, 0, -12, 0), Qt::AlignVCenter | Qt::AlignLeft, text);
+            painter.setPen(QPen(QColor(200, 210, 220), 1));
+            painter.drawRect(cellRect);
+            x += w;
+        }
+        y += headerH;
+    };
+
+    const int footerY = pageH - bottomMargin + 10;
+    const int tableTop = y;
+    const int tableHeaderH = headerH;
+    const int tableTotalH = 30;
+    const int tableBottomLimit = pageH - bottomMargin - 40;
+    const int tableRowsAreaH = qMax(40, tableBottomLimit - tableTop - tableHeaderH - tableTotalH);
+    const int rowH = 40;
+    const int maxRowsInPdf = qMax(1, tableRowsAreaH / rowH);
+
+    drawTableHeader();
+
+    QVector<int> visibleRows;
+    visibleRows.reserve(table->rowCount());
+    for (int r = 0; r < table->rowCount(); ++r) {
+        if (!table->isRowHidden(r)) visibleRows.push_back(r);
+    }
+
+    const int totalVisibleRows = visibleRows.size();
+    const int exportedRows = qMin(maxRowsInPdf, totalVisibleRows);
+
+    painter.setFont(cellFont);
+    for (int index = 0; index < exportedRows; ++index) {
+        const int r = visibleRows[index];
+        const QColor rowColor = (index % 2 == 0) ? QColor(250, 250, 252) : QColor(245, 251, 255);
+        painter.fillRect(QRect(leftMargin, y, contentW, rowH), rowColor);
+        painter.setPen(QPen(QColor(220, 225, 230), 1));
+        painter.drawRect(QRect(leftMargin, y, contentW, rowH));
+
+        int x = leftMargin;
+        for (int i = 0; i < columns.size(); ++i) {
+            const int c = columns[i];
+            const int w = drawWidths[i];
+            painter.setPen(QPen(QColor(220, 225, 230), 1));
+            painter.drawLine(x, y, x, y + rowH);
+
+            painter.setPen(Qt::black);
+            const QTableWidgetItem* item = table->item(r, c);
+            QString text = item ? item->text() : QString();
+            text = text.simplified();
+
+            QFontMetrics fm(cellFont);
+            text = fm.elidedText(text, Qt::ElideRight, qMax(10, w - 24));
+            painter.drawText(QRect(x + 12, y + 6, w - 24, rowH - 12), Qt::AlignLeft | Qt::AlignVCenter, text);
+            x += w;
+        }
+
+        painter.setPen(QPen(QColor(220, 225, 230), 1));
+        painter.drawLine(leftMargin + contentW, y, leftMargin + contentW, y + rowH);
+        y += rowH;
+    }
+
+    y += 8;
+    painter.setPen(Qt::darkGray);
+    painter.setFont(totalFont);
+    painter.drawText(QRect(leftMargin, y, contentW, 24), Qt::AlignCenter,
+                     QStringLiteral("Total: %1 employés").arg(totalVisibleRows));
+
+    if (totalVisibleRows > exportedRows) {
+        painter.setFont(QFont(QStringLiteral("Arial"), 9, QFont::Normal));
+        painter.setPen(QColor(QStringLiteral("#8a8a8a")));
+        painter.drawText(QRect(leftMargin, y + 24, contentW, 18), Qt::AlignCenter,
+                         QStringLiteral("(%1 lignes affichées sur %2 dans cette page)").arg(exportedRows).arg(totalVisibleRows));
+    }
+
+    painter.setPen(QColor(QStringLiteral("#8a8a8a")));
+    painter.setFont(footerFont);
+    painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
+                     QStringLiteral("AQUATEC - Rapport généré le %1").arg(exportStamp));
+
+    writer.newPage();
+
+    int countGardien = 0;
+    int countTechnicien = 0;
+    int countResponsable = 0;
+    int countOuvrier = 0;
+
+    int roleColumn = -1;
+    for (int c = 0; c < table->columnCount(); ++c) {
+        QTableWidgetItem* headerItem = table->horizontalHeaderItem(c);
+        if (!headerItem) continue;
+        const QString h = normalizeKey(headerItem->text());
+        if (h == QStringLiteral("role") || h.startsWith(QStringLiteral("role"))) {
+            roleColumn = c;
+            break;
+        }
+    }
+
+    for (int r : visibleRows) {
+        const QString role = (roleColumn >= 0 && table->item(r, roleColumn)) ? table->item(r, roleColumn)->text().trimmed() : QString();
+        const QString roleCanonical = canonicalEmployeRole(role);
+        if (roleCanonical == QStringLiteral("Gardien")) ++countGardien;
+        else if (roleCanonical == QStringLiteral("Technicien")) ++countTechnicien;
+        else if (roleCanonical == QStringLiteral("Responsable")) ++countResponsable;
+        else if (roleCanonical == QStringLiteral("Ouvrier")) ++countOuvrier;
+    }
+
+    const int totalStats = countGardien + countTechnicien + countResponsable + countOuvrier;
+    y = topMargin - 20;
+
+    painter.setPen(QColor(0, 82, 155));
+    painter.setFont(QFont(QStringLiteral("Arial"), 18, QFont::Bold));
+    painter.drawText(QRect(leftMargin, y, contentW, 44), Qt::AlignCenter,
+                     QStringLiteral("Statistiques selon rôle"));
+    y += 50;
+
+    painter.setPen(Qt::darkGray);
+    painter.setFont(QFont(QStringLiteral("Arial"), 10, QFont::Bold));
+    painter.drawText(QRect(leftMargin, y, contentW, 22), Qt::AlignCenter,
+                     QStringLiteral("Total: %1 employés").arg(totalStats));
+    y += 36;
+
+    const int pieSize = 210;
+    const int legendW = 380;
+    const int blockGap = 52;
+    const int blockW = pieSize + blockGap + legendW;
+    const int blockX = leftMargin + qMax(0, (contentW - blockW) / 2);
+    const int blockY = y + 10;
+
+    const QRect pieRect(blockX, blockY, pieSize, pieSize);
+    const QVector<QPair<QString, QPair<int, QColor>>> slices = {
+        { QStringLiteral("Gardien"), { countGardien, QColor(QStringLiteral("#3498db")) } },
+        { QStringLiteral("Technicien"), { countTechnicien, QColor(QStringLiteral("#27ae60")) } },
+        { QStringLiteral("Responsable"), { countResponsable, QColor(QStringLiteral("#f39c12")) } },
+        { QStringLiteral("Ouvrier"), { countOuvrier, QColor(QStringLiteral("#9b59b6")) } }
+    };
+
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    if (totalStats > 0) {
+        int startAngle = 90 * 16;
+        for (const auto& slice : slices) {
+            const int value = slice.second.first;
+            if (value <= 0) continue;
+            const int span = -qRound((static_cast<double>(value) / static_cast<double>(totalStats)) * 360.0 * 16.0);
+            painter.setBrush(slice.second.second);
+            painter.setPen(Qt::white);
+            painter.drawPie(pieRect, startAngle, span);
+            startAngle += span;
+        }
+    } else {
+        painter.setBrush(QColor(QStringLiteral("#dadada")));
+        painter.setPen(Qt::white);
+        painter.drawEllipse(pieRect);
+    }
+
+    painter.setRenderHint(QPainter::Antialiasing, false);
+
+    const int legendX = pieRect.right() + blockGap;
+    int legendY = blockY + 16;
+    painter.setFont(QFont(QStringLiteral("Arial"), 10, QFont::Normal));
+    for (const auto& slice : slices) {
+        const int value = slice.second.first;
+        const double pct = (totalStats > 0) ? (100.0 * static_cast<double>(value) / static_cast<double>(totalStats)) : 0.0;
+        painter.fillRect(QRect(legendX, legendY + 6, 10, 10), slice.second.second);
+        painter.setPen(Qt::black);
+        painter.drawText(QRect(legendX + 18, legendY - 2, legendW - 20, 22),
+                         Qt::AlignLeft | Qt::AlignVCenter,
+                         QStringLiteral("%1: %2 (%3%)")
+                            .arg(slice.first)
+                            .arg(value)
+                            .arg(QString::number(pct, 'f', 0)));
+        legendY += 26;
+    }
+
+    painter.setPen(QColor(QStringLiteral("#8a8a8a")));
+    painter.setFont(footerFont);
+    painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
+                     QStringLiteral("AQUATEC - Rapport généré le %1").arg(exportStamp));
+
+    restoreActionColumn();
+    painter.end();
+
+    QMessageBox::information(parent, QStringLiteral("Export PDF"),
+                             QStringLiteral("Fichier PDF exporté avec succès:\n%1").arg(filePath));
 }
 
 static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
@@ -2231,10 +3374,10 @@ static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
 
     const QRect pieRect(blockX, blockY, pieSize, pieSize);
     const QVector<QPair<QString, QPair<int, QColor>>> slices = {
-        { QStringLiteral("Disponible"), { stats.disponible, QColor(QStringLiteral("#00C853")) } },
-        { QStringLiteral("Disponible bientot"), { stats.bientot, QColor(QStringLiteral("#007BFF")) } },
-        { QStringLiteral("Indisponible"), { stats.indisponible, QColor(QStringLiteral("#FF1744")) } },
-        { QStringLiteral("En conge"), { stats.enConge, QColor(QStringLiteral("#AA00FF")) } }
+        { QStringLiteral("Disponible"), { stats.disponible, QColor(QStringLiteral("#27ae60")) } },
+        { QStringLiteral("Disponible bientot"), { stats.bientot, QColor(QStringLiteral("#3498db")) } },
+        { QStringLiteral("Indisponible"), { stats.indisponible, QColor(QStringLiteral("#e74c3c")) } },
+        { QStringLiteral("En conge"), { stats.enConge, QColor(QStringLiteral("#9b59b6")) } }
     };
 
     painter.setRenderHint(QPainter::Antialiasing, true);

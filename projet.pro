@@ -10,6 +10,7 @@ CONFIG += c++17
 
 SOURCES += \
     connection.cpp \
+    employe.cpp \
     main.cpp \
     mainwindow.cpp \
     quai.cpp \
@@ -18,6 +19,7 @@ SOURCES += \
 
 HEADERS += \
     connection.h \
+    employe.h \
     mainwindow.h \
     quai.h \
     bateaauuu.h \

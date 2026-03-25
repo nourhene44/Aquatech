@@ -10,9 +10,10 @@ class Pecheurs
 {
 public:
     struct TableRowData {
-        int id = 0;
+        QString id;
         QString nom;
         QString prenom;
+        QString sexe;
         QString role;
         int idBateau = 0;
         QString disponibilite;
@@ -31,16 +32,17 @@ public:
     };
 
     Pecheurs();
-    Pecheurs(int id, const QString& nom, const QString& prenom,
+    Pecheurs(const QString& id, const QString& nom, const QString& prenom,
+             const QString& sexe,
              const QString& role, const QString& disponibilite,
              const QString& email, int heures,
              const QDate& dateInscription, const QDate& dateAffectation,
              int idBateau);
 
     bool ajouter() const;
-    static bool supprimer(int id);
+    static bool supprimer(const QString& id);
     bool modifier() const;
-    bool modifierAvecAncienId(int ancienId) const;
+    bool modifierAvecAncienId(const QString& ancienId) const;
     static QSqlQueryModel* afficher();
     static bool chargerTable(const QString& recherche,
                              const QString& roleSelection,
@@ -49,16 +51,16 @@ public:
     static DisponibiliteStats calculerDisponibiliteStats(const QString& recherche,
                                                          const QString& roleSelection,
                                                          const QString& dispoSelection);
-    static bool idExiste(int id);
+    static bool idExiste(const QString& id);
+    static QString genererNouvelId(const QString& sexe);
     static int bateauIdFromText(const QString& text);
     static QString lastError();
 
-    void setId(int id) { id_ = id; }
-
 private:
-    int id_;
+    QString id_;
     QString nom_;
     QString prenom_;
+    QString sexe_;
     QString role_;
     QString disponibilite_;
     QString email_;

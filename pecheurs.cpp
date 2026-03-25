@@ -7,6 +7,7 @@
 #include <QRegularExpression>
 #include <QDebug>
 #include <QStringList>
+#include <QTime>
 
 static QString s_lastError;
 
@@ -54,10 +55,104 @@ static QString canonicalDisponibilite(const QString& raw)
 	return QString();
 }
 
+static QString canonicalSexe(const QString& raw)
+{
+	const QString n = normalizeText(raw);
+	if (n.startsWith(QStringLiteral("m")) || n.contains(QStringLiteral("hom"))) return QStringLiteral("M");
+	if (n.startsWith(QStringLiteral("f")) || n.contains(QStringLiteral("fem"))) return QStringLiteral("F");
+	return QString();
+}
+
 static bool isValidEmail(const QString& email)
 {
 	static const QRegularExpression pattern(QStringLiteral("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"));
 	return pattern.match(email.trimmed()).hasMatch();
+}
+
+static bool isDigitsOnly(const QString& text)
+{
+	static const QRegularExpression digitsPattern(QStringLiteral("^\\d+$"));
+	return digitsPattern.match(text.trimmed()).hasMatch();
+}
+
+static bool idPecheurColumnSupportsText()
+{
+	QSqlQuery query;
+	query.prepare(
+		"SELECT DATA_TYPE FROM USER_TAB_COLUMNS "
+		"WHERE UPPER(TABLE_NAME) = 'PECHEURS' AND UPPER(COLUMN_NAME) = 'ID_PECHEUR'");
+
+	if (!query.exec()) {
+		return true;
+	}
+
+	if (!query.next()) {
+		return true;
+	}
+
+	const QString type = query.value(0).toString().trimmed().toUpper();
+	return type.contains(QStringLiteral("CHAR")) || type.contains(QStringLiteral("CLOB"));
+}
+
+static bool validateIdColumnCompatibility(const QString& idValue)
+{
+	if (idValue.trimmed().isEmpty()) {
+		return true;
+	}
+
+	if (idPecheurColumnSupportsText()) {
+		return true;
+	}
+
+	if (isDigitsOnly(idValue)) {
+		return true;
+	}
+
+	s_lastError = QStringLiteral("La colonne ID_Pecheur est numérique dans Oracle. "
+		"Le format attendu (ex: 2610001) ne contient que des chiffres.");
+	return false;
+}
+
+static bool validatePecheursTemporalConstraints(const QDate& dateInscription,
+										const QDate& dateAffectation,
+										int heures,
+										bool requireCurrentInscription)
+{
+	if (!dateInscription.isValid()) {
+		s_lastError = QStringLiteral("Date d'inscription obligatoire.");
+		return false;
+	}
+
+	const QDate today = QDate::currentDate();
+	if (requireCurrentInscription) {
+		if (dateInscription != today) {
+			s_lastError = QStringLiteral("Date d'inscription invalide (doit être aujourd'hui).");
+			return false;
+		}
+
+		const int currentHour = QTime::currentTime().hour();
+		if (heures != currentHour) {
+			s_lastError = QStringLiteral("Heure d'inscription invalide (doit être l'heure actuelle).");
+			return false;
+		}
+	}
+
+	if (!dateAffectation.isValid()) {
+		s_lastError = QStringLiteral("Date d'affectation obligatoire.");
+		return false;
+	}
+
+	if (dateAffectation < today) {
+		s_lastError = QStringLiteral("Date d'affectation invalide (doit être aujourd'hui ou une date future).");
+		return false;
+	}
+
+	if (dateAffectation < dateInscription) {
+		s_lastError = QStringLiteral("Date d'affectation invalide (doit être >= date d'inscription).");
+		return false;
+	}
+
+	return true;
 }
 
 static int toIntOrZeroLocal(const QString& text)
@@ -139,11 +234,12 @@ static void bindPecheursFilters(QSqlQuery& query,
 }
 
 Pecheurs::Pecheurs()
-	: id_(0), heures_(0), idBateau_(0)
+	: heures_(0), idBateau_(0)
 {
 }
 
-Pecheurs::Pecheurs(int id, const QString& nom, const QString& prenom,
+Pecheurs::Pecheurs(const QString& id, const QString& nom, const QString& prenom,
+				   const QString& sexe,
 				   const QString& role, const QString& disponibilite,
 				   const QString& email, int heures,
 				   const QDate& dateInscription, const QDate& dateAffectation,
@@ -151,6 +247,7 @@ Pecheurs::Pecheurs(int id, const QString& nom, const QString& prenom,
 	: id_(id),
 	  nom_(nom),
 	  prenom_(prenom),
+	  sexe_(sexe),
 	  role_(role),
 	  disponibilite_(disponibilite),
 	  email_(email),
@@ -163,8 +260,18 @@ Pecheurs::Pecheurs(int id, const QString& nom, const QString& prenom,
 
 bool Pecheurs::ajouter() const
 {
-	if (id_ <= 0) {
-		s_lastError = QStringLiteral("ID invalide (doit être > 0).");
+	if (!validateIdColumnCompatibility(id_)) {
+		return false;
+	}
+
+	if (id_.trimmed().isEmpty()) {
+		s_lastError = QStringLiteral("ID obligatoire.");
+		return false;
+	}
+
+	static const QRegularExpression idPattern(QStringLiteral("^\\d{2}[12]\\d{4}$"));
+	if (!idPattern.match(id_.trimmed().toUpper()).hasMatch()) {
+		s_lastError = QStringLiteral("ID invalide (format attendu: YYSxxxx YY=Année (26), S=1(Homme)/2(Femme), xxxx=Numéro 4 chiffres.");
 		return false;
 	}
 
@@ -178,6 +285,12 @@ bool Pecheurs::ajouter() const
 	}
 	if (email_.trimmed().isEmpty()) {
 		s_lastError = QStringLiteral("Email obligatoire.");
+		return false;
+	}
+
+	const QString sexeCanonical = canonicalSexe(sexe_);
+	if (sexeCanonical.isEmpty()) {
+		s_lastError = QStringLiteral("Sexe invalide. Valeurs autorisées: M ou F.");
 		return false;
 	}
 
@@ -203,20 +316,20 @@ bool Pecheurs::ajouter() const
 		return false;
 	}
 
-	if (dateInscription_.isValid() && dateAffectation_.isValid() && dateAffectation_ < dateInscription_) {
-		s_lastError = QStringLiteral("Date d'affectation invalide (doit être >= date d'inscription).");
+	if (!validatePecheursTemporalConstraints(dateInscription_, dateAffectation_, heures_, true)) {
 		return false;
 	}
 
 	QSqlQuery query;
 	query.prepare(
 		"INSERT INTO PECHEURS "
-		"(ID_Pecheur, Nom_Pecheur, Prenom_Pecheur, Role, Disponibilite, Email, Heures, "
+		"(ID_Pecheur, Nom_Pecheur, Prenom_Pecheur, Sexe, Role, Disponibilite, Email, Heures, "
 		"Date_Inscription, Date_Affectation, ID_Bateau) "
-		"VALUES (:id, :nom, :prenom, :role, :disp, :email, :heures, :dins, :daff, :idb)");
-	query.bindValue(":id", id_);
+		"VALUES (:id, :nom, :prenom, :sexe, :role, :disp, :email, :heures, :dins, :daff, :idb)");
+	query.bindValue(":id", id_.trimmed().toUpper());
 	query.bindValue(":nom", nom_.trimmed());
 	query.bindValue(":prenom", prenom_.trimmed());
+	query.bindValue(":sexe", sexeCanonical);
 	query.bindValue(":role", roleCanonical);
 	query.bindValue(":disp", dispoCanonical);
 	query.bindValue(":email", email_.trimmed());
@@ -241,11 +354,16 @@ bool Pecheurs::ajouter() const
 	return true;
 }
 
-bool Pecheurs::supprimer(int id)
+bool Pecheurs::supprimer(const QString& id)
 {
+	if (id.trimmed().isEmpty()) {
+		s_lastError = QStringLiteral("ID invalide.");
+		return false;
+	}
+
 	QSqlQuery query;
 	query.prepare("DELETE FROM PECHEURS WHERE ID_Pecheur = :id");
-	query.bindValue(":id", id);
+	query.bindValue(":id", id.trimmed().toUpper());
 	if (!query.exec()) {
 		s_lastError = query.lastError().text();
 		return false;
@@ -259,17 +377,33 @@ bool Pecheurs::modifier() const
 	return modifierAvecAncienId(id_);
 }
 
-bool Pecheurs::modifierAvecAncienId(int ancienId) const
+bool Pecheurs::modifierAvecAncienId(const QString& ancienId) const
 {
-	if (id_ <= 0) {
-		s_lastError = QStringLiteral("ID invalide (doit être > 0).");
+	if (!validateIdColumnCompatibility(id_) || !validateIdColumnCompatibility(ancienId)) {
 		return false;
 	}
 
-	if (ancienId <= 0) {
-		s_lastError = QStringLiteral("ID original invalide (doit être > 0).");
+	if (id_.trimmed().isEmpty()) {
+		s_lastError = QStringLiteral("ID invalide.");
 		return false;
 	}
+
+	static const QRegularExpression idPattern(QStringLiteral("^\\d{2}[12]\\d{4}$"));
+	if (!idPattern.match(id_.trimmed().toUpper()).hasMatch()) {
+		s_lastError = QStringLiteral("ID invalide (format attendu: YYSxxxx YY=Année (26), S=1(Homme)/2(Femme), xxxx=Numéro 4 chiffres.");
+		return false;
+	}
+
+	if (ancienId.trimmed().isEmpty()) {
+		s_lastError = QStringLiteral("ID original invalide.");
+		return false;
+	}
+	const QString sexeCanonical = canonicalSexe(sexe_);
+	if (sexeCanonical.isEmpty()) {
+		s_lastError = QStringLiteral("Sexe invalide. Valeurs autorisées: M ou F.");
+		return false;
+	}
+
 
 	if (nom_.trimmed().isEmpty()) {
 		s_lastError = QStringLiteral("Nom obligatoire.");
@@ -306,18 +440,20 @@ bool Pecheurs::modifierAvecAncienId(int ancienId) const
 		return false;
 	}
 
-	if (dateInscription_.isValid() && dateAffectation_.isValid() && dateAffectation_ < dateInscription_) {
-		s_lastError = QStringLiteral("Date d'affectation invalide (doit être >= date d'inscription).");
+	if (!validatePecheursTemporalConstraints(dateInscription_, dateAffectation_, heures_, false)) {
 		return false;
 	}
 
-	if (id_ != ancienId) {
+	const QString normalizedNewId = id_.trimmed().toUpper();
+	const QString normalizedOldId = ancienId.trimmed().toUpper();
+
+	if (normalizedNewId != normalizedOldId) {
 		QSqlQuery checkIdQuery;
 		checkIdQuery.prepare(
 			"SELECT 1 FROM PECHEURS "
 			"WHERE ID_Pecheur = :newId AND ID_Pecheur <> :oldId");
-		checkIdQuery.bindValue(":newId", id_);
-		checkIdQuery.bindValue(":oldId", ancienId);
+		checkIdQuery.bindValue(":newId", normalizedNewId);
+		checkIdQuery.bindValue(":oldId", normalizedOldId);
 
 		if (!checkIdQuery.exec()) {
 			s_lastError = checkIdQuery.lastError().text();
@@ -333,13 +469,14 @@ bool Pecheurs::modifierAvecAncienId(int ancienId) const
 	QSqlQuery query;
 	query.prepare(
 		"UPDATE PECHEURS SET "
-		"ID_Pecheur = :newId, Nom_Pecheur = :nom, Prenom_Pecheur = :prenom, Role = :role, "
+		"ID_Pecheur = :newId, Nom_Pecheur = :nom, Prenom_Pecheur = :prenom, Sexe = :sexe, Role = :role, "
 		"Disponibilite = :disp, Email = :email, Heures = :heures, "
 		"Date_Inscription = :dins, Date_Affectation = :daff, ID_Bateau = :idb "
 		"WHERE ID_Pecheur = :oldId");
-	query.bindValue(":newId", id_);
+	query.bindValue(":newId", normalizedNewId);
 	query.bindValue(":nom", nom_.trimmed());
 	query.bindValue(":prenom", prenom_.trimmed());
+	query.bindValue(":sexe", sexeCanonical);
 	query.bindValue(":role", roleCanonical);
 	query.bindValue(":disp", dispoCanonical);
 	query.bindValue(":email", email_.trimmed());
@@ -347,7 +484,7 @@ bool Pecheurs::modifierAvecAncienId(int ancienId) const
 	query.bindValue(":dins", dateInscription_.isValid() ? QVariant(dateInscription_) : nullDate());
 	query.bindValue(":daff", dateAffectation_.isValid() ? QVariant(dateAffectation_) : nullDate());
 	query.bindValue(":idb", idBateau_ > 0 ? QVariant(idBateau_) : nullInt());
-	query.bindValue(":oldId", ancienId);
+	query.bindValue(":oldId", normalizedOldId);
 
 	if (!query.exec()) {
 		const QString dbError = query.lastError().text();
@@ -386,7 +523,7 @@ bool Pecheurs::chargerTable(const QString& recherche,
 	appendPecheursFilters(whereParts, recherche, roleSelection, dispoSelection);
 
 	QString sql =
-		"SELECT ID_Pecheur, Nom_Pecheur, Prenom_Pecheur, Role, ID_Bateau, "
+		"SELECT ID_Pecheur, Nom_Pecheur, Prenom_Pecheur, Sexe, Role, ID_Bateau, "
 		"Disponibilite, Email, Date_Inscription, Date_Affectation, Heures, Photo "
 		"FROM PECHEURS";
 	if (!whereParts.isEmpty()) {
@@ -403,17 +540,18 @@ bool Pecheurs::chargerTable(const QString& recherche,
 
 	while (query.next()) {
 		TableRowData row;
-		row.id = query.value(0).toInt();
+		row.id = query.value(0).toString();
 		row.nom = query.value(1).toString();
 		row.prenom = query.value(2).toString();
-		row.role = query.value(3).toString();
-		row.idBateau = query.value(4).toInt();
-		row.disponibilite = query.value(5).toString();
-		row.email = query.value(6).toString();
-		row.dateInscription = query.value(7).toDate();
-		row.dateAffectation = query.value(8).toDate();
-		row.heures = query.value(9).toInt();
-		row.photo = query.value(10).toString();
+		row.sexe = query.value(3).toString();
+		row.role = query.value(4).toString();
+		row.idBateau = query.value(5).toInt();
+		row.disponibilite = query.value(6).toString();
+		row.email = query.value(7).toString();
+		row.dateInscription = query.value(8).toDate();
+		row.dateAffectation = query.value(9).toDate();
+		row.heures = query.value(10).toInt();
+		row.photo = query.value(11).toString();
 		rows.push_back(row);
 	}
 
@@ -461,13 +599,17 @@ Pecheurs::DisponibiliteStats Pecheurs::calculerDisponibiliteStats(const QString&
 	return stats;
 }
 
-bool Pecheurs::idExiste(int id)
+bool Pecheurs::idExiste(const QString& id)
 {
-	if (id <= 0) return false;
+	if (!validateIdColumnCompatibility(id)) {
+		return false;
+	}
+
+	if (id.trimmed().isEmpty()) return false;
 
 	QSqlQuery query;
 	query.prepare("SELECT 1 FROM PECHEURS WHERE ID_Pecheur = :id");
-	query.bindValue(":id", id);
+	query.bindValue(":id", id.trimmed().toUpper());
 
 	if (!query.exec()) {
 		s_lastError = query.lastError().text();
@@ -476,6 +618,39 @@ bool Pecheurs::idExiste(int id)
 
 	s_lastError.clear();
 	return query.next();
+}
+
+QString Pecheurs::genererNouvelId(const QString& sexe)
+{
+	const QString canonical = canonicalSexe(sexe);
+	if (canonical.isEmpty()) {
+		s_lastError = QStringLiteral("Sexe invalide. Choisir Homme ou Femme.");
+		return QString();
+	}
+
+	const QString yy = QString::number(QDate::currentDate().year() % 100).rightJustified(2, QLatin1Char('0'));
+	const QString sexeDigit = (canonical == QStringLiteral("M")) ? QStringLiteral("1") : QStringLiteral("2");
+	const QString prefix = yy + sexeDigit;
+
+	QSqlQuery query;
+	query.prepare(
+		"SELECT NVL(MAX(TO_NUMBER(SUBSTR(ID_Pecheur, 4, 4))), 0) "
+		"FROM PECHEURS WHERE ID_Pecheur LIKE :prefix");
+	query.bindValue(":prefix", prefix + QStringLiteral("%"));
+
+	if (!query.exec()) {
+		s_lastError = query.lastError().text();
+		return QString();
+	}
+
+	int maxSeq = 0;
+	if (query.next()) {
+		maxSeq = query.value(0).toInt();
+	}
+
+	const QString nextSeq = QString::number(maxSeq + 1).rightJustified(4, QLatin1Char('0'));
+	s_lastError.clear();
+	return prefix + nextSeq;
 }
 
 int Pecheurs::bateauIdFromText(const QString& text)
