@@ -7,15 +7,18 @@
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
+#include <QHBoxLayout>
 #include <QGroupBox>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QVBoxLayout>
 #include <QDate>
 #include <QMap>
 #include <QPair>
+#include <algorithm>
 
 #include <QDateTime>
 #include <QMessageBox>
@@ -40,6 +43,78 @@ static inline bool handleCrudDisabled(QWidget* parent)
     if (kCrudEnabled) return true;
     QMessageBox::information(parent, QStringLiteral("CRUD désactivé"), QStringLiteral("Les opérations CRUD sont désactivées dans cette build."));
     return false;
+}
+
+static bool tryToLongLong(const QVariant& v, qlonglong& out)
+{
+    if (!v.isValid() || v.isNull()) {
+        return false;
+    }
+
+    switch (v.typeId()) {
+    case QMetaType::Int:
+    case QMetaType::LongLong:
+    case QMetaType::UInt:
+    case QMetaType::ULongLong:
+    case QMetaType::Short:
+    case QMetaType::UShort:
+    case QMetaType::Char:
+    case QMetaType::UChar: {
+        bool ok = false;
+        out = v.toLongLong(&ok);
+        return ok;
+    }
+    case QMetaType::QString: {
+        bool ok = false;
+        out = v.toString().trimmed().toLongLong(&ok);
+        return ok;
+    }
+    case QMetaType::QByteArray: {
+        const QByteArray ba = v.toByteArray().trimmed();
+        bool ok = false;
+        out = QString::fromLatin1(ba).trimmed().toLongLong(&ok);
+        if (ok) return true;
+        out = QString::fromUtf8(ba).trimmed().toLongLong(&ok);
+        return ok;
+    }
+    default: {
+        bool ok = false;
+        out = v.toLongLong(&ok);
+        return ok;
+    }
+    }
+}
+
+static void debugBoundValues(const QSqlQuery& q, const QString& context)
+{
+    const QStringList names = q.boundValueNames();
+    if (!names.isEmpty()) {
+        qDebug().noquote() << context << "boundValues(named):";
+        for (const QString& name : names) {
+            const QVariant v = q.boundValue(name);
+            qDebug().noquote() << "  " << name
+                               << "typeId=" << v.typeId()
+                               << "typeName=" << (v.metaType().name() ? v.metaType().name() : "<null>")
+                               << "isNull=" << v.isNull()
+                               << "value=" << v.toString();
+        }
+        return;
+    }
+
+    const QVariantList values = q.boundValues();
+    if (values.isEmpty()) {
+        return;
+    }
+
+    qDebug().noquote() << context << "boundValues(positional):";
+    for (qsizetype i = 0; i < values.size(); ++i) {
+        const QVariant& v = values.at(i);
+        qDebug().noquote() << "  #" << i
+                           << "typeId=" << v.typeId()
+                           << "typeName=" << (v.metaType().name() ? v.metaType().name() : "<null>")
+                           << "isNull=" << v.isNull()
+                           << "value=" << v.toString();
+    }
 }
 
 static bool loadBoatsIntoComboBox(QComboBox *combo)
@@ -79,7 +154,13 @@ static bool loadBoatsIntoComboBox(QComboBox *combo)
         const QString label = nomBateau.isEmpty()
             ? idBateau.toString()
             : QStringLiteral("%1 (%2)").arg(nomBateau, idBateau.toString());
-        combo->addItem(label, idBateau);
+
+        // Oracle via ODBC may deliver NUMBER columns as QByteArray (Binary).
+        // Store numeric IDs as integer in the combo's userData so later bindValue
+        // sends a NUMBER, not BINARY.
+        qlonglong idBateauLl = 0;
+        const bool idOk = tryToLongLong(idBateau, idBateauLl);
+        combo->addItem(label, idOk ? QVariant(idBateauLl) : QVariant());
     }
 
     return true;
@@ -293,6 +374,8 @@ MainWindow::MainWindow(QWidget *parent)
     // Fix accents (é/è/…) + emojis on all pages.
     normalizeUiTexts();
 
+    setupTop5SpeciesMetricControl();
+
     // Page pêcheurs : frame FaceID masquée par défaut
     if (ui->framefaceidp) {
         ui->framefaceidp->hide();
@@ -340,6 +423,54 @@ if (ui->pushButton_pdfb_5) {
         connect(ui->pushButton_11p, &QPushButton::clicked, this, &MainWindow::on_pushButton_11p_clicked);
     }
 
+}
+
+void MainWindow::setupTop5SpeciesMetricControl()
+{
+    if (!ui || !ui->label_zonesb_2) {
+        return;
+    }
+
+    if (m_top5MetricCombo) {
+        return;
+    }
+
+    QWidget* parent = ui->label_zonesb_2->parentWidget();
+    if (!parent || !parent->layout()) {
+        return;
+    }
+
+    auto* vbox = qobject_cast<QVBoxLayout*>(parent->layout());
+    if (!vbox) {
+        return;
+    }
+
+    const int idx = vbox->indexOf(ui->label_zonesb_2);
+    if (idx < 0) {
+        return;
+    }
+
+    vbox->removeWidget(ui->label_zonesb_2);
+
+    QWidget* headerRow = new QWidget(parent);
+    auto* hbox = new QHBoxLayout(headerRow);
+    hbox->setContentsMargins(0, 0, 0, 0);
+
+    m_top5MetricCombo = new QComboBox(headerRow);
+    m_top5MetricCombo->addItem(QStringLiteral("Quantité"), QStringLiteral("qty"));
+    m_top5MetricCombo->addItem(QStringLiteral("Poids"), QStringLiteral("poids"));
+    m_top5MetricCombo->setMaximumWidth(130);
+
+    hbox->addStretch(1);
+    hbox->addWidget(ui->label_zonesb_2);
+    hbox->addStretch(1);
+    hbox->addWidget(m_top5MetricCombo);
+
+    vbox->insertWidget(idx, headerRow);
+
+    connect(m_top5MetricCombo, &QComboBox::currentIndexChanged, this, [this](int) {
+        updateTop5SpeciesStats(m_lastCaptureRows);
+    });
 }
 // Fonction pour afficher une frame et cacher l'autre
 void MainWindow::showFrame(QWidget* frameToShow)
@@ -758,7 +889,7 @@ void MainWindow::loadCapturesTable()
     }
 
     // Load data from database
-    QList<QStringList> rows = Captures::getAllCapturesAsRows();
+    const QList<QStringList> rows = Captures::getAllCapturesAsRows();
     for (int i = 0; i < rows.size(); ++i) {
         tbl->insertRow(i);
         const QStringList &row = rows.at(i);
@@ -792,6 +923,136 @@ void MainWindow::loadCapturesTable()
     tbl->setColumnWidth(3, 80);   // Quantité
     tbl->setColumnWidth(4, 80);   // Poids
     tbl->setColumnWidth(5, 100);  // Date
+
+    m_lastCaptureRows = rows;
+    updateTop5SpeciesStats(m_lastCaptureRows);
+}
+
+void MainWindow::updateTop5SpeciesStats(const QList<QStringList>& rows)
+{
+    if (!ui) {
+        return;
+    }
+
+    QLabel* nameLabels[5] = {
+        ui->label_zoneNordb_2,
+        ui->label_zoneSudb_2,
+        ui->label_zoneEstb_2,
+        ui->label_zoneOuestb_3,
+        ui->label_zoneOuestb_2,
+    };
+
+    QProgressBar* bars[5] = {
+        ui->progressZoneNordb_2,
+        ui->progressZoneSudb_2,
+        ui->progressZoneEstb_2,
+        ui->progressZoneOuestb_3,
+        ui->progressZoneOuestb_2,
+    };
+
+    QLabel* valueLabels[5] = {
+        ui->value_zoneNordb_2,
+        ui->value_zoneSudb_2,
+        ui->value_zoneEstb_2,
+        ui->value_zoneOuestb_3,
+        ui->value_zoneOuestb_2,
+    };
+
+    for (int i = 0; i < 5; ++i) {
+        if (bars[i]) {
+            bars[i]->setRange(0, 100);
+            bars[i]->setValue(0);
+        }
+        if (nameLabels[i]) {
+            nameLabels[i]->setText(QString());
+        }
+        if (valueLabels[i]) {
+            valueLabels[i]->setText(QStringLiteral("0/0"));
+        }
+    }
+
+    const QString metric = (m_top5MetricCombo ? m_top5MetricCombo->currentData().toString() : QStringLiteral("qty"));
+    const bool useWeight = (metric == QStringLiteral("poids"));
+
+    auto parseQty = [](const QString& s) -> qlonglong {
+        const QString t = s.trimmed();
+        if (t.isEmpty()) return 0;
+        bool ok = false;
+        const qlonglong v = t.toLongLong(&ok);
+        if (ok) return v;
+        const double d = t.toDouble(&ok);
+        return ok ? static_cast<qlonglong>(d) : 0;
+    };
+
+    auto parseDouble = [](const QString& s) -> double {
+        const QString t = s.trimmed();
+        if (t.isEmpty()) return 0.0;
+        bool ok = false;
+        const double v = t.toDouble(&ok);
+        return ok ? v : 0.0;
+    };
+
+    struct Item { QString type; double value; };
+    QList<Item> items;
+    items.reserve(32);
+
+    double total = 0.0;
+    QMap<QString, double> sumByType;
+    for (const QStringList& row : rows) {
+        if (row.size() < 5) {
+            continue;
+        }
+        const QString type = row.at(2).trimmed();
+        if (type.isEmpty()) {
+            continue;
+        }
+
+        const double v = useWeight ? parseDouble(row.at(4)) : static_cast<double>(parseQty(row.at(3)));
+        total += v;
+        sumByType[type] = sumByType.value(type) + v;
+    }
+
+    for (auto it = sumByType.constBegin(); it != sumByType.constEnd(); ++it) {
+        items.append(Item{it.key(), it.value()});
+    }
+    std::sort(items.begin(), items.end(), [](const Item& a, const Item& b) {
+        return a.value > b.value;
+    });
+    if (items.size() > 5) {
+        items = items.mid(0, 5);
+    }
+
+    for (int i = 0; i < 5; ++i) {
+        if (!bars[i] || !nameLabels[i] || !valueLabels[i]) {
+            continue;
+        }
+
+        if (i < items.size()) {
+            const Item& it = items.at(i);
+            nameLabels[i]->setText(it.type);
+            const int percent = (total > 0.0)
+                ? qBound(0, static_cast<int>(qRound((it.value * 100.0) / total)), 100)
+                : 0;
+            bars[i]->setValue(percent);
+            if (useWeight) {
+                valueLabels[i]->setText(QStringLiteral("%1/%2")
+                                            .arg(QString::number(it.value, 'f', 2),
+                                                 QString::number(total, 'f', 2)));
+            } else {
+                valueLabels[i]->setText(QStringLiteral("%1/%2")
+                                            .arg(QString::number(static_cast<qlonglong>(it.value)),
+                                                 QString::number(static_cast<qlonglong>(total))));
+            }
+        } else {
+            nameLabels[i]->setText(QString());
+            bars[i]->setValue(0);
+            if (useWeight) {
+                valueLabels[i]->setText(QStringLiteral("0/%1").arg(QString::number(total, 'f', 2)));
+            } else {
+                valueLabels[i]->setText(QStringLiteral("0/%1").arg(QString::number(static_cast<qlonglong>(total))));
+            }
+        }
+    }
 }
 
 void MainWindow::on_cap_btnValiider_3_clicked()
@@ -809,8 +1070,11 @@ void MainWindow::on_cap_btnValiider_3_clicked()
         return;
     }
 
-    const int idBat = ui->cap_lineEdit_9->text().toInt();
-    if (idBat <= 0) {
+    const QString idBatText = ui->cap_lineEdit_9->text().trimmed();
+    bool idBatOk = false;
+    const int idBat = idBatText.toInt(&idBatOk);
+    qDebug().noquote() << "Capture add: idBatText='" + idBatText + "' idBatOk=" << idBatOk << "idBat=" << idBat;
+    if (!idBatOk || idBat <= 0) {
         QMessageBox::warning(this, QStringLiteral("Erreur"), QStringLiteral("L'ID bateau doit être un entier positif."));
         ui->cap_lineEdit_9->setFocus();
         return;
@@ -873,7 +1137,7 @@ void MainWindow::on_cap_btnValiider_3_clicked()
 
     Captures c;
     c.idCapture = idCap;
-    c.idBateau = -1;  // use -1 to indicate NULL (optional field for now)
+    c.idBateau = idBat;
     c.typePoisson = type;
     c.quantite = qty;
     c.poids = w;
@@ -1500,12 +1764,12 @@ void MainWindow::editCaptureRow(int row)
     QComboBox *boatCombo = new QComboBox(&dialog);
     loadBoatsIntoComboBox(boatCombo);
 
-    // Pre-select boat by ID_BATEAU using findData(idBateau)
+    // Pre-select boat by ID_BATEAU using findData(userData)
     if (!idBateauText.isEmpty()) {
         bool idOk = false;
         const int idBateau = idBateauText.toInt(&idOk);
         if (idOk) {
-            const int boatIndex = boatCombo->findData(idBateau);
+            const int boatIndex = boatCombo->findData(QVariant(static_cast<qlonglong>(idBateau)));
             if (boatIndex >= 0) {
                 boatCombo->setCurrentIndex(boatIndex);
             }
@@ -1566,23 +1830,35 @@ void MainWindow::editCaptureRow(int row)
 
     // Save modifications
     QSqlQuery updateQuery;
-    updateQuery.prepare(
-        "UPDATE CAPTURES "
-        "SET ID_BATEAU=:idBateau, TYPE_POISSON=:type, QUANTITE=:qte, POIDS=:poids, DATE_CAPTURE=:date "
-        "WHERE ID_CAPTURE=:idCapture"
-    );
 
+    // IMPORTANT (Oracle ODBC): binding a NULL QVariant for a NUMBER column can be
+    // interpreted as BINARY, triggering ORA-00932. Avoid binding NULL for ID_BATEAU;
+    // set it to NULL in SQL when no boat is selected.
     const QVariant selectedBoatId = boatCombo->currentData();
-    if (selectedBoatId.isNull() || !selectedBoatId.isValid()) {
-        updateQuery.bindValue(QStringLiteral(":idBateau"), QVariant());
+    qlonglong idBateauLl = 0;
+    const bool hasBoatId = tryToLongLong(selectedBoatId, idBateauLl);
+
+    if (hasBoatId) {
+        updateQuery.prepare(
+            "UPDATE CAPTURES "
+            "SET ID_BATEAU=:idBateau, TYPE_POISSON=:type, QUANTITE=:qte, POIDS=:poids, DATE_CAPTURE=:date "
+            "WHERE ID_CAPTURE=:idCapture"
+        );
+        updateQuery.bindValue(QStringLiteral(":idBateau"), QVariant(idBateauLl));
     } else {
-        updateQuery.bindValue(QStringLiteral(":idBateau"), selectedBoatId);
+        updateQuery.prepare(
+            "UPDATE CAPTURES "
+            "SET ID_BATEAU=NULL, TYPE_POISSON=:type, QUANTITE=:qte, POIDS=:poids, DATE_CAPTURE=:date "
+            "WHERE ID_CAPTURE=:idCapture"
+        );
     }
     updateQuery.bindValue(QStringLiteral(":type"), typeCombo->currentText().trimmed());
     updateQuery.bindValue(QStringLiteral(":qte"), quantiteSpin->value());
     updateQuery.bindValue(QStringLiteral(":poids"), poidsSpin->value());
     updateQuery.bindValue(QStringLiteral(":date"), dateEdit->date());
     updateQuery.bindValue(QStringLiteral(":idCapture"), idCapture);
+
+    debugBoundValues(updateQuery, QStringLiteral("Capture UPDATE"));
 
     if (!updateQuery.exec()) {
         QMessageBox::warning(

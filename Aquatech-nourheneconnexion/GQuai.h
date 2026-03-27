@@ -4,6 +4,8 @@
 #include <QMainWindow>
 #include <QString>
 #include <QMessageBox>
+#include <QList>
+#include <QStringList>
 
 #include "connection.h"
 #include "quotas.h"
@@ -13,6 +15,8 @@ namespace Ui {
 class MainWindow;
 }
 QT_END_NAMESPACE
+
+class QComboBox;
 
 // (Removed direct OCCI dependency; using the project's `Connection` wrapper)
 
@@ -118,6 +122,9 @@ private slots:
 private:
     Ui::MainWindow *ui;
 
+    QComboBox* m_top5MetricCombo = nullptr;
+    QList<QStringList> m_lastCaptureRows;
+
     void showFrame(QWidget* frameToShow);
     void setupFrames();
     void normalizeUiTexts();
@@ -128,6 +135,9 @@ private:
     void refreshSingleCapture(int row); // refresh single capture row from database
     void loadQuotasTable();  // populate the quotas QTableWidget (cap_tableWidget_2) from database
     void modifyQuotaRow(int row);  // invoked when modify button pressed for quotas
+
+    void setupTop5SpeciesMetricControl();
+    void updateTop5SpeciesStats(const QList<QStringList>& rows);
 
     // CRUD Slot handlers for action buttons
     void onCaptureEditClicked(int row);

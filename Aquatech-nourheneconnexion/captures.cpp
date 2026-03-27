@@ -32,23 +32,35 @@ QString Captures::m_lastQuery = QString();
 bool Captures::ajouter()
 {
     QSqlQuery query;
-    // column names must match the actual schema; TYPE_POISSON contains an underscore
-    // identifiers must match column names exactly as seen in the database
-    query.prepare("INSERT INTO captures (ID_CAPTURE, ID_BATEAU, TYPE_POISSON, QUANTITE, POIDS, DATE_CAPTURE) "
-                  "VALUES (:idCapture, :idBateau, :type, :quantite, :poids, :dateCapture)");
-    query.bindValue(":idCapture", idCapture);
-    // use NULL for -1 to bypass FK constraint during testing
+    // Oracle ODBC: avoid binding NULL QVariant for NUMBER columns (can be treated as BINARY).
     if (idBateau == -1) {
-        // bind NULL value for NUMBER column
-        query.bindValue(":idBateau", QVariant());
+        query.prepare("INSERT INTO captures (ID_CAPTURE, ID_BATEAU, TYPE_POISSON, QUANTITE, POIDS, DATE_CAPTURE) "
+                      "VALUES (:idCapture, NULL, :type, :quantite, :poids, :dateCapture)");
     } else {
+        query.prepare("INSERT INTO captures (ID_CAPTURE, ID_BATEAU, TYPE_POISSON, QUANTITE, POIDS, DATE_CAPTURE) "
+                      "VALUES (:idCapture, :idBateau, :type, :quantite, :poids, :dateCapture)");
         query.bindValue(":idBateau", idBateau);
     }
+    query.bindValue(":idCapture", idCapture);
     query.bindValue(":type", typePoisson);
     query.bindValue(":quantite", quantite);
     query.bindValue(":poids", poids);
     // bind QDate as QVariant (driver will send DATE)
     query.bindValue(":dateCapture", QVariant(dateCapture));
+
+    qDebug() << "ajouter() bind check: idCapture=" << idCapture
+             << "idBateau=" << idBateau
+             << "quantite=" << quantite
+             << "poids=" << poids
+             << "dateCapture=" << dateCapture;
+
+    if (idBateau != -1) {
+        const QVariant v = query.boundValue(QStringLiteral(":idBateau"));
+        qDebug() << "ajouter() :idBateau bound typeId=" << v.typeId()
+                 << "typeName=" << (v.metaType().name() ? v.metaType().name() : "<null>")
+                 << "isNull=" << v.isNull()
+                 << "value=" << v.toString();
+    }
 
     if (!query.exec()) {
         m_lastError = query.lastError().text();
@@ -105,19 +117,24 @@ bool Captures::modifier()
     }
 
     QSqlQuery query;
-    // update the DATE_CAPTURE column and other fields
-    // make sure the fish type column name matches the table
-    query.prepare("UPDATE captures SET "
-                  "ID_BATEAU = :idBateau, "
-                  "TYPE_POISSON = :type, "
-                  "QUANTITE = :quantite, "
-                  "POIDS = :poids, "
-                  "DATE_CAPTURE = :dateCapture "
-                  "WHERE ID_CAPTURE = :idCapture");
+    // Oracle ODBC: avoid binding NULL QVariant for NUMBER columns (can be treated as BINARY).
     if (idBateau > 0) {
+        query.prepare("UPDATE captures SET "
+                      "ID_BATEAU = :idBateau, "
+                      "TYPE_POISSON = :type, "
+                      "QUANTITE = :quantite, "
+                      "POIDS = :poids, "
+                      "DATE_CAPTURE = :dateCapture "
+                      "WHERE ID_CAPTURE = :idCapture");
         query.bindValue(":idBateau", idBateau);
     } else {
-        query.bindValue(":idBateau", QVariant());
+        query.prepare("UPDATE captures SET "
+                      "ID_BATEAU = NULL, "
+                      "TYPE_POISSON = :type, "
+                      "QUANTITE = :quantite, "
+                      "POIDS = :poids, "
+                      "DATE_CAPTURE = :dateCapture "
+                      "WHERE ID_CAPTURE = :idCapture");
     }
     query.bindValue(":type", typePoisson);
     query.bindValue(":quantite", quantite);
@@ -125,6 +142,20 @@ bool Captures::modifier()
     // bind QDate as QVariant (driver will send DATE)
     query.bindValue(":dateCapture", QVariant(dateCapture));
     query.bindValue(":idCapture", idCapture);
+
+    qDebug() << "modifier() bind check: idCapture=" << idCapture
+             << "idBateau=" << idBateau
+             << "quantite=" << quantite
+             << "poids=" << poids
+             << "dateCapture=" << dateCapture;
+
+    if (idBateau > 0) {
+        const QVariant v = query.boundValue(QStringLiteral(":idBateau"));
+        qDebug() << "modifier() :idBateau bound typeId=" << v.typeId()
+                 << "typeName=" << (v.metaType().name() ? v.metaType().name() : "<null>")
+                 << "isNull=" << v.isNull()
+                 << "value=" << v.toString();
+    }
     if (!query.exec()) {
         m_lastError = query.lastError().text();
         m_lastQuery = query.lastQuery();
