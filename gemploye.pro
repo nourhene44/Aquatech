@@ -1,4 +1,4 @@
-QT       += core gui
+QT       += core gui sql network
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -9,24 +9,26 @@ CONFIG += c++17
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
+    client.cpp \
+    connection.cpp \
+    employe.cpp \
     main.cpp \
-    mainwindow2.cpp \
-<<<<<<< HEAD
-    GQuai.cpp
+    mainwindow.cpp \
+    quai.cpp \
+    bateaauuu.cpp \
+    pecheurs.cpp
 
 HEADERS += \
-    mainwindow2.h \
-    GQuai.h
-=======
-    mainwindow.cpp
-
-HEADERS += \
-    mainwindow2.h \
-    mainwindow.h
->>>>>>> 7ce8a15 (Initial commit: all local work)
+    client.h \
+    connection.h \
+    employe.h \
+    mainwindow.h \
+    quai.h \
+    bateaauuu.h \
+    pecheurs.h
 
 FORMS += \
-    mainwindow2.ui
+    mainwindow.ui
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin
@@ -34,4 +36,12 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
 
 RESOURCES += \
-    resource.qrc
+    img.qrc
+
+DEFINES += QT_DEPRECATED_WARNINGS
+
+# Export Excel réel (.xlsx) via ActiveQt/COM (nécessite Excel installé)
+win32:qtHaveModule(axcontainer) {
+    QT += axcontainer
+    DEFINES += HAVE_ACTIVEQT
+}

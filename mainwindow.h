@@ -154,13 +154,9 @@ protected:
 
 private:
     Ui::MainWindow *ui;
-<<<<<<< .git\copilot-merge\ours_mainwindow.h
     QString m_editingPecheurId;
     int m_editingEmployeId = -1;
-=======
-    int m_editingPecheurId = -1;
     QString m_editingClientId;
->>>>>>> .git\copilot-merge\theirs_mainwindow.h
     QLabel* m_curveLineLabelQuaiStats = nullptr;
     QTimer* m_statsTimer = nullptr;
     QTimer* m_weatherTimer = nullptr;

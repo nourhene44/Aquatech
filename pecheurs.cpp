@@ -108,9 +108,32 @@ static bool validateIdColumnCompatibility(const QString& idValue)
 		return true;
 	}
 
-	s_lastError = QStringLiteral("La colonne ID_Pecheur est numérique dans Oracle. "
-		"Le format attendu (ex: 2610001) ne contient que des chiffres.");
+	s_lastError = QStringLiteral("La colonne ID_Pecheur est num\u00E9rique dans Oracle. "
+		"Le format doit contenir uniquement des chiffres (ex: 2610001).");
 	return false;
+}
+
+static QString normalizePecheurProfessionalId(QString id)
+{
+	id = id.trimmed().toUpper();
+	// Convert legacy format YY1NNNN / YY2NNNN into YYHNNNN / YYFNNNN.
+	static const QRegularExpression legacyPattern(QStringLiteral("^(\\d{2})([12])(\\d{4})$"));
+	const auto m = legacyPattern.match(id);
+	if (m.hasMatch()) {
+		const QString yy = m.captured(1);
+		const QString legacySex = m.captured(2);
+		const QString seq = m.captured(3);
+		const QString sexLetter = (legacySex == QStringLiteral("1")) ? QStringLiteral("H") : QStringLiteral("F");
+		return yy + sexLetter + seq;
+	}
+	return id;
+}
+
+static bool isValidPecheurProfessionalId(const QString& id)
+{
+	// Accept both new and legacy formats.
+	static const QRegularExpression anyPattern(QStringLiteral("^\\d{2}([HF]|[12])\\d{4}$"));
+	return anyPattern.match(id.trimmed().toUpper()).hasMatch();
 }
 
 static bool validatePecheursTemporalConstraints(const QDate& dateInscription,
@@ -269,9 +292,28 @@ bool Pecheurs::ajouter() const
 		return false;
 	}
 
-	static const QRegularExpression idPattern(QStringLiteral("^\\d{2}[12]\\d{4}$"));
-	if (!idPattern.match(id_.trimmed().toUpper()).hasMatch()) {
-		s_lastError = QStringLiteral("ID invalide (format attendu: YYSxxxx YY=Année (26), S=1(Homme)/2(Femme), xxxx=Numéro 4 chiffres.");
+	const bool textIdSupported = idPecheurColumnSupportsText();
+	QString normalizedId = id_.trimmed().toUpper();
+	if (textIdSupported) {
+		normalizedId = normalizePecheurProfessionalId(normalizedId);
+	}
+
+	if (textIdSupported) {
+		if (!isValidPecheurProfessionalId(id_)) {
+			s_lastError = QStringLiteral("ID invalide (format attendu: YYHxxxx ou YYFxxxx, ex: 26H0001. "
+				"Ancien format accept\u00E9: YY1xxxx / YY2xxxx).");
+			return false;
+		}
+	} else {
+		static const QRegularExpression numericPattern(QStringLiteral("^\\d{2}[12]\\d{4}$"));
+		if (!numericPattern.match(normalizedId).hasMatch()) {
+			s_lastError = QStringLiteral("ID invalide (format attendu: YY1xxxx ou YY2xxxx, ex: 2610001). ");
+			return false;
+		}
+	}
+
+	if (textIdSupported && normalizedId.isEmpty()) {
+		s_lastError = QStringLiteral("ID invalide.");
 		return false;
 	}
 
@@ -326,7 +368,7 @@ bool Pecheurs::ajouter() const
 		"(ID_Pecheur, Nom_Pecheur, Prenom_Pecheur, Sexe, Role, Disponibilite, Email, Heures, "
 		"Date_Inscription, Date_Affectation, ID_Bateau) "
 		"VALUES (:id, :nom, :prenom, :sexe, :role, :disp, :email, :heures, :dins, :daff, :idb)");
-	query.bindValue(":id", id_.trimmed().toUpper());
+	query.bindValue(":id", normalizedId);
 	query.bindValue(":nom", nom_.trimmed());
 	query.bindValue(":prenom", prenom_.trimmed());
 	query.bindValue(":sexe", sexeCanonical);
@@ -388,10 +430,21 @@ bool Pecheurs::modifierAvecAncienId(const QString& ancienId) const
 		return false;
 	}
 
-	static const QRegularExpression idPattern(QStringLiteral("^\\d{2}[12]\\d{4}$"));
-	if (!idPattern.match(id_.trimmed().toUpper()).hasMatch()) {
-		s_lastError = QStringLiteral("ID invalide (format attendu: YYSxxxx YY=Année (26), S=1(Homme)/2(Femme), xxxx=Numéro 4 chiffres.");
-		return false;
+	const bool textIdSupported = idPecheurColumnSupportsText();
+	QString normalizedNewId = id_.trimmed().toUpper();
+	if (textIdSupported) {
+		normalizedNewId = normalizePecheurProfessionalId(normalizedNewId);
+		if (!isValidPecheurProfessionalId(id_)) {
+			s_lastError = QStringLiteral("ID invalide (format attendu: YYHxxxx ou YYFxxxx, ex: 26H0001. "
+				"Ancien format accept\u00E9: YY1xxxx / YY2xxxx).");
+			return false;
+		}
+	} else {
+		static const QRegularExpression numericPattern(QStringLiteral("^\\d{2}[12]\\d{4}$"));
+		if (!numericPattern.match(normalizedNewId).hasMatch()) {
+			s_lastError = QStringLiteral("ID invalide (format attendu: YY1xxxx ou YY2xxxx, ex: 2610001). ");
+			return false;
+		}
 	}
 
 	if (ancienId.trimmed().isEmpty()) {
@@ -444,7 +497,6 @@ bool Pecheurs::modifierAvecAncienId(const QString& ancienId) const
 		return false;
 	}
 
-	const QString normalizedNewId = id_.trimmed().toUpper();
 	const QString normalizedOldId = ancienId.trimmed().toUpper();
 
 	if (normalizedNewId != normalizedOldId) {
@@ -628,15 +680,29 @@ QString Pecheurs::genererNouvelId(const QString& sexe)
 		return QString();
 	}
 
+	const bool textIdSupported = idPecheurColumnSupportsText();
+
 	const QString yy = QString::number(QDate::currentDate().year() % 100).rightJustified(2, QLatin1Char('0'));
-	const QString sexeDigit = (canonical == QStringLiteral("M")) ? QStringLiteral("1") : QStringLiteral("2");
-	const QString prefix = yy + sexeDigit;
+	const QString newSexCode = (canonical == QStringLiteral("M"))
+		? (textIdSupported ? QStringLiteral("H") : QStringLiteral("1"))
+		: (textIdSupported ? QStringLiteral("F") : QStringLiteral("2"));
+	const QString prefix = yy + newSexCode;
 
 	QSqlQuery query;
-	query.prepare(
-		"SELECT NVL(MAX(TO_NUMBER(SUBSTR(ID_Pecheur, 4, 4))), 0) "
-		"FROM PECHEURS WHERE ID_Pecheur LIKE :prefix");
-	query.bindValue(":prefix", prefix + QStringLiteral("%"));
+	if (textIdSupported) {
+		const QString legacySexCode = (canonical == QStringLiteral("M")) ? QStringLiteral("1") : QStringLiteral("2");
+		const QString legacyPrefix = yy + legacySexCode;
+		query.prepare(
+			"SELECT NVL(MAX(TO_NUMBER(SUBSTR(ID_Pecheur, 4, 4))), 0) "
+			"FROM PECHEURS WHERE ID_Pecheur LIKE :p1 OR ID_Pecheur LIKE :p2");
+		query.bindValue(":p1", prefix + QStringLiteral("%"));
+		query.bindValue(":p2", legacyPrefix + QStringLiteral("%"));
+	} else {
+		query.prepare(
+			"SELECT NVL(MAX(TO_NUMBER(SUBSTR(ID_Pecheur, 4, 4))), 0) "
+			"FROM PECHEURS WHERE ID_Pecheur LIKE :prefix");
+		query.bindValue(":prefix", prefix + QStringLiteral("%"));
+	}
 
 	if (!query.exec()) {
 		s_lastError = query.lastError().text();
