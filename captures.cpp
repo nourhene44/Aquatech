@@ -216,6 +216,59 @@ captures::captures() {}
 
 captures::captures(const QString& idCapture,
 				   int idBateau,
+				   const QString& typePoisson,
+				   int quantite,
+				   double poids,
+				   const QDate& dateCapture)
+	: idCapture_(idCapture)
+	, idBateau_(idBateau)
+	, typePoisson_(typePoisson)
+	, quantite_(quantite)
+	, poids_(poids)
+	, dateCapture_(dateCapture)
+{
+}
+
+bool captures::ajouter() const
+{
+	if (idCapture_.trimmed().isEmpty()) {
+		s_lastError = QStringLiteral("ID capture obligatoire.");
+		return false;
+	}
+	int idCaptureNum = 0;
+	if (!parsePositiveInt(idCapture_, &idCaptureNum)) {
+		s_lastError = QStringLiteral("ID capture invalide (doit etre un nombre > 0).");
+		return false;
+	}
+	if (idBateau_ <= 0) {
+		s_lastError = QStringLiteral("ID bateau invalide.");
+		return false;
+	}
+	if (typePoisson_.trimmed().isEmpty()) {
+		s_lastError = QStringLiteral("Type poisson obligatoire.");
+		return false;
+	}
+	if (quantite_ <= 0) {
+		s_lastError = QStringLiteral("Quantite invalide (doit etre > 0).");
+		return false;
+	}
+	if (poids_ <= 0.0) {
+		s_lastError = QStringLiteral("Poids invalide (doit etre > 0).");
+		return false;
+	}
+
+	QSqlDatabase db = QSqlDatabase::database();
+	QString tableName;
+	QString idCol;
+	QString idBateauCol;
+	QString typeCol;
+	QString quantiteCol;
+	QString poidsCol;
+	QString dateCol;
+	if (!resolveColumns(db, &tableName, &idCol, &idBateauCol, &typeCol, &quantiteCol, &poidsCol, &dateCol)) {
+		return false;
+	}
+	if (!bateauExiste(db, idBateau_)) {
 		if (s_lastError.isEmpty()) {
 			s_lastError = QStringLiteral("ID bateau introuvable dans BATEAUX.");
 		}

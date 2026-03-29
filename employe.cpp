@@ -603,8 +603,6 @@ QSqlQueryModel *Employe::afficher()
 
 int Employe::genererNouvelId(const QString &role)
 {
-	Q_UNUSED(role);
-
 	Connection* conn = Connection::getInstance();
 	if (!conn->ensureOpen()) {
 		s_lastError = QStringLiteral("Connexion DB échouée: %1").arg(conn->lastErrorText());
@@ -619,10 +617,31 @@ int Employe::genererNouvelId(const QString &role)
 		return 0;
 	}
 
-	// Schéma demandé: 264NNNN
-	const int prefix = 264;
-	const int minId = prefix * 10000;
-	const int maxId = minId + 9999;
+	// Schéma demandé (par rôle):
+	// - Gardien:      2643NNN
+	// - Technicien:   2644NNN
+	// - Responsable:  2645NNN
+	// - Ouvrier:      2546NNN
+	// Repli (rôle inconnu): 264NNNN
+	const QString canonRole = canonicalRole(role);
+	int prefix = 264;
+	int multiplier = 10000; // NNNN
+	if (canonRole == QStringLiteral("Gardien")) {
+		prefix = 2643;
+		multiplier = 1000; // NNN
+	} else if (canonRole == QStringLiteral("Technicien")) {
+		prefix = 2644;
+		multiplier = 1000;
+	} else if (canonRole == QStringLiteral("Responsable")) {
+		prefix = 2645;
+		multiplier = 1000;
+	} else if (canonRole == QStringLiteral("Ouvrier")) {
+		prefix = 2546;
+		multiplier = 1000;
+	}
+
+	const int minId = prefix * multiplier;
+	const int maxId = minId + (multiplier - 1);
 
 	QSqlQuery query(db);
 	query.prepare(QStringLiteral(
@@ -646,7 +665,7 @@ int Employe::genererNouvelId(const QString &role)
 
 	const int nextId = (currentMax > 0) ? (currentMax + 1) : (minId + 1);
 	if (nextId > maxId) {
-		s_lastError = QStringLiteral("Limite atteinte pour ce pr\u00E9fixe ID (264NNNN).");
+		s_lastError = QStringLiteral("Limite atteinte pour ce préfixe ID (%1...).").arg(prefix);
 		return 0;
 	}
 

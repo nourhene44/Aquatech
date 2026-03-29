@@ -1426,17 +1426,28 @@ MainWindow::MainWindow(QWidget *parent)
     if (ui->comboBoxp) ui->comboBoxp->setEditable(false);
     if (ui->comboBox_2) ui->comboBox_2->setEditable(false);
     if (ui->lineEditp) {
-        ui->lineEditp->setReadOnly(true);
+        ui->lineEditp->setReadOnly(false);
         ui->lineEditp->setEnabled(true);
         ui->lineEditp->setMinimumWidth(140);
     }
 
-    // IDs: toujours générés automatiquement -> lecture seule
-    if (ui->lineEdit_12e) ui->lineEdit_12e->setReadOnly(true);   // Employé
-    if (ui->lineEdit_3b) ui->lineEdit_3b->setReadOnly(true);     // Bateau
-    if (ui->lineEdit_3c) ui->lineEdit_3c->setReadOnly(true);     // Client
-    if (ui->lineEdit_4) ui->lineEdit_4->setReadOnly(true);       // Quai
-    if (ui->cap_lineEdit_11) ui->cap_lineEdit_11->setReadOnly(true); // Capture
+    // IDs: champs modifiables selon demande utilisateur
+    const auto unlockIdFields = [this]() {
+        if (!ui) return;
+        if (ui->lineEditp) { ui->lineEditp->setReadOnly(false); ui->lineEditp->setEnabled(true); }           // Pecheur
+        if (ui->lineEdit_12e) { ui->lineEdit_12e->setReadOnly(false); ui->lineEdit_12e->setEnabled(true); }  // Employe
+        if (ui->lineEdit_3b) { ui->lineEdit_3b->setReadOnly(false); ui->lineEdit_3b->setEnabled(true); }     // Bateau
+        if (ui->lineEdit_3c) { ui->lineEdit_3c->setReadOnly(false); ui->lineEdit_3c->setEnabled(true); }     // Client
+        if (ui->lineEdit_4) { ui->lineEdit_4->setReadOnly(false); ui->lineEdit_4->setEnabled(true); }        // Quai
+        if (ui->cap_lineEdit_11) { ui->cap_lineEdit_11->setReadOnly(false); ui->cap_lineEdit_11->setEnabled(true); } // Capture
+    };
+    unlockIdFields();
+
+    if (ui->stackedWidget) {
+        connect(ui->stackedWidget, &QStackedWidget::currentChanged, this, [unlockIdFields](int) {
+            unlockIdFields();
+        });
+    }
 
     const QDateTime now = QDateTime::currentDateTime();
     const QDate today = now.date();
@@ -2097,7 +2108,7 @@ void MainWindow::editEmployeFromTable(int row)
         m_editingEmployeId = -1;
     }
 
-    if (ui->lineEdit_12e) ui->lineEdit_12e->setReadOnly(true);
+    if (ui->lineEdit_12e) ui->lineEdit_12e->setReadOnly(false);
     if (ui->pushButton_5e) ui->pushButton_5e->setText(QStringLiteral("Modifier"));
 
     QMessageBox::information(this,
@@ -3178,7 +3189,7 @@ void MainWindow::modifierClientFromRow(int row)
 
     if (ui->lineEdit_3c) {
         ui->lineEdit_3c->setText(id);
-        ui->lineEdit_3c->setReadOnly(true);
+        ui->lineEdit_3c->setReadOnly(false);
     }
     if (ui->lineEdit_4c) ui->lineEdit_4c->setText(cellText(1));
     if (ui->lineEdit_12c) ui->lineEdit_12c->setText(cellText(2));
@@ -3284,8 +3295,12 @@ void MainWindow::on_pushButton_5e_clicked()
 
     const bool editingEmploye = (m_editingEmployeId > 0);
     const QString idConstraintMessage = QStringLiteral(
-        "Le champ ID Employe est obligatoire et doit respecter le format 264NNNN.\n"
-        "NNNN : numero unique auto-incremente.");
+        "Le champ ID Employe est obligatoire et doit respecter le format selon le role :\n"
+        "- Gardien : 2643NNN\n"
+        "- Technicien : 2644NNN\n"
+        "- Responsable : 2645NNN\n"
+        "- Ouvrier : 2546NNN\n"
+        "NNN : numero unique auto-incremente.");
 
     if (!validateRequiredFields(this, {
             {QStringLiteral("Nom"), ui->lineEdit_13e, [this]{ return !ui->lineEdit_13e || ui->lineEdit_13e->text().trimmed().isEmpty(); }},
@@ -3325,12 +3340,28 @@ void MainWindow::on_pushButton_5e_clicked()
         return;
     }
 
-    // En mode ajout, forcer le schéma 264NNNN. En mode édition, l'ID est read-only
-    // et peut être issu d'un ancien schéma: on n'empêche pas la modification des autres champs.
+    // En mode ajout, forcer le schéma d'ID selon le rôle.
+    // En mode édition, l'ID peut être issu d'un ancien schéma: on n'empêche pas la modification des autres champs.
     if (!editingEmploye) {
-        const int prefix = 264;
-        const int minId = prefix * 10000;
-        const int maxId = minId + 9999;
+        const QString canonRole = canonicalEmployeRole(role);
+        int prefix = 264;
+        int multiplier = 10000; // NNNN (repli si role inconnu)
+        if (canonRole == QStringLiteral("Gardien")) {
+            prefix = 2643;
+            multiplier = 1000;
+        } else if (canonRole == QStringLiteral("Technicien")) {
+            prefix = 2644;
+            multiplier = 1000;
+        } else if (canonRole == QStringLiteral("Responsable")) {
+            prefix = 2645;
+            multiplier = 1000;
+        } else if (canonRole == QStringLiteral("Ouvrier")) {
+            prefix = 2546;
+            multiplier = 1000;
+        }
+
+        const int minId = prefix * multiplier;
+        const int maxId = minId + (multiplier - 1);
         if (id <= minId || id > maxId) {
             QMessageBox::warning(this, QStringLiteral("Saisie employe"), idConstraintMessage);
             if (ui->lineEdit_12e) ui->lineEdit_12e->setFocus();
@@ -3383,7 +3414,7 @@ void MainWindow::on_pushButton_5e_clicked()
 
     if (editingEmploye) {
         m_editingEmployeId = -1;
-        if (ui->lineEdit_12e) ui->lineEdit_12e->setReadOnly(true);
+        if (ui->lineEdit_12e) ui->lineEdit_12e->setReadOnly(false);
         if (ui->pushButton_5e) ui->pushButton_5e->setText(QStringLiteral("Ajouter"));
         const int generatedId = Employe::genererNouvelId(ui->comboBox_11e ? ui->comboBox_11e->currentText().trimmed() : QString());
         if (generatedId > 0 && ui->lineEdit_12e) {
@@ -3452,8 +3483,19 @@ void MainWindow::loadPecheurs()
     if (!ui || !ui->tableWidgetp) return;
 
     const QString recherche = ui->lineEdit_4p ? ui->lineEdit_4p->text().trimmed().simplified() : QString();
-    const QString roleSelection = cleanFilterLabel(ui->comboBox_5p ? ui->comboBox_5p->currentText() : QString());
-    const QString dispoSelection = cleanFilterLabel(ui->comboBox_6p ? ui->comboBox_6p->currentText() : QString());
+    QString roleSelection = cleanFilterLabel(ui->comboBox_5p ? ui->comboBox_5p->currentText() : QString());
+    QString dispoSelection = cleanFilterLabel(ui->comboBox_6p ? ui->comboBox_6p->currentText() : QString());
+
+    // Les valeurs par défaut de l'IHM ("Tous les rôles" / "Toutes les disponibilités")
+    // ne doivent pas filtrer la table.
+    const QString roleKey = normalizeKey(roleSelection);
+    if (roleKey.isEmpty() || roleKey == QStringLiteral("tous") || roleKey.startsWith(QStringLiteral("touslesrole"))) {
+        roleSelection.clear();
+    }
+    const QString dispoKey = normalizeKey(dispoSelection);
+    if (dispoKey.isEmpty() || dispoKey == QStringLiteral("tous") || dispoKey.startsWith(QStringLiteral("touteslesdisponibilit"))) {
+        dispoSelection.clear();
+    }
 
     QVector<Pecheurs::TableRowData> rows;
     if (!Pecheurs::chargerTable(recherche, roleSelection, dispoSelection, rows)) {
@@ -3607,6 +3649,14 @@ void MainWindow::on_comboBox_6p_currentTextChanged(const QString &text)
 void MainWindow::on_bap_clicked()
 {
     if (!handleCrudDisabled(this)) return;
+
+    // Si le bouton affiche "Ajouter", on force le mode ajout
+    // meme si un ancien ID d'edition est reste en memoire.
+    if (ui && ui->bap
+        && ui->bap->text().trimmed().compare(QStringLiteral("Ajouter"), Qt::CaseInsensitive) == 0) {
+        m_editingPecheurId.clear();
+    }
+
     const Pecheurs p = pecheurFromForm();
     const QString id = ui && ui->lineEditp ? ui->lineEditp->text().trimmed().toUpper() : QString();
 
@@ -3666,6 +3716,15 @@ void MainWindow::on_bap_clicked()
         if (p.ajouter()) {
             loadPecheurs();
             resetAjouterButton();
+
+            // Apres ajout, afficher immediatement le prochain ID auto pour le meme sexe.
+            if (ui && ui->lineEditp) {
+                const QString nextId = Pecheurs::genererNouvelId(sexe);
+                if (!nextId.isEmpty()) {
+                    ui->lineEditp->setText(nextId);
+                }
+            }
+
             QMessageBox::information(this, "OK", "Ajout reussi");
         } else {
             const QString err = Pecheurs::lastError();
@@ -3789,7 +3848,7 @@ void MainWindow::loadPecheurFromTable()
     }
 
     if (ui && ui->lineEditp) {
-        ui->lineEditp->setReadOnly(true);
+        ui->lineEditp->setReadOnly(false);
         ui->lineEditp->setEnabled(true);
     }
 
@@ -3803,8 +3862,29 @@ void MainWindow::resetAjouterButton()
     if (ui && ui->bap) {
         ui->bap->setText("Ajouter");
     }
+
+    // Revenir a un formulaire vide (mode ajout)
+    if (ui && ui->lineEdit_2p) ui->lineEdit_2p->clear();
+    if (ui && ui->lineEdit_3p) ui->lineEdit_3p->clear();
+    if (ui && ui->lineEditp_2) ui->lineEditp_2->clear();
+
+    if (ui && ui->comboBoxp) ui->comboBoxp->setCurrentIndex(0);
+    if (ui && ui->comboBox_2) ui->comboBox_2->setCurrentIndex(0);
+
+    if (QLineEdit* bateauEdit = pecheurBateauLineEdit(ui)) {
+        bateauEdit->setText(QStringLiteral("0"));
+    } else if (QComboBox* bateauCombo = pecheurBateauCombo(ui)) {
+        bateauCombo->setCurrentIndex(0);
+    }
+
+    // Garantir un sexe selectionne pour pouvoir afficher un nouvel ID auto.
+    if (ui && ui->radioButton_2p && ui->radioButtonp
+        && !ui->radioButton_2p->isChecked() && !ui->radioButtonp->isChecked()) {
+        ui->radioButton_2p->setChecked(true);
+    }
+
     if (ui && ui->lineEditp) {
-        ui->lineEditp->setReadOnly(true);
+        ui->lineEditp->setReadOnly(false);
         ui->lineEditp->setEnabled(true);
         const QString generatedId = Pecheurs::genererNouvelId(pecheurSexeCode(ui));
         if (!generatedId.isEmpty()) {
@@ -3817,6 +3897,11 @@ void MainWindow::resetAjouterButton()
         ui->dateTimeEdit->setReadOnly(false);
         ui->dateTimeEdit->setDateTime(QDateTime::currentDateTime());
     }
+    if (ui && ui->dateTimeEdit_2) {
+        const QDate today = QDate::currentDate();
+        ui->dateTimeEdit_2->setMinimumDate(today);
+        ui->dateTimeEdit_2->setDate(today);
+    }
     m_editingPecheurId.clear();
 }
 
@@ -3827,7 +3912,7 @@ void MainWindow::on_pushButton_6p_clicked()
     if (m_editingPecheurId.isEmpty() && ui && ui->tableWidgetp && ui->tableWidgetp->currentRow() >= 0) {
         loadPecheurFromTable();
         if (ui->lineEditp) {
-            ui->lineEditp->setReadOnly(true);
+            ui->lineEditp->setReadOnly(false);
             ui->lineEditp->setEnabled(true);
         }
         QMessageBox::information(this,
@@ -4429,8 +4514,18 @@ static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
     writer.newPage();
 
     const QString recherche = ui->lineEdit_4p ? ui->lineEdit_4p->text().trimmed().simplified() : QString();
-    const QString roleSelection = cleanFilterLabel(ui->comboBox_5p ? ui->comboBox_5p->currentText() : QString());
-    const QString dispoSelection = cleanFilterLabel(ui->comboBox_6p ? ui->comboBox_6p->currentText() : QString());
+    QString roleSelection = cleanFilterLabel(ui->comboBox_5p ? ui->comboBox_5p->currentText() : QString());
+    QString dispoSelection = cleanFilterLabel(ui->comboBox_6p ? ui->comboBox_6p->currentText() : QString());
+
+    const QString roleKey = normalizeKey(roleSelection);
+    if (roleKey.isEmpty() || roleKey == QStringLiteral("tous") || roleKey.startsWith(QStringLiteral("touslesrole"))) {
+        roleSelection.clear();
+    }
+    const QString dispoKey = normalizeKey(dispoSelection);
+    if (dispoKey.isEmpty() || dispoKey == QStringLiteral("tous") || dispoKey.startsWith(QStringLiteral("touteslesdisponibilit"))) {
+        dispoSelection.clear();
+    }
+
     const Pecheurs::DisponibiliteStats stats = Pecheurs::calculerDisponibiliteStats(recherche, roleSelection, dispoSelection);
     const int totalStats = stats.disponible + stats.bientot + stats.indisponible + stats.enConge;
 
@@ -5132,8 +5227,9 @@ void MainWindow::on_pushButton_11_clicked()
     donnees["CAPACITE_QUAIS"] = ui->spinBox_2->value();
     donnees["STATUT"] = statutDb;
 
+    const bool wasModification = m_quai.isModeModification();
     bool succes = false;
-    if (m_quai.isModeModification()) {
+    if (wasModification) {
         // Mode modification
         succes = m_quai.modifier(m_quai.idEnCours(), donnees);
         if (succes) {
@@ -5164,6 +5260,25 @@ void MainWindow::on_pushButton_11_clicked()
     }
 
     if (succes) {
+        // En mode ajout, un filtre actif peut masquer la nouvelle ligne.
+        // Pour garantir que l'utilisateur la voie, on r├⌐initialise les filtres.
+        if (!wasModification) {
+            if (ui->lineEdit_3) ui->lineEdit_3->clear();
+
+            auto setComboToLabel = [](QComboBox* combo, const QString& label) {
+                if (!combo) return;
+                int idx = -1;
+                for (int i = 0; i < combo->count(); ++i) {
+                    if (combo->itemText(i).compare(label, Qt::CaseInsensitive) == 0) { idx = i; break; }
+                }
+                combo->setCurrentIndex(idx >= 0 ? idx : 0);
+            };
+
+            setComboToLabel(ui->comboBox_3, QStringLiteral("Tous"));
+            setComboToLabel(ui->comboBox_4, QStringLiteral("Toutes"));
+            setComboToLabel(ui->comboBox_5, QStringLiteral("Toutes"));
+        }
+
         refreshQuaiTable();
 
         if (ui->tableWidgetQuai && savedQuaiId > 0) {
@@ -5239,10 +5354,22 @@ void MainWindow::refreshQuaiTable()
     const QString tableName = QStringLiteral("QUAIS");
 
     reloadTableWidgetFromDb(ui->tableWidgetQuai, db, tableName,
-                            {QStringLiteral("ID Quai"), QStringLiteral("Nom Quai"), QStringLiteral("Zone Port"),
-                             QStringLiteral("Zone Couverte"), QStringLiteral("Longueur Max"),
-                             QStringLiteral("Capacit├⌐ Quais"), QStringLiteral("Statut")},
+                            {QStringLiteral("ID_QUAI"), QStringLiteral("NOM_QUAI"), QStringLiteral("ZONE_PORT"),
+                             QStringLiteral("ZONE_COUVERTE"), QStringLiteral("LONGUEUR"),
+                             QStringLiteral("CAPACITE_QUAIS"), QStringLiteral("STATUT")},
                             syn);
+
+    // En-têtes lisibles pour l'IHM
+    if (ui->tableWidgetQuai && ui->tableWidgetQuai->columnCount() >= 8) {
+        ui->tableWidgetQuai->setHorizontalHeaderItem(0, new QTableWidgetItem(QStringLiteral("ID Quai")));
+        ui->tableWidgetQuai->setHorizontalHeaderItem(1, new QTableWidgetItem(QStringLiteral("Nom Quai")));
+        ui->tableWidgetQuai->setHorizontalHeaderItem(2, new QTableWidgetItem(QStringLiteral("Zone Port")));
+        ui->tableWidgetQuai->setHorizontalHeaderItem(3, new QTableWidgetItem(QStringLiteral("Zone Couverte")));
+        ui->tableWidgetQuai->setHorizontalHeaderItem(4, new QTableWidgetItem(QStringLiteral("Longueur Max")));
+        ui->tableWidgetQuai->setHorizontalHeaderItem(5, new QTableWidgetItem(QStringLiteral("Capacité Quais")));
+        ui->tableWidgetQuai->setHorizontalHeaderItem(6, new QTableWidgetItem(QStringLiteral("Statut")));
+        ui->tableWidgetQuai->setHorizontalHeaderItem(7, new QTableWidgetItem(QStringLiteral("Actions")));
+    }
 
     ui->tableWidgetQuai->setAlternatingRowColors(false);
     ui->tableWidgetQuai->setShowGrid(false);
