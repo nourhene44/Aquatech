@@ -37,6 +37,7 @@ public:
     bool modifierAvecAncienId(const QString& ancienId) const;
     static bool supprimer(const QString& idCapture);
     static bool idExiste(const QString& idCapture);
+    static QString genererNouvelId();
     static bool chargerTable(const QString& rechercheId,
                              const QDate& dateDebut,
                              QVector<TableRowData>& rows);
@@ -46,7 +47,8 @@ public:
                                     QVector<TableRowData>& rows);
     static QVector<SpeciesStatData> calculerTop5Species();
     static QSqlQueryModel* afficher();
-    static QString lastError();
+    static QString
+    lastError();
 
 private:
     QString idCapture_;

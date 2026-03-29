@@ -9,6 +9,9 @@ class bateaauuu
 public:
     bateaauuu();
 
+    // Génère un nouvel ID bateau selon le schéma 261NNN (retourne vide si échec)
+    static QString genererNouvelId();
+
     static bool addBateau(const QString& id,
                           const QString& nom,
                           const QString& type,

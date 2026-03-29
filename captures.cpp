@@ -216,55 +216,6 @@ captures::captures() {}
 
 captures::captures(const QString& idCapture,
 				   int idBateau,
-				   const QString& typePoisson,
-				   int quantite,
-				   double poids,
-				   const QDate& dateCapture)
-	: idCapture_(idCapture)
-	, idBateau_(idBateau)
-	, typePoisson_(typePoisson)
-	, quantite_(quantite)
-	, poids_(poids)
-	, dateCapture_(dateCapture)
-{
-}
-
-bool captures::ajouter() const
-{
-	if (idCapture_.trimmed().isEmpty()) {
-		s_lastError = QStringLiteral("ID capture obligatoire.");
-		return false;
-	}
-	int idCaptureNum = 0;
-	if (!parsePositiveInt(idCapture_, &idCaptureNum)) {
-		s_lastError = QStringLiteral("ID capture invalide (doit etre un nombre > 0).");
-		return false;
-	}
-	if (idBateau_ <= 0) {
-		s_lastError = QStringLiteral("ID bateau invalide.");
-		return false;
-	}
-	if (typePoisson_.trimmed().isEmpty()) {
-		s_lastError = QStringLiteral("Type de poisson obligatoire.");
-		return false;
-	}
-	if (quantite_ < 0 || poids_ < 0.0) {
-		s_lastError = QStringLiteral("Quantite/poids invalides.");
-		return false;
-	}
-
-	QSqlDatabase db = QSqlDatabase::database();
-	QString tableName;
-	QString idCol;
-	QString idBateauCol;
-	QString typeCol;
-	QString quantiteCol;
-	QString poidsCol;
-	QString dateCol;
-	if (!resolveColumns(db, &tableName, &idCol, &idBateauCol, &typeCol, &quantiteCol, &poidsCol, &dateCol)) {
-		return false;
-	}
-	if (!bateauExiste(db, idBateau_)) {
 		if (s_lastError.isEmpty()) {
 			s_lastError = QStringLiteral("ID bateau introuvable dans BATEAUX.");
 		}
@@ -432,6 +383,54 @@ bool captures::idExiste(const QString& idCapture)
 
 	s_lastError.clear();
 	return query.next();
+}
+
+QString captures::genererNouvelId()
+{
+	QSqlDatabase db = QSqlDatabase::database();
+	QString tableName;
+	QString idCol;
+	QString idBateauCol;
+	QString typeCol;
+	QString quantiteCol;
+	QString poidsCol;
+	QString dateCol;
+	if (!resolveColumns(db, &tableName, &idCol, &idBateauCol, &typeCol, &quantiteCol, &poidsCol, &dateCol)) {
+		return QString();
+	}
+
+	const int prefix = 266;
+	const int minId = prefix * 10000;
+	const int maxId = minId + 9999;
+
+	QSqlQuery query(db);
+	query.prepare(QStringLiteral(
+		"SELECT NVL(MAX(idnum), 0) FROM ("
+		"  SELECT TO_NUMBER(REGEXP_SUBSTR(TRIM(TO_CHAR(%1)), '^[0-9]+$')) AS idnum "
+		"  FROM %2"
+		") WHERE idnum BETWEEN :minId AND :maxId")
+				  .arg(idCol, tableName));
+	query.bindValue(QStringLiteral(":minId"), minId);
+	query.bindValue(QStringLiteral(":maxId"), maxId);
+
+	if (!query.exec()) {
+		s_lastError = friendlyOracleError(query.lastError().text());
+		return QString();
+	}
+
+	int currentMax = 0;
+	if (query.next()) {
+		currentMax = query.value(0).toInt();
+	}
+
+	const int nextId = (currentMax > 0) ? (currentMax + 1) : (minId + 1);
+	if (nextId > maxId) {
+		s_lastError = QStringLiteral("Limite atteinte pour ce préfixe ID (266NNNN).");
+		return QString();
+	}
+
+	s_lastError.clear();
+	return QString::number(nextId);
 }
 
 bool captures::chargerTable(const QString& rechercheId,

@@ -724,6 +724,60 @@ static bool deleteRowByMapping(QWidget* parent,
     return true;
 }
 
+static QString generateNextNumericIdWithPrefix(QSqlDatabase db,
+                                               const QString& tableName,
+                                               const QString& idCol,
+                                               int prefix,
+                                               int suffixDigits,
+                                               QString* errorOut)
+{
+    if (!db.isValid() || !db.isOpen() || tableName.isEmpty() || idCol.isEmpty()) {
+        if (errorOut) *errorOut = QStringLiteral("Base de données/table/colonne invalide");
+        return QString();
+    }
+    if (suffixDigits <= 0 || suffixDigits > 9) {
+        if (errorOut) *errorOut = QStringLiteral("Nombre de chiffres suffixe invalide");
+        return QString();
+    }
+
+    int multiplier = 1;
+    for (int i = 0; i < suffixDigits; ++i) {
+        multiplier *= 10;
+    }
+
+    const int minId = prefix * multiplier;
+    const int maxId = minId + (multiplier - 1);
+
+    QSqlQuery query(db);
+    query.prepare(QStringLiteral(
+        "SELECT NVL(MAX(TO_NUMBER(%1)), 0) FROM %2 "
+        "WHERE %1 IS NOT NULL "
+        "AND REGEXP_LIKE(TRIM(TO_CHAR(%1)), '^[0-9]+$') "
+        "AND TO_NUMBER(%1) BETWEEN :minId AND :maxId")
+        .arg(idCol, tableName));
+    query.bindValue(QStringLiteral(":minId"), minId);
+    query.bindValue(QStringLiteral(":maxId"), maxId);
+
+    if (!query.exec()) {
+        if (errorOut) *errorOut = query.lastError().text();
+        return QString();
+    }
+
+    int currentMax = 0;
+    if (query.next()) {
+        currentMax = query.value(0).toInt();
+    }
+
+    const int nextId = (currentMax > 0) ? (currentMax + 1) : (minId + 1);
+    if (nextId > maxId) {
+        if (errorOut) *errorOut = QStringLiteral("Limite atteinte pour le préfixe %1").arg(prefix);
+        return QString();
+    }
+
+    if (errorOut) errorOut->clear();
+    return QString::number(nextId);
+}
+
 static void reloadTableWidgetFromDb(QTableWidget* table,
                                      QSqlDatabase db,
                                      const QString& tableName,
@@ -1372,10 +1426,17 @@ MainWindow::MainWindow(QWidget *parent)
     if (ui->comboBoxp) ui->comboBoxp->setEditable(false);
     if (ui->comboBox_2) ui->comboBox_2->setEditable(false);
     if (ui->lineEditp) {
-        ui->lineEditp->setReadOnly(false);
+        ui->lineEditp->setReadOnly(true);
         ui->lineEditp->setEnabled(true);
         ui->lineEditp->setMinimumWidth(140);
     }
+
+    // IDs: toujours générés automatiquement -> lecture seule
+    if (ui->lineEdit_12e) ui->lineEdit_12e->setReadOnly(true);   // Employé
+    if (ui->lineEdit_3b) ui->lineEdit_3b->setReadOnly(true);     // Bateau
+    if (ui->lineEdit_3c) ui->lineEdit_3c->setReadOnly(true);     // Client
+    if (ui->lineEdit_4) ui->lineEdit_4->setReadOnly(true);       // Quai
+    if (ui->cap_lineEdit_11) ui->cap_lineEdit_11->setReadOnly(true); // Capture
 
     const QDateTime now = QDateTime::currentDateTime();
     const QDate today = now.date();
@@ -1463,6 +1524,41 @@ MainWindow::MainWindow(QWidget *parent)
     loadPecheurBateauChoices(ui);
     // Chargement initial de la table des quais avec actions connect├⌐es
     refreshQuaiTable();
+
+    // Pré-remplir les IDs auto-générés (toujours en lecture seule)
+    if (ui->lineEdit_3b && currentEditingId.isEmpty() && ui->lineEdit_3b->text().trimmed().isEmpty()) {
+        const QString newId = bateaauuu::genererNouvelId();
+        if (!newId.isEmpty()) ui->lineEdit_3b->setText(newId);
+    }
+
+    if (ui->lineEdit_4 && !m_quai.isModeModification() && ui->lineEdit_4->text().trimmed().isEmpty()) {
+        const int newId = m_quai.genererNouvelId();
+        if (newId > 0) ui->lineEdit_4->setText(QString::number(newId));
+    }
+
+    if (ui->cap_lineEdit_11 && m_editingCaptureId.isEmpty() && ui->cap_lineEdit_11->text().trimmed().isEmpty()) {
+        const QString newId = captures::genererNouvelId();
+        if (!newId.isEmpty()) ui->cap_lineEdit_11->setText(newId);
+    }
+
+    if (ui->lineEdit_3c && m_editingClientId.isEmpty() && ui->lineEdit_3c->text().trimmed().isEmpty()) {
+        Connection* conn = Connection::getInstance();
+        if (conn->ensureOpen()) {
+            QSqlDatabase cdb = conn->getDatabase();
+            const QString tableName = resolveTableName(cdb, {QStringLiteral("CLIENT"), QStringLiteral("CLIENTS"), QStringLiteral("TCLIENT"), QStringLiteral("T_CLIENT")});
+            if (!tableName.isEmpty()) {
+                const QStringList cols = getColumnNames(cdb, tableName);
+                const QString idCol = matchColumnBySynonyms(cols, {
+                    QStringLiteral("id"), QStringLiteral("idclient"), QStringLiteral("clientid"), QStringLiteral("id_client")
+                });
+                if (!idCol.isEmpty()) {
+                    QString genErr;
+                    const QString newId = generateNextNumericIdWithPrefix(cdb, tableName, idCol, 265, 4, &genErr);
+                    if (!newId.isEmpty()) ui->lineEdit_3c->setText(newId);
+                }
+            }
+        }
+    }
 
     // Page p├¬cheurs : frame FaceID masqu├⌐e par d├⌐faut
     if (ui->framefaceidp) {
@@ -2001,7 +2097,7 @@ void MainWindow::editEmployeFromTable(int row)
         m_editingEmployeId = -1;
     }
 
-    if (ui->lineEdit_12e) ui->lineEdit_12e->setReadOnly(false);
+    if (ui->lineEdit_12e) ui->lineEdit_12e->setReadOnly(true);
     if (ui->pushButton_5e) ui->pushButton_5e->setText(QStringLiteral("Modifier"));
 
     QMessageBox::information(this,
@@ -2930,13 +3026,14 @@ void MainWindow::on_pushButton_2c_clicked()
     if (!handleCrudDisabled(this) || !ui) return;
 
     if (!validateRequiredFields(this, {
-            {QStringLiteral("ID client"), ui->lineEdit_3c, [this]{ return !ui->lineEdit_3c || ui->lineEdit_3c->text().trimmed().isEmpty(); }},
             {QStringLiteral("Nom client"), ui->lineEdit_4c, [this]{ return !ui->lineEdit_4c || ui->lineEdit_4c->text().trimmed().isEmpty(); }},
             {QStringLiteral("Pr\u00E9nom client"), ui->lineEdit_12c, [this]{ return !ui->lineEdit_12c || ui->lineEdit_12c->text().trimmed().isEmpty(); }},
             {QStringLiteral("T\u00E9l\u00E9phone"), ui->lineEdit_14c, [this]{ return !ui->lineEdit_14c || ui->lineEdit_14c->text().trimmed().isEmpty(); }},
         })) {
         return;
     }
+
+    const bool isEditing = !m_editingClientId.isEmpty() || (ui->pushButton_2c && ui->pushButton_2c->text().trimmed().compare(QStringLiteral("Modifier"), Qt::CaseInsensitive) == 0);
 
     Connection *conn = Connection::getInstance();
     if (!conn->ensureOpen()) {
@@ -2972,13 +3069,26 @@ void MainWindow::on_pushButton_2c_clicked()
         {QStringLiteral("date"), {QStringLiteral("date"), QStringLiteral("dateinscription"), QStringLiteral("date_inscription"), QStringLiteral("createdat")}},
     };
 
-    const bool isEditing = !m_editingClientId.isEmpty() || (ui->pushButton_2c && ui->pushButton_2c->text().trimmed().compare(QStringLiteral("Modifier"), Qt::CaseInsensitive) == 0);
+    const QStringList dbCols = getColumnNames(db, tableName);
+    const QString idCol = matchColumnBySynonyms(dbCols, syn.value(QStringLiteral("id")));
+
+    // Génération ID (265NNNN) en mode ajout
+    if (!isEditing && ui->lineEdit_3c && ui->lineEdit_3c->text().trimmed().isEmpty()) {
+        QString genErr;
+        const QString newId = generateNextNumericIdWithPrefix(db, tableName, idCol, 265, 4, &genErr);
+        if (newId.isEmpty()) {
+            QMessageBox::critical(this, QStringLiteral("Ajout client"),
+                                  QStringLiteral("Impossible de générer l'ID client (265NNNN): %1").arg(genErr));
+            return;
+        }
+        ui->lineEdit_3c->setText(newId);
+    }
 
     QString err;
     if (isEditing) {
         const QString idWhere = m_editingClientId.isEmpty() ? values.value(QStringLiteral("id")).toString() : m_editingClientId;
-        // Autoriser aussi la modification de l'ID: SET id = ? ... WHERE id = (ancien)
-        if (!updateRowByMapping(this, db, tableName, QStringLiteral("id"), idWhere, values, syn, true, &err)) {
+        // ID en lecture seule: ne pas mettre à jour la clé primaire.
+        if (!updateRowByMapping(this, db, tableName, QStringLiteral("id"), idWhere, values, syn, false, &err)) {
             QMessageBox::critical(this, QStringLiteral("Modifier client"), QStringLiteral("Modification \u00E9chou\u00E9e: %1").arg(err));
             return;
         }
@@ -2986,7 +3096,6 @@ void MainWindow::on_pushButton_2c_clicked()
         QMessageBox::information(this, QStringLiteral("Modifier client"), QStringLiteral("Client modifi\u00E9 avec succ\u00E8s."));
         m_editingClientId.clear();
         if (ui->pushButton_2c) ui->pushButton_2c->setText(QStringLiteral("Ajouter"));
-        if (ui->lineEdit_3c) ui->lineEdit_3c->setEnabled(true);
     } else {
         if (!insertRowByMapping(this, db, tableName, values, syn, &err)) {
             QMessageBox::critical(this, QStringLiteral("Ajout client"), QStringLiteral("Insertion \u00E9chou\u00E9e: %1").arg(err));
@@ -3002,6 +3111,15 @@ void MainWindow::on_pushButton_2c_clicked()
     if (ui->lineEdit_14c) ui->lineEdit_14c->clear();
     if (ui->comboBoxc) ui->comboBoxc->setCurrentIndex(0);
     if (ui->comboBox_2c) ui->comboBox_2c->setCurrentIndex(0);
+
+    // Préparer l'ID pour le prochain ajout
+    if (ui->lineEdit_3c && !idCol.isEmpty()) {
+        QString genErr;
+        const QString nextId = generateNextNumericIdWithPrefix(db, tableName, idCol, 265, 4, &genErr);
+        if (!nextId.isEmpty()) {
+            ui->lineEdit_3c->setText(nextId);
+        }
+    }
 
     refreshClientsPage();
 
@@ -3060,8 +3178,7 @@ void MainWindow::modifierClientFromRow(int row)
 
     if (ui->lineEdit_3c) {
         ui->lineEdit_3c->setText(id);
-        // L'ID peut aussi ├¬tre modifi├⌐ en mode ├⌐dition
-        ui->lineEdit_3c->setEnabled(true);
+        ui->lineEdit_3c->setReadOnly(true);
     }
     if (ui->lineEdit_4c) ui->lineEdit_4c->setText(cellText(1));
     if (ui->lineEdit_12c) ui->lineEdit_12c->setText(cellText(2));
@@ -3167,9 +3284,7 @@ void MainWindow::on_pushButton_5e_clicked()
 
     const bool editingEmploye = (m_editingEmployeId > 0);
     const QString idConstraintMessage = QStringLiteral(
-        "Le champ ID Employe est obligatoire et doit respecter le format YYRNNNN.\n"
-        "YY : annee courante (ex. 26)\n"
-        "R : code role (Gardien=3, Technicien=4, Responsable=5, Ouvrier=6)\n"
+        "Le champ ID Employe est obligatoire et doit respecter le format 264NNNN.\n"
         "NNNN : numero unique auto-incremente.");
 
     if (!validateRequiredFields(this, {
@@ -3209,16 +3324,18 @@ void MainWindow::on_pushButton_5e_clicked()
         if (ui->lineEdit_12e) ui->lineEdit_12e->setFocus();
         return;
     }
-    const int yy = QDate::currentDate().year() % 100;
-    const int roleDigit = employeRoleCodeForIdUi(role);
-    const int idYear = id / 100000;
-    const int idRole = (id / 10000) % 10;
-    const int idSeq = id % 10000;
 
-    if (roleDigit == 0 || idYear != yy || idRole != roleDigit || idSeq <= 0 || idSeq > 9999) {
-        QMessageBox::warning(this, QStringLiteral("Saisie employe"), idConstraintMessage);
-        if (ui->lineEdit_12e) ui->lineEdit_12e->setFocus();
-        return;
+    // En mode ajout, forcer le schéma 264NNNN. En mode édition, l'ID est read-only
+    // et peut être issu d'un ancien schéma: on n'empêche pas la modification des autres champs.
+    if (!editingEmploye) {
+        const int prefix = 264;
+        const int minId = prefix * 10000;
+        const int maxId = minId + 9999;
+        if (id <= minId || id > maxId) {
+            QMessageBox::warning(this, QStringLiteral("Saisie employe"), idConstraintMessage);
+            if (ui->lineEdit_12e) ui->lineEdit_12e->setFocus();
+            return;
+        }
     }
     if (!nomPattern.match(nom).hasMatch()) {
         QMessageBox::warning(this, QStringLiteral("Saisie employe"), QStringLiteral("Nom invalide (lettres uniquement)."));
@@ -3266,7 +3383,7 @@ void MainWindow::on_pushButton_5e_clicked()
 
     if (editingEmploye) {
         m_editingEmployeId = -1;
-        if (ui->lineEdit_12e) ui->lineEdit_12e->setReadOnly(false);
+        if (ui->lineEdit_12e) ui->lineEdit_12e->setReadOnly(true);
         if (ui->pushButton_5e) ui->pushButton_5e->setText(QStringLiteral("Ajouter"));
         const int generatedId = Employe::genererNouvelId(ui->comboBox_11e ? ui->comboBox_11e->currentText().trimmed() : QString());
         if (generatedId > 0 && ui->lineEdit_12e) {
@@ -3672,7 +3789,7 @@ void MainWindow::loadPecheurFromTable()
     }
 
     if (ui && ui->lineEditp) {
-        ui->lineEditp->setReadOnly(false);
+        ui->lineEditp->setReadOnly(true);
         ui->lineEditp->setEnabled(true);
     }
 
@@ -3687,7 +3804,7 @@ void MainWindow::resetAjouterButton()
         ui->bap->setText("Ajouter");
     }
     if (ui && ui->lineEditp) {
-        ui->lineEditp->setReadOnly(false);
+        ui->lineEditp->setReadOnly(true);
         ui->lineEditp->setEnabled(true);
         const QString generatedId = Pecheurs::genererNouvelId(pecheurSexeCode(ui));
         if (!generatedId.isEmpty()) {
@@ -3710,7 +3827,7 @@ void MainWindow::on_pushButton_6p_clicked()
     if (m_editingPecheurId.isEmpty() && ui && ui->tableWidgetp && ui->tableWidgetp->currentRow() >= 0) {
         loadPecheurFromTable();
         if (ui->lineEditp) {
-            ui->lineEditp->setReadOnly(false);
+            ui->lineEditp->setReadOnly(true);
             ui->lineEditp->setEnabled(true);
         }
         QMessageBox::information(this,
@@ -4439,16 +4556,23 @@ void MainWindow::ajouterBateauFromForm()
     // ΓöÇΓöÇ Contr├┤les de saisie ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
     QStringList erreurs;
 
-    // ID obligatoire (sauf en mode modification) et unicit├⌐ (cl├⌐ primaire)
+    // ID auto-généré (schéma: 261NNN) en mode ajout
     if (currentEditingId.isEmpty()) {
         if (id.isEmpty()) {
-            erreurs << "L'ID du bateau est obligatoire.";
+            const QString generatedId = bateaauuu::genererNouvelId();
+            if (!generatedId.isEmpty()) {
+                id = generatedId;
+                if (ui->lineEdit_3b) ui->lineEdit_3b->setText(id);
+            }
+        }
+        if (id.isEmpty()) {
+            erreurs << "Impossible de générer l'ID du bateau (préfixe 261NNN).";
         } else {
             QSqlQuery checkId;
             checkId.prepare("SELECT COUNT(*) FROM BATEAUX WHERE ID_BATEAU = :id");
             checkId.bindValue(":id", id);
             if (checkId.exec() && checkId.next() && checkId.value(0).toInt() > 0) {
-                erreurs << "Cet ID existe d├⌐j├á. Veuillez saisir un ID unique.";
+                erreurs << "Cet ID existe déjà. Veuillez réessayer.";
             }
         }
     }
@@ -4542,7 +4666,10 @@ void MainWindow::ajouterBateauFromForm()
 
     if (ok) {
         // Clear form
-        ui->lineEdit_3b->clear();
+        if (ui->lineEdit_3b) {
+            const QString nextId = bateaauuu::genererNouvelId();
+            ui->lineEdit_3b->setText(nextId);
+        }
         ui->lineEdit_4b->clear();
         ui->lineEdit_5b->clear();
         ui->comboBoxb->setCurrentIndex(0);
@@ -4953,6 +5080,22 @@ void MainWindow::on_pushButton_11_clicked()
 {
     if (!handleCrudDisabled(this) || !ui) return;
 
+    // ID quai est en lecture seule: en mode ajout, on le genere automatiquement si vide
+    if (!m_quai.isModeModification() && ui->lineEdit_4 && ui->lineEdit_4->text().trimmed().isEmpty()) {
+        const int newId = m_quai.genererNouvelId();
+        if (newId > 0) {
+            ui->lineEdit_4->setText(QString::number(newId));
+        } else {
+            const QString err = m_quai.lastError();
+            QMessageBox::critical(this,
+                                  QStringLiteral("Erreur"),
+                                  err.isEmpty()
+                                      ? QStringLiteral("Impossible de generer l'ID du quai (263NNNN).")
+                                      : QStringLiteral("Impossible de generer l'ID du quai : %1").arg(err));
+            return;
+        }
+    }
+
     // Validation des champs obligatoires
     if (!validateRequiredFields(this, {
             {QStringLiteral("ID quai"), ui->lineEdit_4, [this]{ return !ui->lineEdit_4 || ui->lineEdit_4->text().trimmed().isEmpty(); }},
@@ -4978,8 +5121,10 @@ void MainWindow::on_pushButton_11_clicked()
         statutDb = QStringLiteral("Occupe");
     }
 
+    const int savedQuaiId = ui->lineEdit_4->text().trimmed().toInt();
+
     QVariantMap donnees;
-    donnees["ID_QUAI"] = ui->lineEdit_4->text().trimmed().toInt();
+    donnees["ID_QUAI"] = savedQuaiId;
     donnees["NOM_QUAI"] = ui->lineEdit_6->text().trimmed();
     donnees["ZONE_PORT"] = zonePort;
     donnees["ZONE_COUVERTE"] = zoneCouverte;
@@ -5020,6 +5165,22 @@ void MainWindow::on_pushButton_11_clicked()
 
     if (succes) {
         refreshQuaiTable();
+
+        if (ui->tableWidgetQuai && savedQuaiId > 0) {
+            QTableWidget *table = ui->tableWidgetQuai;
+            for (int r = 0; r < table->rowCount(); ++r) {
+                QTableWidgetItem *item = table->item(r, 0);
+                if (!item) continue;
+                bool ok = false;
+                const int rowId = item->text().trimmed().toInt(&ok);
+                if (ok && rowId == savedQuaiId) {
+                    table->setCurrentCell(r, 0);
+                    table->scrollToItem(item);
+                    break;
+                }
+            }
+        }
+
         // Vider le formulaire
         ui->lineEdit_4->clear();
         ui->lineEdit_6->clear();
@@ -5028,6 +5189,21 @@ void MainWindow::on_pushButton_11_clicked()
         ui->doubleSpinBox_2->setValue(0.0);
         ui->spinBox_2->setValue(0);
         ui->comboBox_7->setCurrentIndex(0);
+
+        // Preparer le prochain ajout: regenerer l'ID (toujours en lecture seule)
+        if (ui->lineEdit_4) {
+            const int newId = m_quai.genererNouvelId();
+            if (newId > 0) {
+                ui->lineEdit_4->setText(QString::number(newId));
+            } else {
+                const QString err = m_quai.lastError();
+                QMessageBox::warning(this,
+                                     QStringLiteral("ID quai"),
+                                     err.isEmpty()
+                                         ? QStringLiteral("Impossible de generer le nouvel ID du quai (263NNNN).")
+                                         : QStringLiteral("Impossible de generer le nouvel ID du quai : %1").arg(err));
+            }
+        }
     }
 }
 

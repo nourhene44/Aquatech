@@ -9,6 +9,9 @@ class client
 public:
     client();
 
+    // Génère un nouvel ID client selon le schéma 265NNNN (retourne vide si échec)
+    static QString genererNouvelId();
+
     static bool addClient(const QString& id,
                           const QString& nom,
                           const QString& prenom,

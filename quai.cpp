@@ -7,6 +7,53 @@
 
 Quai::Quai() {}
 
+int Quai::genererNouvelId()
+{
+    Connection *conn = Connection::getInstance();
+    if (!conn->ensureOpen()) {
+        m_lastError = QStringLiteral("Connexion DB échouée: %1").arg(conn->lastErrorText());
+        return 0;
+    }
+
+    QSqlDatabase db = conn->getDatabase();
+    if (!db.isValid() || !db.isOpen()) {
+        m_lastError = QStringLiteral("Base de données non ouverte");
+        return 0;
+    }
+
+    const int prefix = 263;
+    const int minId = prefix * 10000;
+    const int maxId = minId + 9999;
+
+    QSqlQuery query(db);
+    query.prepare(QStringLiteral(
+        "SELECT NVL(MAX(idnum), 0) FROM ("
+        "  SELECT TO_NUMBER(REGEXP_SUBSTR(TRIM(TO_CHAR(ID_QUAI)), '^[0-9]+$')) AS idnum "
+        "  FROM QUAIS"
+        ") WHERE idnum BETWEEN :minId AND :maxId"));
+    query.bindValue(QStringLiteral(":minId"), minId);
+    query.bindValue(QStringLiteral(":maxId"), maxId);
+
+    if (!query.exec()) {
+        m_lastError = query.lastError().text();
+        return 0;
+    }
+
+    int currentMax = 0;
+    if (query.next()) {
+        currentMax = query.value(0).toInt();
+    }
+
+    const int nextId = (currentMax > 0) ? (currentMax + 1) : (minId + 1);
+    if (nextId > maxId) {
+        m_lastError = QStringLiteral("Limite atteinte pour ce préfixe ID (263NNNN).");
+        return 0;
+    }
+
+    m_lastError.clear();
+    return nextId;
+}
+
 Quai::Quai(int idQuai,
            const QString &nomQuai,
            const QString &zonePort,
@@ -146,13 +193,24 @@ bool Quai::ajouter(const QVariantMap &donnees)
         return false;
     }
 
+    int idQuai = donnees.value("ID_QUAI").toInt();
+    if (idQuai <= 0) {
+        idQuai = genererNouvelId();
+        if (idQuai <= 0) {
+            if (m_lastError.trimmed().isEmpty()) {
+                m_lastError = QStringLiteral("Impossible de générer un nouvel ID quai.");
+            }
+            return false;
+        }
+    }
+
     QSqlQuery query(db);
     // Utilisation de paramètres positionnels "?" comme dans les autres insertions du projet,
     // pour éviter les problèmes du driver ODBC avec les noms de paramètres.
     query.prepare("INSERT INTO QUAIS (ID_QUAI, NOM_QUAI, ZONE_PORT, ZONE_COUVERTE, LONGUEUR, CAPACITE_QUAIS, STATUT) "
                   "VALUES (?, ?, ?, ?, ?, ?, ?)");
 
-    query.addBindValue(donnees.value("ID_QUAI").toInt());
+    query.addBindValue(idQuai);
     query.addBindValue(donnees.value("NOM_QUAI").toString());
     query.addBindValue(donnees.value("ZONE_PORT").toString());
     query.addBindValue(donnees.value("ZONE_COUVERTE").toString());

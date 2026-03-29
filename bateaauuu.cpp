@@ -120,6 +120,54 @@ static bool checkConnection() {
     return true;
 }
 
+QString bateaauuu::genererNouvelId()
+{
+    Connection* conn = Connection::getInstance();
+    if (!conn->ensureOpen()) {
+        g_lastError = QStringLiteral("Connexion DB échouée: %1").arg(conn->lastErrorText());
+        return QString();
+    }
+
+    QSqlDatabase db = conn->getDatabase();
+    if (!db.isValid() || !db.isOpen()) {
+        g_lastError = QStringLiteral("Connexion DB indisponible.");
+        return QString();
+    }
+
+    // Schéma demandé: 261NNN
+    const int prefix = 261;
+    const int minId = prefix * 1000;
+    const int maxId = minId + 999;
+
+    QSqlQuery query(db);
+    query.prepare(QStringLiteral(
+        "SELECT NVL(MAX(TO_NUMBER(ID_BATEAU)), 0) FROM BATEAUX "
+        "WHERE ID_BATEAU IS NOT NULL "
+        "AND REGEXP_LIKE(TRIM(TO_CHAR(ID_BATEAU)), '^[0-9]+$') "
+        "AND TO_NUMBER(ID_BATEAU) BETWEEN :minId AND :maxId"));
+    query.bindValue(QStringLiteral(":minId"), minId);
+    query.bindValue(QStringLiteral(":maxId"), maxId);
+
+    if (!query.exec()) {
+        g_lastError = query.lastError().text();
+        return QString();
+    }
+
+    int currentMax = 0;
+    if (query.next()) {
+        currentMax = query.value(0).toInt();
+    }
+
+    const int nextId = (currentMax > 0) ? (currentMax + 1) : (minId + 1);
+    if (nextId > maxId) {
+        g_lastError = QStringLiteral("Limite atteinte pour ce préfixe ID (261NNN).");
+        return QString();
+    }
+
+    g_lastError.clear();
+    return QString::number(nextId);
+}
+
 bool bateaauuu::addBateau(const QString& id, const QString& nom, const QString& type,
                           int capacite, const QString& proprietaire, const QString& statut,
                           double largeur, const QDate& date_entree,
@@ -127,9 +175,14 @@ bool bateaauuu::addBateau(const QString& id, const QString& nom, const QString& 
 
     if (!checkConnection()) return false;
 
-    QString finalId = id.isEmpty()
-                          ? QString::number(QDate::currentDate().toJulianDay()) + QString::number(QTime::currentTime().msec())
-                          : id;
+    QString finalId = id.trimmed();
+    if (finalId.isEmpty()) {
+        finalId = genererNouvelId();
+        if (finalId.isEmpty()) {
+            // g_lastError déjà renseignée
+            return false;
+        }
+    }
 
     QStringList cols = {"ID_BATEAU", "NOM", "TYPE", "CAPACITE", "PROPRIETAIRE",
                         "STATUT", "LARGEUR", "FREQUENCE_MAINTENANCE"};

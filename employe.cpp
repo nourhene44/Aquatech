@@ -603,11 +603,7 @@ QSqlQueryModel *Employe::afficher()
 
 int Employe::genererNouvelId(const QString &role)
 {
-	const int roleCode = employeRoleCodeForId(role);
-	if (roleCode == 0) {
-		s_lastError = QStringLiteral("Rôle invalide pour génération ID (Gardien=3, Technicien=4, Responsable=5, Ouvrier=6).");
-		return 0;
-	}
+	Q_UNUSED(role);
 
 	Connection* conn = Connection::getInstance();
 	if (!conn->ensureOpen()) {
@@ -623,13 +619,17 @@ int Employe::genererNouvelId(const QString &role)
 		return 0;
 	}
 
-	const int yy = QDate::currentDate().year() % 100;
-	const int prefix = (yy * 10) + roleCode;
+	// Schéma demandé: 264NNNN
+	const int prefix = 264;
 	const int minId = prefix * 10000;
 	const int maxId = minId + 9999;
 
 	QSqlQuery query(db);
-	query.prepare(QStringLiteral("SELECT NVL(MAX(%1), 0) FROM %2 WHERE %1 BETWEEN :minId AND :maxId")
+	query.prepare(QStringLiteral(
+		"SELECT NVL(MAX(TO_NUMBER(%1)), 0) FROM %2 "
+		"WHERE %1 IS NOT NULL "
+		"AND REGEXP_LIKE(TRIM(TO_CHAR(%1)), '^[0-9]+$') "
+		"AND TO_NUMBER(%1) BETWEEN :minId AND :maxId")
 				  .arg(map.id, map.table));
 	query.bindValue(QStringLiteral(":minId"), minId);
 	query.bindValue(QStringLiteral(":maxId"), maxId);
@@ -646,7 +646,7 @@ int Employe::genererNouvelId(const QString &role)
 
 	const int nextId = (currentMax > 0) ? (currentMax + 1) : (minId + 1);
 	if (nextId > maxId) {
-		s_lastError = QStringLiteral("Limite atteinte pour ce préfixe ID (YYRNNNN). Changer d'année ou rôle.");
+		s_lastError = QStringLiteral("Limite atteinte pour ce pr\u00E9fixe ID (264NNNN).");
 		return 0;
 	}
 

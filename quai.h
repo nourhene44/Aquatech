@@ -44,6 +44,9 @@ public:
     // Dernière erreur SQL rencontrée (texte brut)
     QString lastError() const { return m_lastError; }
 
+    // Génération d'ID (schéma demandé: 263NNNN). Retourne 0 si échec.
+    int genererNouvelId();
+
     // CRUD basés sur les attributs de l'objet (style atelier)
     bool ajouter();
     bool modifier();
