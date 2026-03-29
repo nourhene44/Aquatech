@@ -1,5 +1,6 @@
 #include "bateaauuu.h"
 #include "connection.h"
+#include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QVariant>
@@ -55,6 +56,58 @@ static bool executeQuery(const QString& sql) {
     g_lastError = QString("%1 | driver: %2 | sql: %3").arg(e.text(), e.driverText(), sql);
     qWarning() << "Query failed:" << g_lastError;
     return false;
+}
+
+static QString friendlyDeleteError(const QString& raw)
+{
+    const QString msg = raw.trimmed();
+    if (msg.contains("ORA-02292", Qt::CaseInsensitive)) {
+        return QStringLiteral("Suppression impossible: ce bateau est encore reference dans des enregistrements enfants.");
+    }
+    if (msg.contains("ORA-02291", Qt::CaseInsensitive)) {
+        return QStringLiteral("Suppression impossible: la valeur 0 n'est pas autorisee pour ID_BATEAU (contrainte FK).");
+    }
+    return msg;
+}
+
+static bool ensureZeroBoatExists(QSqlDatabase& db)
+{
+    QSqlQuery check(db);
+    if (!check.exec("SELECT COUNT(*) FROM BATEAUX WHERE ID_BATEAU = 0") || !check.next()) {
+        g_lastError = check.lastError().text();
+        return false;
+    }
+
+    if (check.value(0).toInt() > 0) {
+        return true;
+    }
+
+    QString defaultType = QStringLiteral("Type inconnu");
+    QString defaultStatut = QStringLiteral("Inactif");
+
+    QSqlQuery seed(db);
+    if (seed.exec("SELECT TYPE, STATUT FROM BATEAUX WHERE ROWNUM = 1") && seed.next()) {
+        const QString t = seed.value(0).toString().trimmed();
+        const QString s = seed.value(1).toString().trimmed();
+        if (!t.isEmpty()) defaultType = t;
+        if (!s.isEmpty()) defaultStatut = s;
+    }
+
+    QSqlQuery ins(db);
+    ins.prepare(
+        "INSERT INTO BATEAUX "
+        "(ID_BATEAU, NOM, TYPE, CAPACITE, PROPRIETAIRE, STATUT, LARGEUR, FREQUENCE_MAINTENANCE, DATE_ENTREE, DATE_DERNIERE_MAINTENANCE) "
+        "VALUES (0, :nom, :type, 0, :prop, :statut, 0, 0, NULL, NULL)");
+    ins.bindValue(":nom", QStringLiteral("AUCUN BATEAU"));
+    ins.bindValue(":type", defaultType);
+    ins.bindValue(":prop", QStringLiteral("SYSTEME"));
+    ins.bindValue(":statut", defaultStatut);
+    if (!ins.exec()) {
+        g_lastError = ins.lastError().text();
+        return false;
+    }
+
+    return true;
 }
 
 static bool checkConnection() {
@@ -124,10 +177,55 @@ bool bateaauuu::updateBateau(const QString& id, const QString& nom, const QStrin
 bool bateaauuu::deleteBateau(const QString& id) {
     if (id.isEmpty() || !checkConnection()) return false;
 
-    QString sql = QString("DELETE FROM BATEAUX WHERE ID_BATEAU = %1")
-                      .arg(formatId(id));
+    bool ok = false;
+    const int idNum = id.trimmed().toInt(&ok);
+    if (ok && idNum == 0) {
+        g_lastError = QStringLiteral("Le bateau systeme ID 0 ne peut pas etre supprime.");
+        return false;
+    }
 
-    return executeQuery(sql);
+    QSqlDatabase db = QSqlDatabase::database();
+    if (!db.isValid()) {
+        g_lastError = QStringLiteral("Base de donnees indisponible.");
+        return false;
+    }
+
+    if (!db.transaction()) {
+        g_lastError = QStringLiteral("Impossible de demarrer la transaction de suppression.");
+        return false;
+    }
+
+    if (!ensureZeroBoatExists(db)) {
+        db.rollback();
+        return false;
+    }
+
+    QSqlQuery upd(db);
+    upd.prepare("UPDATE PECHEURS SET ID_BATEAU = 0 WHERE ID_BATEAU = :id");
+    upd.bindValue(":id", id.trimmed());
+    if (!upd.exec()) {
+        db.rollback();
+        g_lastError = friendlyDeleteError(upd.lastError().text());
+        return false;
+    }
+
+    QSqlQuery del(db);
+    del.prepare("DELETE FROM BATEAUX WHERE ID_BATEAU = :id");
+    del.bindValue(":id", id.trimmed());
+    if (!del.exec()) {
+        db.rollback();
+        g_lastError = friendlyDeleteError(del.lastError().text());
+        return false;
+    }
+
+    if (!db.commit()) {
+        db.rollback();
+        g_lastError = QStringLiteral("Suppression annulee: echec commit transaction.");
+        return false;
+    }
+
+    g_lastError.clear();
+    return true;
 }
 
 QString bateaauuu::lastError() {
