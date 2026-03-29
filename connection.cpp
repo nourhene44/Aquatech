@@ -30,9 +30,9 @@ Connection* Connection::getInstance() {
 bool Connection::createconnect() {
     try {
         // 🔧 PARAMÈTRES DE CONNEXION - À MODIFIER SELON VOTRE CONFIG
-        QString nomSourceDonnees = "Nourhene";  // Nom de votre source ODBC
-        QString nomUtilisateur = "hr";            // Nom d'utilisateur Oracle
-        QString motDePasse = "hr";              // Mot de passe Oracle
+        QString nomSourceDonnees = "AQUATEC";  // Nom de votre source ODBC
+        QString nomUtilisateur = "esra";            // Nom d'utilisateur Oracle
+        QString motDePasse = "esra123";              // Mot de passe Oracle
 
         // Configuration de la connexion
         db.setDatabaseName(nomSourceDonnees);  // ← Correction: plus de variable 'source'

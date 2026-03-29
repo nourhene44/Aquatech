@@ -7452,7 +7452,7 @@ border:none</string>
       <property name="geometry">
        <rect>
         <x>220</x>
-        <y>510</y>
+        <y>500</y>
         <width>281</width>
         <height>251</height>
        </rect>
@@ -7643,7 +7643,7 @@ border:none</string>
       <property name="geometry">
        <rect>
         <x>240</x>
-        <y>70</y>
+        <y>60</y>
         <width>251</width>
         <height>41</height>
        </rect>
@@ -7673,7 +7673,7 @@ border:none</string>
        <rect>
         <x>510</x>
         <y>180</y>
-        <width>881</width>
+        <width>821</width>
         <height>271</height>
        </rect>
       </property>
@@ -8130,7 +8130,7 @@ QProgressBar::chunk:vertical {
        <rect>
         <x>600</x>
         <y>140</y>
-        <width>191</width>
+        <width>201</width>
         <height>28</height>
        </rect>
       </property>
@@ -8241,7 +8241,7 @@ font-size:18px</string>
       <property name="geometry">
        <rect>
         <x>220</x>
-        <y>120</y>
+        <y>110</y>
         <width>281</width>
         <height>381</height>
        </rect>
@@ -8458,6 +8458,19 @@ background-color:transparent;
       </property>
       <property name="text">
        <string/>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="cap_btnValiider_4">
+      <property name="geometry">
+       <rect>
+        <x>230</x>
+        <y>760</y>
+        <width>241</width>
+        <height>41</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>✏️Modifier Quotas</string>
       </property>
      </widget>
     </widget>

@@ -9,6 +9,7 @@
 #include "quai.h"
 #include "pecheurs.h"
 #include "employe.h"
+#include "captures.h"
 
 class QNetworkAccessManager;
 
@@ -140,6 +141,11 @@ private slots:
     void on_pushButton_2b_clicked();
     void on_pushButton_11_clicked();
     void on_btnExportMapPdf_clicked();
+    void on_cap_btnValiider_3_clicked();
+    void on_lineEdit_7c_2_textChanged(const QString &text);
+    void on_cap_sbQuantite_3_valueChanged(int value);
+    void on_cap_deDebut_dateChanged(const QDate &date);
+    void on_cap_btnExporter_clicked();
 
 public:
     // Ajout des m├⌐thodes manquantes pour la gestion des quais
@@ -157,6 +163,9 @@ private:
     QString m_editingPecheurId;
     int m_editingEmployeId = -1;
     QString m_editingClientId;
+    QString m_editingCaptureId;
+    int m_captureQuantiteFiltre = 0;
+    QDate m_captureDateFiltre;
     QLabel* m_curveLineLabelQuaiStats = nullptr;
     QTimer* m_statsTimer = nullptr;
     QTimer* m_weatherTimer = nullptr;
@@ -178,6 +187,13 @@ private:
     void loadPecheurs();
     void loadPecheurFromTable();
     void resetAjouterButton();
+
+    // --- Captures CRUD ---
+    captures captureFromForm() const;
+    void loadCaptures();
+    void loadCaptureFromTable(int row);
+    void supprimerCaptureFromRow(int row);
+    void resetCaptureForm();
 
     // --- Employe CRUD ---
     void loadEmployes();

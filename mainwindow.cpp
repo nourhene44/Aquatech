@@ -34,6 +34,7 @@
 #include <QHeaderView>
 #include <QIcon>
 #include "bateaauuu.h"
+#include "captures.h"
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -53,6 +54,7 @@
 static QString weatherDescriptionFr(int weatherCode);
 static QString weatherIconEmoji(int weatherCode);
 static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui);
+static void updateCapturesStats(MainWindow* parent, Ui::MainWindow* ui);
 
 static bool handleCrudDisabled(QWidget* parent)
 {
@@ -83,7 +85,6 @@ static int bateauIdFromText(const QString& text)
 static QLineEdit* pecheurBateauLineEdit(Ui::MainWindow* ui)
 {
     if (!ui) return nullptr;
-    if (ui->lineEdit_4p_2) return ui->lineEdit_4p_2;
     return ui->stackedWidget ? ui->stackedWidget->findChild<QLineEdit*>(QStringLiteral("lineEdit_2p_2")) : nullptr;
 }
 
@@ -91,6 +92,46 @@ static QComboBox* pecheurBateauCombo(Ui::MainWindow* ui)
 {
     if (!ui) return nullptr;
     return ui->comboBox_9;
+}
+
+static void loadPecheurBateauChoices(Ui::MainWindow* ui)
+{
+    QComboBox* combo = pecheurBateauCombo(ui);
+    if (!combo) return;
+
+    const QVariant previousData = combo->currentData();
+    const QString previousText = combo->currentText().trimmed();
+
+    combo->blockSignals(true);
+    combo->clear();
+    combo->addItem(QStringLiteral("0 - Aucun bateau"), 0);
+
+    QSqlQuery query;
+    if (query.exec(QStringLiteral("SELECT ID_BATEAU, NOM FROM BATEAUX ORDER BY ID_BATEAU"))) {
+        while (query.next()) {
+            const int id = query.value(0).toInt();
+            const QString nom = query.value(1).toString().trimmed();
+            const QString label = nom.isEmpty()
+                ? QString::number(id)
+                : QStringLiteral("%1 - %2").arg(id).arg(nom);
+            combo->addItem(label, id);
+        }
+    }
+
+    int idx = -1;
+    if (previousData.isValid()) {
+        idx = combo->findData(previousData);
+    }
+    if (idx < 0 && !previousText.isEmpty()) {
+        idx = combo->findText(previousText, Qt::MatchStartsWith);
+    }
+    if (idx >= 0) {
+        combo->setCurrentIndex(idx);
+    } else {
+        combo->setCurrentIndex(0); // 0 - Aucun bateau
+    }
+
+    combo->blockSignals(false);
 }
 
 static QString pecheurSexeCode(Ui::MainWindow* ui)
@@ -1292,6 +1333,7 @@ MainWindow::MainWindow(QWidget *parent)
     , ui(new Ui::MainWindow)
     , m_editingPecheurId()
     , m_editingEmployeId(-1)
+    , m_editingCaptureId()
 {
     ui->setupUi(this);
 
@@ -1405,6 +1447,10 @@ MainWindow::MainWindow(QWidget *parent)
         }
     }
 
+    if (ui->cap_deDebut) {
+        ui->cap_deDebut->setDate(QDate(2000, 1, 1));
+    }
+
     refreshClientsPage();
 
     QSqlDatabase db = Connection::getInstance()->getDatabase();
@@ -1412,7 +1458,9 @@ MainWindow::MainWindow(QWidget *parent)
         // Chargement initial des employ├⌐s via helper d├⌐di├⌐ (r├⌐solution de table + synonymes)
         loadEmployes();
     }
+    loadCaptures();
     loadBateaux();
+    loadPecheurBateauChoices(ui);
     // Chargement initial de la table des quais avec actions connect├⌐es
     refreshQuaiTable();
 
@@ -1607,7 +1655,7 @@ void MainWindow::on_p6b_clicked()
 }
 
 // ----------------------
-// CRUD Employ├⌐s (helpers) ΓÇô style atelier
+// CRUD Employes (helpers) - style atelier
 // ----------------------
 
 void MainWindow::loadEmployes()
@@ -1625,8 +1673,8 @@ void MainWindow::loadEmployes()
     const int dataCols = model->columnCount();
     if (dataCols <= 0) {
         QMessageBox::critical(this,
-                              QStringLiteral("Employ├⌐s"),
-                              QStringLiteral("Chargement ├⌐chou├⌐: %1").arg(Employe::lastError()));
+                      QStringLiteral("Employes"),
+                      QStringLiteral("Chargement echoue: %1").arg(Employe::lastError()));
         return;
     }
 
@@ -1658,9 +1706,9 @@ void MainWindow::loadEmployes()
     };
 
     const int colNom = findModelCol({QStringLiteral("Nom")});
-    const int colPrenom = findModelCol({QStringLiteral("Pr├⌐nom"), QStringLiteral("Prenom")});
-    const int colRole = findModelCol({QStringLiteral("R├┤le"), QStringLiteral("Role")});
-    const int colEtat = findModelCol({QStringLiteral("├ëtat"), QStringLiteral("Etat")});
+    const int colPrenom = findModelCol({QStringLiteral("Prenom")});
+    const int colRole = findModelCol({QStringLiteral("Role")});
+    const int colEtat = findModelCol({QStringLiteral("Etat")});
     const int colStatut = findModelCol({QStringLiteral("Statut")});
 
     int countGardien = 0;
@@ -1672,14 +1720,14 @@ void MainWindow::loadEmployes()
     table->setRowCount(0);
     table->setColumnCount(dataCols + 1);
 
-    // En-t├¬tes
+    // En-tetes
     for (int c = 0; c < dataCols; ++c) {
         auto *item = new QTableWidgetItem(model->headerData(c, Qt::Horizontal).toString());
         table->setHorizontalHeaderItem(c, item);
     }
     table->setHorizontalHeaderItem(dataCols, new QTableWidgetItem(QStringLiteral("Actions")));
 
-    // Donn├⌐es filtr├⌐es
+    // Donnees filtrees
     int visibleRow = 0;
     for (int r = 0; r < rowCount; ++r) {
         const QString nom = (colNom >= 0) ? model->data(model->index(r, colNom)).toString().trimmed() : QString();
@@ -1905,11 +1953,11 @@ void MainWindow::editEmployeFromTable(int row)
 
     const int colId = colByNames({QStringLiteral("ID")});
     const int colNom = colByNames({QStringLiteral("Nom")});
-    const int colPrenom = colByNames({QStringLiteral("Pr├⌐nom"), QStringLiteral("Prenom")});
-    const int colTelephone = colByNames({QStringLiteral("T├⌐l├⌐phone"), QStringLiteral("Telephone"), QStringLiteral("Tel")});
-    const int colRole = colByNames({QStringLiteral("R├┤le"), QStringLiteral("Role")});
-    const int colEquipe = colByNames({QStringLiteral("├ëquipe"), QStringLiteral("Equipe")});
-    const int colEtat = colByNames({QStringLiteral("├ëtat"), QStringLiteral("Etat")});
+    const int colPrenom = colByNames({QStringLiteral("Prenom")});
+    const int colTelephone = colByNames({QStringLiteral("Telephone"), QStringLiteral("Tel")});
+    const int colRole = colByNames({QStringLiteral("Role")});
+    const int colEquipe = colByNames({QStringLiteral("Equipe")});
+    const int colEtat = colByNames({QStringLiteral("Etat")});
     const int colStatut = colByNames({QStringLiteral("Statut")});
     const int colSalaire = colByNames({QStringLiteral("Salaire")});
 
@@ -1949,7 +1997,7 @@ void MainWindow::editEmployeFromTable(int row)
     bool okInt = false;
     m_editingEmployeId = idText.toInt(&okInt);
     if (!okInt) {
-        // Si l'ID n'est pas num├⌐rique, on stocke simplement un marqueur n├⌐gatif pour d├⌐sactiver la mise ├á jour
+        // Si l'ID n'est pas numerique, on stocke simplement un marqueur negatif pour desactiver la mise a jour
         m_editingEmployeId = -1;
     }
 
@@ -1957,8 +2005,298 @@ void MainWindow::editEmployeFromTable(int row)
     if (ui->pushButton_5e) ui->pushButton_5e->setText(QStringLiteral("Modifier"));
 
     QMessageBox::information(this,
-                             QStringLiteral("Modification employ├⌐"),
+                             QStringLiteral("Modification employe"),
                              QStringLiteral("Formulaire rempli. Cliquez sur Modifier pour sauvegarder les modifications."));
+}
+
+captures MainWindow::captureFromForm() const
+{
+    const QString idCapture = ui && ui->cap_lineEdit_11 ? ui->cap_lineEdit_11->text().trimmed() : QString();
+    const int idBateau = ui && ui->cap_lineEdit_9 ? toIntOrZero(ui->cap_lineEdit_9->text()) : 0;
+    const QString typePoisson = ui && ui->cap_comboBox_4 ? ui->cap_comboBox_4->currentText().trimmed() : QString();
+    const int quantite = ui && ui->cap_sbQuantite_4 ? ui->cap_sbQuantite_4->value() : 0;
+    const double poids = ui && ui->cap_dsPoids_3 ? ui->cap_dsPoids_3->value() : 0.0;
+    const QDate dateCapture = ui && ui->cap_deDateCapture_3 ? ui->cap_deDateCapture_3->date() : QDate();
+
+    return captures(idCapture, idBateau, typePoisson, quantite, poids, dateCapture);
+}
+
+void MainWindow::loadCaptures()
+{
+    if (!ui || !ui->cap_tableWidget) return;
+
+    const QString recherche = ui->lineEdit_7c_2 ? ui->lineEdit_7c_2->text().trimmed() : QString();
+    
+    QVector<captures::TableRowData> rows;
+    if (!captures::chargerTableAvancee(recherche, m_captureQuantiteFiltre, m_captureDateFiltre, rows)) {
+        qDebug() << "Erreur loadCaptures:" << captures::lastError();
+    }
+
+    QTableWidget* table = ui->cap_tableWidget;
+    table->setAlternatingRowColors(false);
+    table->setShowGrid(false);
+    table->setStyleSheet(
+        "QTableWidget {"
+        "background-color: rgb(224, 238, 255);"
+        "alternate-background-color: rgb(224, 238, 255);"
+        "border: none;"
+        "}"
+        "QTableWidget::item {"
+        "padding: 4px;"
+        "border: none;"
+        "}"
+        "QTableWidget::item:selected {"
+        "background-color: rgba(0, 85, 127, 0.20);"
+        "color: #0b2d4a;"
+        "}");
+
+    table->clearContents();
+    table->setRowCount(0);
+    table->setColumnCount(7);
+
+    const QStringList headers = {
+        QStringLiteral("ID Capture"),
+        QStringLiteral("ID Bateau"),
+        QStringLiteral("Type Poisson"),
+        QStringLiteral("Quantite"),
+        QStringLiteral("Poids"),
+        QStringLiteral("Date"),
+        QStringLiteral("Actions")
+    };
+    for (int i = 0; i < headers.size(); ++i) {
+        table->setHorizontalHeaderItem(i, new QTableWidgetItem(headers.at(i)));
+    }
+
+    int row = 0;
+    for (const captures::TableRowData& record : rows) {
+        const int currentRow = row;
+        table->insertRow(row);
+
+        table->setItem(row, 0, new QTableWidgetItem(record.idCapture));
+        table->setItem(row, 1, new QTableWidgetItem(QString::number(record.idBateau)));
+        table->setItem(row, 2, new QTableWidgetItem(record.typePoisson));
+        table->setItem(row, 3, new QTableWidgetItem(QString::number(record.quantite)));
+        table->setItem(row, 4, new QTableWidgetItem(QString::number(record.poids, 'f', 2)));
+        table->setItem(row, 5, new QTableWidgetItem(record.dateCapture.isValid()
+                                                     ? record.dateCapture.toString(QStringLiteral("yyyy-MM-dd"))
+                                                     : QString()));
+
+        auto* actionWidget = new QWidget();
+        actionWidget->setStyleSheet(QStringLiteral("background-color: transparent;"));
+        auto* actionLayout = new QHBoxLayout(actionWidget);
+        actionLayout->setContentsMargins(2, 2, 2, 2);
+        actionLayout->setSpacing(7);
+
+        auto* btnEdit = new QPushButton(QStringLiteral("✏️"));
+        btnEdit->setFixedSize(42, 32);
+        btnEdit->setFont(QFont(QStringLiteral("Segoe UI Emoji"), 15, QFont::Bold));
+        btnEdit->setFlat(true);
+        btnEdit->setStyleSheet(QStringLiteral(
+            "QPushButton {"
+            " border: 2px solid rgb(0, 0, 112);"
+            " border-radius: 6px;"
+            " background-color: rgb(224, 238, 255);"
+            " color: rgb(0, 0, 112);"
+            " padding: 0px;"
+            " }"
+            "QPushButton:hover { background-color: rgb(224, 238, 255); }"
+            "QPushButton:pressed { background-color: rgb(224, 238, 255); }"));
+        btnEdit->setToolTip(QStringLiteral("Modifier"));
+        connect(btnEdit, &QPushButton::clicked, this, [this, currentRow]() {
+            loadCaptureFromTable(currentRow);
+        });
+
+        auto* btnDelete = new QPushButton(QStringLiteral("❌"));
+        btnDelete->setFixedSize(42, 32);
+        btnDelete->setFont(QFont(QStringLiteral("Segoe UI Emoji"), 15, QFont::Bold));
+        btnDelete->setFlat(true);
+        btnDelete->setStyleSheet(QStringLiteral(
+            "QPushButton {"
+            " border: 2px solid rgb(0, 0, 112);"
+            " border-radius: 6px;"
+            " background-color: rgb(224, 238, 255);"
+            " color: rgb(0, 0, 112);"
+            " padding: 0px;"
+            " }"
+            "QPushButton:hover { background-color: rgb(224, 238, 255); }"
+            "QPushButton:pressed { background-color: rgb(224, 238, 255); }"));
+        btnDelete->setToolTip(QStringLiteral("Supprimer"));
+        connect(btnDelete, &QPushButton::clicked, this, [this, currentRow]() {
+            supprimerCaptureFromRow(currentRow);
+        });
+
+        actionLayout->addStretch();
+        actionLayout->addWidget(btnEdit, 0, Qt::AlignVCenter);
+        actionLayout->addWidget(btnDelete, 0, Qt::AlignVCenter);
+        actionLayout->addStretch();
+
+        table->setCellWidget(row, 6, actionWidget);
+        ++row;
+    }
+
+    table->setColumnWidth(0, 120);
+    table->setColumnWidth(1, 100);
+    table->setColumnWidth(2, 140);
+    table->setColumnWidth(3, 90);
+    table->setColumnWidth(4, 90);
+    table->setColumnWidth(5, 120);
+    table->setColumnWidth(6, 114);
+    table->verticalHeader()->setDefaultSectionSize(42);
+    
+    // Mettre à jour les statistiques
+    updateCapturesStats(this, ui);
+}
+
+void MainWindow::loadCaptureFromTable(int row)
+{
+    if (!ui || !ui->cap_tableWidget) return;
+    QTableWidget* table = ui->cap_tableWidget;
+    if (row < 0 || row >= table->rowCount()) return;
+
+    const QString idCapture = table->item(row, 0) ? table->item(row, 0)->text().trimmed() : QString();
+    const QString idBateau = table->item(row, 1) ? table->item(row, 1)->text().trimmed() : QString();
+    const QString typePoisson = table->item(row, 2) ? table->item(row, 2)->text().trimmed() : QString();
+    const QString quantite = table->item(row, 3) ? table->item(row, 3)->text().trimmed() : QString();
+    const QString poids = table->item(row, 4) ? table->item(row, 4)->text().trimmed() : QString();
+    const QString dateTxt = table->item(row, 5) ? table->item(row, 5)->text().trimmed() : QString();
+
+    if (idCapture.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("Modification capture"), QStringLiteral("ID capture introuvable."));
+        return;
+    }
+
+    m_editingCaptureId = idCapture;
+
+    if (ui->cap_lineEdit_11) ui->cap_lineEdit_11->setText(idCapture);
+    if (ui->cap_lineEdit_9) ui->cap_lineEdit_9->setText(idBateau);
+    if (ui->cap_comboBox_4) ui->cap_comboBox_4->setCurrentText(typePoisson);
+    if (ui->cap_sbQuantite_4) ui->cap_sbQuantite_4->setValue(toIntOrZero(quantite));
+    if (ui->cap_dsPoids_3) ui->cap_dsPoids_3->setValue(poids.toDouble());
+
+    if (ui->cap_deDateCapture_3 && !dateTxt.isEmpty()) {
+        QDate d = QDate::fromString(dateTxt, QStringLiteral("yyyy-MM-dd"));
+        if (!d.isValid()) d = QDate::fromString(dateTxt, QStringLiteral("dd/MM/yyyy"));
+        if (d.isValid()) ui->cap_deDateCapture_3->setDate(d);
+    }
+
+    if (ui->cap_btnValiider_3) ui->cap_btnValiider_3->setText(QStringLiteral("Modifier"));
+}
+
+void MainWindow::supprimerCaptureFromRow(int row)
+{
+    if (!ui || !ui->cap_tableWidget) return;
+    QTableWidget* table = ui->cap_tableWidget;
+    if (row < 0 || row >= table->rowCount()) return;
+
+    const QString idCapture = table->item(row, 0) ? table->item(row, 0)->text().trimmed() : QString();
+    if (idCapture.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("Suppression capture"), QStringLiteral("ID capture introuvable."));
+        return;
+    }
+
+    const auto reply = QMessageBox::question(
+        this,
+        QStringLiteral("Confirmation"),
+        QStringLiteral("Voulez-vous vraiment supprimer la capture ID: %1 ?").arg(idCapture),
+        QMessageBox::Yes | QMessageBox::No);
+
+    if (reply != QMessageBox::Yes) return;
+
+    if (!captures::supprimer(idCapture)) {
+        QMessageBox::critical(this, QStringLiteral("Suppression capture"), QStringLiteral("Suppression echouee: %1").arg(captures::lastError()));
+        return;
+    }
+
+    if (m_editingCaptureId == idCapture) {
+        resetCaptureForm();
+    }
+
+    loadCaptures();
+    QMessageBox::information(this, QStringLiteral("Suppression capture"), QStringLiteral("Suppression reussie."));
+}
+
+void MainWindow::resetCaptureForm()
+{
+    m_editingCaptureId.clear();
+
+    if (ui && ui->cap_lineEdit_11) ui->cap_lineEdit_11->clear();
+    if (ui && ui->cap_lineEdit_9) ui->cap_lineEdit_9->clear();
+    if (ui && ui->cap_comboBox_4) ui->cap_comboBox_4->setCurrentIndex(0);
+    if (ui && ui->cap_sbQuantite_4) ui->cap_sbQuantite_4->setValue(0);
+    if (ui && ui->cap_dsPoids_3) ui->cap_dsPoids_3->setValue(0.0);
+    if (ui && ui->cap_deDateCapture_3) ui->cap_deDateCapture_3->setDate(QDate::currentDate());
+    if (ui && ui->cap_btnValiider_3) ui->cap_btnValiider_3->setText(QStringLiteral("Valider"));
+}
+
+void MainWindow::on_cap_btnValiider_3_clicked()
+{
+    if (!handleCrudDisabled(this)) return;
+
+    if (!ui) return;
+    if (!ui->cap_lineEdit_11 || ui->cap_lineEdit_11->text().trimmed().isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("Champs"), QStringLiteral("Veuillez saisir ID Capture"));
+        return;
+    }
+    if (!ui->cap_lineEdit_9 || toIntOrZero(ui->cap_lineEdit_9->text()) <= 0) {
+        QMessageBox::warning(this, QStringLiteral("Champs"), QStringLiteral("Veuillez saisir un ID Bateau valide"));
+        return;
+    }
+    if (!ui->cap_sbQuantite_4 || ui->cap_sbQuantite_4->value() <= 0) {
+        QMessageBox::warning(this, QStringLiteral("Champs"), QStringLiteral("Veuillez saisir une quantite superieure a zero"));
+        return;
+    }
+    if (!ui->cap_dsPoids_3 || ui->cap_dsPoids_3->value() <= 0.0) {
+        QMessageBox::warning(this, QStringLiteral("Champs"), QStringLiteral("Veuillez saisir un poids superieur a zero"));
+        return;
+    }
+
+    const captures c = captureFromForm();
+
+    if (!m_editingCaptureId.isEmpty()) {
+        if (c.modifierAvecAncienId(m_editingCaptureId)) {
+            loadCaptures();
+            resetCaptureForm();
+            QMessageBox::information(this, QStringLiteral("Capture"), QStringLiteral("Modification reussie"));
+        } else {
+            const QString err = captures::lastError();
+            if (isSaisieConstraintError(err)) {
+                QMessageBox::warning(this, QStringLiteral("Champs"), QStringLiteral("Modification echouee: %1").arg(err));
+            } else {
+                QMessageBox::critical(this, QStringLiteral("Erreur"), QStringLiteral("Modification echouee: %1").arg(err));
+            }
+        }
+    } else {
+        const QString idCapture = ui->cap_lineEdit_11->text().trimmed();
+        if (captures::idExiste(idCapture)) {
+            QMessageBox::warning(this, QStringLiteral("Doublon"), QStringLiteral("Cet ID capture existe deja."));
+            return;
+        }
+
+        if (c.ajouter()) {
+            loadCaptures();
+            resetCaptureForm();
+            QMessageBox::information(this, QStringLiteral("Capture"), QStringLiteral("Ajout reussi"));
+        } else {
+            const QString err = captures::lastError();
+            if (isSaisieConstraintError(err)) {
+                QMessageBox::warning(this, QStringLiteral("Champs"), QStringLiteral("Ajout echoue: %1").arg(err));
+            } else {
+                QMessageBox::critical(this, QStringLiteral("Erreur"), QStringLiteral("Ajout echoue: %1").arg(err));
+            }
+        }
+    }
+}
+
+void MainWindow::on_lineEdit_7c_2_textChanged(const QString &text)
+{
+    Q_UNUSED(text);
+    loadCaptures();
+}
+
+void MainWindow::on_cap_deDebut_dateChanged(const QDate &date)
+{
+    m_captureDateFiltre = date;
+    loadCaptures();
 }
 
 void MainWindow::on_p5b_clicked()
@@ -1969,7 +2307,7 @@ void MainWindow::on_p5b_clicked()
 
     ui->stackedWidget->setCurrentWidget(ui->cap_pagecaptures);
 
-    // loadCaptures(); (removed)
+    loadCaptures();
 }
 void MainWindow::on_pushButton_3b_50_clicked(){
     if (ui && ui->stackedWidget && ui->cap_pagecaptures) {
@@ -2829,21 +3167,21 @@ void MainWindow::on_pushButton_5e_clicked()
 
     const bool editingEmploye = (m_editingEmployeId > 0);
     const QString idConstraintMessage = QStringLiteral(
-        "Le champ ID Employ├⌐ est obligatoire et doit respecter le format YYRNNNN.\n"
-        "YY : ann├⌐e courante (ex. 26)\n"
-        "R : code r├┤le (Gardien=3, Technicien=4, Responsable=5, Ouvrier=6)\n"
-        "NNNN : num├⌐ro unique auto-incr├⌐ment├⌐.");
+        "Le champ ID Employe est obligatoire et doit respecter le format YYRNNNN.\n"
+        "YY : annee courante (ex. 26)\n"
+        "R : code role (Gardien=3, Technicien=4, Responsable=5, Ouvrier=6)\n"
+        "NNNN : numero unique auto-incremente.");
 
     if (!validateRequiredFields(this, {
             {QStringLiteral("Nom"), ui->lineEdit_13e, [this]{ return !ui->lineEdit_13e || ui->lineEdit_13e->text().trimmed().isEmpty(); }},
-            {QStringLiteral("Pr├⌐nom"), ui->lineEdit_16e, [this]{ return !ui->lineEdit_16e || ui->lineEdit_16e->text().trimmed().isEmpty(); }},
-            {QStringLiteral("T├⌐l├⌐phone"), ui->lineEdit_14e, [this]{ return !ui->lineEdit_14e || ui->lineEdit_14e->text().trimmed().isEmpty(); }},
+            {QStringLiteral("Prenom"), ui->lineEdit_16e, [this]{ return !ui->lineEdit_16e || ui->lineEdit_16e->text().trimmed().isEmpty(); }},
+            {QStringLiteral("Telephone"), ui->lineEdit_14e, [this]{ return !ui->lineEdit_14e || ui->lineEdit_14e->text().trimmed().isEmpty(); }},
             {QStringLiteral("Salaire"), ui->lineEdit_14e_2, [this]{ return !ui->lineEdit_14e_2 || ui->lineEdit_14e_2->text().trimmed().isEmpty(); }},
         })) {
         return;
     }
 
-    // R├⌐cup├⌐ration des valeurs du formulaire (style atelier)
+    // Recuperation des valeurs du formulaire (style atelier)
     const QString idText = ui->lineEdit_12e ? ui->lineEdit_12e->text().trimmed() : QString();
     int id = toIntOrZero(idText);
     const QString nom = ui->lineEdit_13e ? ui->lineEdit_13e->text().trimmed() : QString();
@@ -2867,7 +3205,7 @@ void MainWindow::on_pushButton_5e_clicked()
     static const QRegularExpression telPattern(QStringLiteral("^\\d{8,15}$"));
 
     if (id <= 0) {
-        QMessageBox::warning(this, QStringLiteral("Saisie employ├⌐"), idConstraintMessage);
+        QMessageBox::warning(this, QStringLiteral("Saisie employe"), idConstraintMessage);
         if (ui->lineEdit_12e) ui->lineEdit_12e->setFocus();
         return;
     }
@@ -2878,27 +3216,27 @@ void MainWindow::on_pushButton_5e_clicked()
     const int idSeq = id % 10000;
 
     if (roleDigit == 0 || idYear != yy || idRole != roleDigit || idSeq <= 0 || idSeq > 9999) {
-        QMessageBox::warning(this, QStringLiteral("Saisie employ├⌐"), idConstraintMessage);
+        QMessageBox::warning(this, QStringLiteral("Saisie employe"), idConstraintMessage);
         if (ui->lineEdit_12e) ui->lineEdit_12e->setFocus();
         return;
     }
     if (!nomPattern.match(nom).hasMatch()) {
-        QMessageBox::warning(this, QStringLiteral("Saisie employ├⌐"), QStringLiteral("Nom invalide (lettres uniquement)."));
+        QMessageBox::warning(this, QStringLiteral("Saisie employe"), QStringLiteral("Nom invalide (lettres uniquement)."));
         if (ui->lineEdit_13e) ui->lineEdit_13e->setFocus();
         return;
     }
     if (!nomPattern.match(prenom).hasMatch()) {
-        QMessageBox::warning(this, QStringLiteral("Saisie employ├⌐"), QStringLiteral("Pr├⌐nom invalide (lettres uniquement)."));
+        QMessageBox::warning(this, QStringLiteral("Saisie employe"), QStringLiteral("Prenom invalide (lettres uniquement)."));
         if (ui->lineEdit_16e) ui->lineEdit_16e->setFocus();
         return;
     }
     if (!telPattern.match(telephone).hasMatch()) {
-        QMessageBox::warning(this, QStringLiteral("Saisie employ├⌐"), QStringLiteral("T├⌐l├⌐phone invalide (8 ├á 15 chiffres)."));
+        QMessageBox::warning(this, QStringLiteral("Saisie employe"), QStringLiteral("Telephone invalide (8 a 15 chiffres)."));
         if (ui->lineEdit_14e) ui->lineEdit_14e->setFocus();
         return;
     }
     if (!salaireOk || salaire < 0.0) {
-        QMessageBox::warning(this, QStringLiteral("Saisie employ├⌐"), QStringLiteral("Salaire invalide (nombre >= 0)."));
+        QMessageBox::warning(this, QStringLiteral("Saisie employe"), QStringLiteral("Salaire invalide (nombre >= 0)."));
         if (ui->lineEdit_14e_2) ui->lineEdit_14e_2->setFocus();
         return;
     }
@@ -2908,22 +3246,22 @@ void MainWindow::on_pushButton_5e_clicked()
     if (editingEmploye) {
         if (!emp.modifierAvecAncienId(m_editingEmployeId)) {
             QMessageBox::critical(this,
-                                  QStringLiteral("Modification employ├⌐"),
-                                  QStringLiteral("Modification ├⌐chou├⌐e: %1").arg(Employe::lastError()));
+                                  QStringLiteral("Modification employe"),
+                                  QStringLiteral("Modification echouee: %1").arg(Employe::lastError()));
             return;
         }
-        QMessageBox::information(this, QStringLiteral("Modification employ├⌐"), QStringLiteral("Modification r├⌐ussie."));
+        QMessageBox::information(this, QStringLiteral("Modification employe"), QStringLiteral("Modification reussie."));
     } else {
         if (!emp.ajouter()) {
             QMessageBox::critical(this,
-                                  QStringLiteral("Ajout employ├⌐"),
-                                  QStringLiteral("Insertion ├⌐chou├⌐e: %1").arg(Employe::lastError()));
+                                  QStringLiteral("Ajout employe"),
+                                  QStringLiteral("Insertion echouee: %1").arg(Employe::lastError()));
             return;
         }
-        QMessageBox::information(this, QStringLiteral("Ajout employ├⌐"), QStringLiteral("Ajout r├⌐ussi."));
+        QMessageBox::information(this, QStringLiteral("Ajout employe"), QStringLiteral("Ajout reussi."));
     }
 
-    // Rafra├«chir la table et r├⌐initialiser l'├⌐tat d'├⌐dition
+    // Rafraichir la table et reinitialiser l'etat d'edition
     loadEmployes();
 
     if (editingEmploye) {
@@ -2976,13 +3314,18 @@ Pecheurs MainWindow::pecheurFromForm() const
         ui->dateTimeEdit->setDateTime(now);
     }
 
-    QString bateauText;
-    if (QLineEdit* bateauEdit = pecheurBateauLineEdit(ui)) {
-        bateauText = bateauEdit->text();
-    } else if (QComboBox* bateauCombo = pecheurBateauCombo(ui)) {
-        bateauText = bateauCombo->currentText();
+    int idBateau = 0;
+    if (QComboBox* bateauCombo = pecheurBateauCombo(ui)) {
+        bool ok = false;
+        const int idFromData = bateauCombo->currentData().toInt(&ok);
+        if (ok && idFromData > 0) {
+            idBateau = idFromData;
+        } else {
+            idBateau = bateauIdFromText(bateauCombo->currentText());
+        }
+    } else if (QLineEdit* bateauEdit = pecheurBateauLineEdit(ui)) {
+        idBateau = bateauIdFromText(bateauEdit->text());
     }
-    const int idBateau = bateauIdFromText(bateauText);
 
     return Pecheurs(id, nom, prenom, sexe, role, dispo, email, heures, dateInscription, dateAffectation, idBateau);
 }
@@ -3273,9 +3616,23 @@ void MainWindow::loadPecheurFromTable()
 
     if (ui->lineEditp_2) ui->lineEditp_2->setText(email);
     if (QLineEdit* bateauEdit = pecheurBateauLineEdit(ui)) {
-        bateauEdit->setText(idBateau);
+        bateauEdit->setText(idBateau.isEmpty() ? QStringLiteral("0") : idBateau);
     } else if (QComboBox* bateauCombo = pecheurBateauCombo(ui)) {
-        bateauCombo->setCurrentText(idBateau);
+        bool ok = false;
+        const int idValue = idBateau.trimmed().isEmpty() ? 0 : idBateau.toInt(&ok);
+        if (idBateau.trimmed().isEmpty()) ok = true;
+        int idx = -1;
+        if (ok) {
+            idx = bateauCombo->findData(idValue);
+            if (idx < 0) {
+                idx = bateauCombo->findText(QString::number(idValue), Qt::MatchStartsWith);
+            }
+        }
+        if (idx >= 0) {
+            bateauCombo->setCurrentIndex(idx);
+        } else {
+            bateauCombo->setCurrentIndex(0);
+        }
     }
 
     if (ui->dateTimeEdit && !dateInsStr.isEmpty()) {
@@ -3474,7 +3831,7 @@ static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
 
     QPainter painter(&writer);
     if (!painter.isActive()) {
-        QMessageBox::critical(parent, QStringLiteral("Erreur"), QStringLiteral("Impossible de cr├⌐er le fichier PDF."));
+        QMessageBox::critical(parent, QStringLiteral("Erreur"), QStringLiteral("Impossible de creer le fichier PDF."));
         return;
     }
 
@@ -3510,12 +3867,12 @@ static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
     painter.setFont(titleFont);
     painter.setPen(QColor(0, 82, 155));
     painter.drawText(QRect(leftMargin, topMargin - 40, contentW, 60), Qt::AlignCenter,
-                     QStringLiteral("AQUATEC ΓÇô Liste des Employ├⌐s"));
+                     QStringLiteral("AQUATEC - Liste des Employes"));
 
     painter.setPen(Qt::darkGray);
     painter.setFont(subtitleFont);
     painter.drawText(QRect(leftMargin, topMargin + 20, contentW, 30), Qt::AlignCenter,
-                     QStringLiteral("Export├⌐ le %1").arg(exportStamp));
+                     QStringLiteral("Export le %1").arg(exportStamp));
 
     int y = topMargin + 80;
 
@@ -3535,7 +3892,7 @@ static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
         restoreActionColumn();
         painter.end();
         QMessageBox::warning(parent, QStringLiteral("Export PDF"),
-                             QStringLiteral("Aucune colonne ├á exporter."));
+                             QStringLiteral("Aucune colonne a exporter."));
         return;
     }
 
@@ -3631,19 +3988,19 @@ static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
     painter.setPen(Qt::darkGray);
     painter.setFont(totalFont);
     painter.drawText(QRect(leftMargin, y, contentW, 24), Qt::AlignCenter,
-                     QStringLiteral("Total: %1 employ├⌐s").arg(totalVisibleRows));
+                     QStringLiteral("Total: %1 employes").arg(totalVisibleRows));
 
     if (totalVisibleRows > exportedRows) {
         painter.setFont(QFont(QStringLiteral("Arial"), 9, QFont::Normal));
         painter.setPen(QColor(QStringLiteral("#8a8a8a")));
         painter.drawText(QRect(leftMargin, y + 24, contentW, 18), Qt::AlignCenter,
-                         QStringLiteral("(%1 lignes affich├⌐es sur %2 dans cette page)").arg(exportedRows).arg(totalVisibleRows));
+                         QStringLiteral("(%1 lignes affichees sur %2 dans cette page)").arg(exportedRows).arg(totalVisibleRows));
     }
 
     painter.setPen(QColor(QStringLiteral("#8a8a8a")));
     painter.setFont(footerFont);
     painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
-                     QStringLiteral("AQUATEC - Rapport g├⌐n├⌐r├⌐ le %1").arg(exportStamp));
+                     QStringLiteral("AQUATEC - Rapport genere le %1").arg(exportStamp));
 
     writer.newPage();
 
@@ -3678,13 +4035,13 @@ static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
     painter.setPen(QColor(0, 82, 155));
     painter.setFont(QFont(QStringLiteral("Arial"), 18, QFont::Bold));
     painter.drawText(QRect(leftMargin, y, contentW, 44), Qt::AlignCenter,
-                     QStringLiteral("Statistiques selon r├┤le"));
+                     QStringLiteral("Statistiques selon role"));
     y += 50;
 
     painter.setPen(Qt::darkGray);
     painter.setFont(QFont(QStringLiteral("Arial"), 10, QFont::Bold));
     painter.drawText(QRect(leftMargin, y, contentW, 22), Qt::AlignCenter,
-                     QStringLiteral("Total: %1 employ├⌐s").arg(totalStats));
+                     QStringLiteral("Total: %1 employes").arg(totalStats));
     y += 36;
 
     const int pieSize = 210;
@@ -3742,13 +4099,13 @@ static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
     painter.setPen(QColor(QStringLiteral("#8a8a8a")));
     painter.setFont(footerFont);
     painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
-                     QStringLiteral("AQUATEC - Rapport g├⌐n├⌐r├⌐ le %1").arg(exportStamp));
+                     QStringLiteral("AQUATEC - Rapport genere le %1").arg(exportStamp));
 
     restoreActionColumn();
     painter.end();
 
     QMessageBox::information(parent, QStringLiteral("Export PDF"),
-                             QStringLiteral("Fichier PDF export├⌐ avec succ├¿s:\n%1").arg(filePath));
+                             QStringLiteral("Fichier PDF exporte avec succes:\n%1").arg(filePath));
 }
 
 static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
@@ -3815,12 +4172,12 @@ static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
     painter.setFont(titleFont);
     painter.setPen(QColor(0, 82, 155));
     painter.drawText(QRect(leftMargin, topMargin - 40, contentW, 60), Qt::AlignCenter,
-                     QStringLiteral("AQUATEC ΓÇô Liste des Pecheurs"));
+                     QStringLiteral("AQUATEC - Liste des Pecheurs"));
 
     painter.setPen(Qt::darkGray);
     painter.setFont(subtitleFont);
     painter.drawText(QRect(leftMargin, topMargin + 20, contentW, 30), Qt::AlignCenter,
-                     QStringLiteral("Export├⌐ le %1").arg(exportStamp));
+                     QStringLiteral("Export le %1").arg(exportStamp));
 
     int y = topMargin + 80;
 
@@ -3842,7 +4199,7 @@ static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
         restoreActionColumn();
         painter.end();
         QMessageBox::warning(parent, QStringLiteral("Export PDF"),
-                             QStringLiteral("Aucune colonne ├á exporter."));
+                             QStringLiteral("Aucune colonne a exporter."));
         return;
     }
 
@@ -3944,13 +4301,13 @@ static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
         painter.setFont(QFont(QStringLiteral("Arial"), 9, QFont::Normal));
         painter.setPen(QColor(QStringLiteral("#8a8a8a")));
         painter.drawText(QRect(leftMargin, y + 24, contentW, 18), Qt::AlignCenter,
-                         QStringLiteral("(%1 lignes affich├⌐es sur %2 dans cette page)").arg(exportedRows).arg(totalVisibleRows));
+                         QStringLiteral("(%1 lignes affichees sur %2 dans cette page)").arg(exportedRows).arg(totalVisibleRows));
     }
 
     painter.setPen(QColor(QStringLiteral("#8a8a8a")));
     painter.setFont(footerFont);
     painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
-                     QStringLiteral("AQUATEC - Rapport g├⌐n├⌐r├⌐ le %1").arg(exportStamp));
+                     QStringLiteral("AQUATEC - Rapport genere le %1").arg(exportStamp));
 
     writer.newPage();
 
@@ -3965,7 +4322,7 @@ static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
     painter.setPen(QColor(0, 82, 155));
     painter.setFont(QFont(QStringLiteral("Arial"), 18, QFont::Bold));
     painter.drawText(QRect(leftMargin, y, contentW, 44), Qt::AlignCenter,
-                     QStringLiteral("Statistiques selon disponibilit├⌐"));
+                     QStringLiteral("Statistiques selon disponibilite"));
     y += 50;
 
     painter.setPen(Qt::darkGray);
@@ -3975,7 +4332,7 @@ static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
     y += 36;
 
     const int pieSize = 210;
-    const int legendW = 360;
+    const int legendW = 430;
     const int blockGap = 52;
     const int blockW = pieSize + blockGap + legendW;
     const int blockX = leftMargin + qMax(0, (contentW - blockW) / 2);
@@ -4010,32 +4367,46 @@ static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
     painter.setRenderHint(QPainter::Antialiasing, false);
 
     const int legendX = pieRect.right() + blockGap;
-    int legendY = blockY + 16;
+    int legendY = blockY + 10;
+    const int legendLabelW = 250;
+    const int legendValueW = 70;
+    const int legendPctW = 90;
+    const int legendRowH = 30;
+
+    painter.setFont(QFont(QStringLiteral("Arial"), 10, QFont::Bold));
+    painter.setPen(QColor(QStringLiteral("#5a5a5a")));
+    painter.drawText(QRect(legendX + 18, legendY, legendLabelW, legendRowH), Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Statut"));
+    painter.drawText(QRect(legendX + 18 + legendLabelW, legendY, legendValueW, legendRowH), Qt::AlignCenter, QStringLiteral("Nb"));
+    painter.drawText(QRect(legendX + 18 + legendLabelW + legendValueW, legendY, legendPctW, legendRowH), Qt::AlignCenter, QStringLiteral("%"));
+    legendY += legendRowH;
+
     painter.setFont(QFont(QStringLiteral("Arial"), 10, QFont::Normal));
     for (const auto& slice : slices) {
         const int value = slice.second.first;
         const double pct = (totalStats > 0) ? (100.0 * static_cast<double>(value) / static_cast<double>(totalStats)) : 0.0;
-        painter.fillRect(QRect(legendX, legendY + 6, 10, 10), slice.second.second);
+
+        painter.fillRect(QRect(legendX, legendY + (legendRowH - 10) / 2, 10, 10), slice.second.second);
         painter.setPen(Qt::black);
-        painter.drawText(QRect(legendX + 18, legendY - 2, legendW - 20, 22),
-                         Qt::AlignLeft | Qt::AlignVCenter,
-                         QStringLiteral("%1: %2 (%3%)")
-                            .arg(slice.first)
-                            .arg(value)
-                            .arg(QString::number(pct, 'f', 0)));
-        legendY += 26;
+        painter.drawText(QRect(legendX + 18, legendY, legendLabelW, legendRowH), Qt::AlignLeft | Qt::AlignVCenter, slice.first);
+        painter.drawText(QRect(legendX + 18 + legendLabelW, legendY, legendValueW, legendRowH), Qt::AlignCenter, QString::number(value));
+        painter.drawText(QRect(legendX + 18 + legendLabelW + legendValueW, legendY, legendPctW, legendRowH), Qt::AlignCenter,
+                         QString::number(pct, 'f', 1) + QStringLiteral("%"));
+
+        painter.setPen(QPen(QColor(225, 225, 225), 1));
+        painter.drawLine(legendX + 18, legendY + legendRowH, legendX + 18 + legendLabelW + legendValueW + legendPctW, legendY + legendRowH);
+        legendY += legendRowH;
     }
 
     painter.setPen(QColor(QStringLiteral("#8a8a8a")));
     painter.setFont(footerFont);
     painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
-                     QStringLiteral("AQUATEC - Rapport g├⌐n├⌐r├⌐ le %1").arg(exportStamp));
+                     QStringLiteral("AQUATEC - Rapport genere le %1").arg(exportStamp));
 
     restoreActionColumn();
 
     painter.end();
     QMessageBox::information(parent, QStringLiteral("Export PDF"),
-                             QStringLiteral("Fichier PDF export├⌐ avec succ├¿s:\n%1").arg(filePath));
+                             QStringLiteral("Fichier PDF exporte avec succes:\n%1").arg(filePath));
 }
 
 void MainWindow::on_bep_clicked()
@@ -4356,6 +4727,7 @@ void MainWindow::loadBateaux()
     ui->tableWidgetb->setColumnWidth(10, 114);
     ui->tableWidgetb->verticalHeader()->setDefaultSectionSize(42);
 
+    loadPecheurBateauChoices(ui);
     updateStatsBateaux();
 }
 
@@ -6565,6 +6937,370 @@ void MainWindow::refreshWeatherForPage3()
             updateWeatherLabels(icon, tempText, descText, windText, humidityText);
         });
     });
+}
+
+static void exportCapturesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
+{
+    if (!parent || !ui || !ui->cap_tableWidget) return;
+
+    const QString documentsDir = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    const QString baseDir = documentsDir.isEmpty() ? QDir::homePath() : documentsDir;
+    const QString defaultName = QStringLiteral("Rapport_Captures_Aquatec_") + QDate::currentDate().toString(QStringLiteral("yyyy-MM-dd")) + QStringLiteral(".pdf");
+    QString filePath = QFileDialog::getSaveFileName(
+        parent,
+        QStringLiteral("Exporter PDF"),
+        QDir(baseDir).filePath(defaultName),
+        QStringLiteral("PDF Files (*.pdf)"));
+
+    if (filePath.trimmed().isEmpty()) {
+        return;
+    }
+    if (!filePath.toLower().endsWith(QStringLiteral(".pdf"))) {
+        filePath += QStringLiteral(".pdf");
+    }
+
+    QPdfWriter writer(filePath);
+    writer.setPageSize(QPageSize(QPageSize::A4));
+    writer.setPageOrientation(QPageLayout::Landscape);
+    writer.setResolution(300);
+    writer.setPageMargins(QMarginsF(8, 8, 8, 8), QPageLayout::Millimeter);
+
+    QPainter painter(&writer);
+    if (!painter.isActive()) {
+        QMessageBox::critical(parent, QStringLiteral("Erreur"), QStringLiteral("Impossible de créer le fichier PDF."));
+        return;
+    }
+
+    const int actionColumn = 6; // Column 6 contains actions
+    const bool actionColumnWasHidden = ui->cap_tableWidget->isColumnHidden(actionColumn);
+    if (!actionColumnWasHidden) {
+        ui->cap_tableWidget->setColumnHidden(actionColumn, true);
+    }
+
+    auto restoreActionColumn = [ui, actionColumn, actionColumnWasHidden]() {
+        if (!actionColumnWasHidden) {
+            ui->cap_tableWidget->setColumnHidden(actionColumn, false);
+        }
+    };
+
+    const QString exportStamp = QDateTime::currentDateTime().toString(QStringLiteral("dd/MM/yyyy HH:mm"));
+    const int pageW = writer.width();
+    const int pageH = writer.height();
+
+    const int leftMargin = 50;
+    const int rightMargin = 50;
+    const int topMargin = 100;
+    const int bottomMargin = 80;
+    const int contentW = pageW - leftMargin - rightMargin;
+
+    QFont titleFont(QStringLiteral("Arial"), 20, QFont::Bold);
+    QFont subtitleFont(QStringLiteral("Arial"), 9, QFont::Normal);
+    QFont headerFont(QStringLiteral("Arial"), 11, QFont::Bold);
+    QFont cellFont(QStringLiteral("Arial"), 9, QFont::Normal);
+    QFont totalFont(QStringLiteral("Arial"), 9, QFont::Bold);
+    QFont footerFont(QStringLiteral("Arial"), 9, QFont::Normal);
+
+    painter.setFont(titleFont);
+    painter.setPen(QColor(0, 82, 155));
+    painter.drawText(QRect(leftMargin, topMargin - 40, contentW, 60), Qt::AlignCenter,
+                     QStringLiteral("AQUATEC – Liste des Captures"));
+
+    painter.setPen(Qt::darkGray);
+    painter.setFont(subtitleFont);
+    painter.drawText(QRect(leftMargin, topMargin + 20, contentW, 30), Qt::AlignCenter,
+                     QStringLiteral("Exporté le %1").arg(exportStamp));
+
+    int y = topMargin + 80;
+
+    QTableWidget* table = ui->cap_tableWidget;
+    QVector<int> columns;
+    QVector<int> sourceWidths;
+    int totalSourceW = 0;
+
+    for (int c = 0; c < table->columnCount(); ++c) {
+        if (table->isColumnHidden(c)) continue;
+        if (c == actionColumn) continue;
+        columns.push_back(c);
+        const int w = qMax(40, table->columnWidth(c));
+        sourceWidths.push_back(w);
+        totalSourceW += w;
+    }
+
+    if (columns.isEmpty()) {
+        restoreActionColumn();
+        painter.end();
+        QMessageBox::warning(parent, QStringLiteral("Export PDF"),
+                             QStringLiteral("Aucune colonne à exporter."));
+        return;
+    }
+
+    QVector<int> drawWidths;
+    drawWidths.reserve(columns.size());
+    int usedW = 0;
+    for (int i = 0; i < sourceWidths.size(); ++i) {
+        int dw = qMax(42, static_cast<int>((static_cast<double>(sourceWidths[i]) / static_cast<double>(qMax(1, totalSourceW))) * contentW));
+        drawWidths.push_back(dw);
+        usedW += dw;
+    }
+    if (!drawWidths.isEmpty()) {
+        drawWidths[drawWidths.size() - 1] += (contentW - usedW);
+    }
+
+    const int headerH = 48;
+    auto drawTableHeader = [&]() {
+        int x = leftMargin;
+        painter.setFont(headerFont);
+
+        QLinearGradient headerGrad(0, y, 0, y + headerH);
+        headerGrad.setColorAt(0.0, QColor(QStringLiteral("#0b5ea8")));
+        headerGrad.setColorAt(1.0, QColor(QStringLiteral("#2e86c1")));
+
+        for (int i = 0; i < columns.size(); ++i) {
+            const int c = columns[i];
+            const int w = drawWidths[i];
+            const QRect cellRect(x, y, w, headerH);
+            const QString text = table->horizontalHeaderItem(c) ? table->horizontalHeaderItem(c)->text().trimmed() : QStringLiteral("Colonne %1").arg(c + 1);
+
+            painter.fillRect(cellRect, headerGrad);
+            painter.setPen(Qt::white);
+            painter.drawText(cellRect.adjusted(12, 0, -12, 0), Qt::AlignVCenter | Qt::AlignLeft, text);
+            painter.setPen(QPen(QColor(200, 210, 220), 1));
+            painter.drawRect(cellRect);
+            x += w;
+        }
+        y += headerH;
+    };
+
+    const int footerY = pageH - bottomMargin + 10;
+    const int tableTop = y;
+    const int tableHeaderH = headerH;
+    const int tableTotalH = 30;
+    const int tableBottomLimit = pageH - bottomMargin - 40;
+    const int tableRowsAreaH = qMax(40, tableBottomLimit - tableTop - tableHeaderH - tableTotalH);
+    const int rowH = 40;
+    const int maxRowsInPdf = qMax(1, tableRowsAreaH / rowH);
+
+    drawTableHeader();
+
+    QVector<int> visibleRows;
+    visibleRows.reserve(table->rowCount());
+    for (int r = 0; r < table->rowCount(); ++r) {
+        if (!table->isRowHidden(r)) visibleRows.push_back(r);
+    }
+
+    const int totalVisibleRows = visibleRows.size();
+    const int exportedRows = qMin(maxRowsInPdf, totalVisibleRows);
+
+    painter.setFont(cellFont);
+    for (int index = 0; index < exportedRows; ++index) {
+        const int r = visibleRows[index];
+        const QColor rowColor = (index % 2 == 0) ? QColor(250, 250, 252) : QColor(245, 251, 255);
+        painter.fillRect(QRect(leftMargin, y, contentW, rowH), rowColor);
+        painter.setPen(QPen(QColor(220, 225, 230), 1));
+        painter.drawRect(QRect(leftMargin, y, contentW, rowH));
+
+        int x = leftMargin;
+        for (int i = 0; i < columns.size(); ++i) {
+            const int c = columns[i];
+            const int w = drawWidths[i];
+            painter.setPen(QPen(QColor(220, 225, 230), 1));
+            painter.drawLine(x, y, x, y + rowH);
+
+            painter.setPen(Qt::black);
+            const QTableWidgetItem* item = table->item(r, c);
+            QString text = item ? item->text() : QString();
+            text = text.simplified();
+
+            QFontMetrics fm(cellFont);
+            text = fm.elidedText(text, Qt::ElideRight, qMax(10, w - 24));
+            painter.drawText(QRect(x + 12, y + 6, w - 24, rowH - 12), Qt::AlignLeft | Qt::AlignVCenter, text);
+            x += w;
+        }
+
+        painter.setPen(QPen(QColor(220, 225, 230), 1));
+        painter.drawLine(leftMargin + contentW, y, leftMargin + contentW, y + rowH);
+        y += rowH;
+    }
+
+    y += 8;
+    painter.setPen(Qt::darkGray);
+    painter.setFont(totalFont);
+    painter.drawText(QRect(leftMargin, y, contentW, 24), Qt::AlignCenter,
+                     QStringLiteral("Total: %1 captures").arg(totalVisibleRows));
+
+    if (totalVisibleRows > exportedRows) {
+        painter.setFont(QFont(QStringLiteral("Arial"), 9, QFont::Normal));
+        painter.setPen(QColor(QStringLiteral("#8a8a8a")));
+        painter.drawText(QRect(leftMargin, y + 24, contentW, 18), Qt::AlignCenter,
+                         QStringLiteral("(%1 lignes affichées sur %2 dans cette page)").arg(exportedRows).arg(totalVisibleRows));
+    }
+
+    // Section Statistiques - Top 5 Espèces
+    y += 60;
+
+    const QVector<captures::SpeciesStatData> statsData = captures::calculerTop5Species();
+    const int statsCount = qMin(5, statsData.size());
+    if (statsCount > 0) {
+        const int titleH = 30;
+        const int titleGap = 12;
+        const int statRowH = 34;
+        const int statsNeededH = titleH + titleGap + ((statsCount + 1) * statRowH);
+        const int contentBottom = pageH - bottomMargin - 40;
+
+        // Saut de page si la section ne tient pas en bas de page
+        if (y + statsNeededH > contentBottom) {
+            writer.newPage();
+            y = topMargin;
+        }
+
+        painter.setFont(QFont(QStringLiteral("Arial"), 14, QFont::Bold));
+        painter.setPen(QColor(0, 82, 155));
+        painter.drawText(QRect(leftMargin, y, contentW, titleH), Qt::AlignLeft | Qt::AlignVCenter,
+                         QStringLiteral("Statistiques - Top 5 Espèces"));
+        y += titleH + titleGap;
+
+        const int col1W = contentW * 45 / 100;
+        const int col2W = contentW * 28 / 100;
+        const int col3W = contentW - col1W - col2W;
+
+        // En-têtes du tableau
+        painter.setFont(QFont(QStringLiteral("Arial"), 10, QFont::Bold));
+        QLinearGradient statHeaderGrad(0, y, 0, y + statRowH);
+        statHeaderGrad.setColorAt(0.0, QColor(QStringLiteral("#0b5ea8")));
+        statHeaderGrad.setColorAt(1.0, QColor(QStringLiteral("#2e86c1")));
+        painter.fillRect(QRect(leftMargin, y, contentW, statRowH), statHeaderGrad);
+
+        painter.setPen(Qt::white);
+        painter.drawText(QRect(leftMargin + 10, y, col1W - 20, statRowH), Qt::AlignVCenter | Qt::AlignLeft, QStringLiteral("Espèce"));
+        painter.drawText(QRect(leftMargin + col1W, y, col2W, statRowH), Qt::AlignVCenter | Qt::AlignCenter, QStringLiteral("Quantité"));
+        painter.drawText(QRect(leftMargin + col1W + col2W, y, col3W, statRowH), Qt::AlignVCenter | Qt::AlignCenter, QStringLiteral("Pourcentage"));
+
+        painter.setPen(QPen(QColor(200, 210, 220), 1));
+        painter.drawRect(QRect(leftMargin, y, contentW, statRowH));
+        painter.drawLine(leftMargin + col1W, y, leftMargin + col1W, y + statRowH);
+        painter.drawLine(leftMargin + col1W + col2W, y, leftMargin + col1W + col2W, y + statRowH);
+
+        y += statRowH;
+
+        // Données du tableau
+        const QFont dataFont(QStringLiteral("Arial"), 9, QFont::Normal);
+        painter.setFont(dataFont);
+        QFontMetrics dataFm(dataFont);
+
+        for (int i = 0; i < statsCount; ++i) {
+            const captures::SpeciesStatData& stat = statsData[i];
+            const QColor rowColor = (i % 2 == 0) ? QColor(250, 250, 252) : QColor(245, 251, 255);
+
+            painter.fillRect(QRect(leftMargin, y, contentW, statRowH), rowColor);
+            painter.setPen(QPen(QColor(220, 225, 230), 1));
+            painter.drawRect(QRect(leftMargin, y, contentW, statRowH));
+            painter.drawLine(leftMargin + col1W, y, leftMargin + col1W, y + statRowH);
+            painter.drawLine(leftMargin + col1W + col2W, y, leftMargin + col1W + col2W, y + statRowH);
+
+            QString speciesText = stat.species;
+            speciesText.replace('\n', ' ');
+            speciesText.replace('\r', ' ');
+            speciesText = speciesText.simplified();
+            speciesText = dataFm.elidedText(speciesText, Qt::ElideRight, qMax(20, col1W - 20));
+
+            const QString qtyText = QString::number(stat.quantite);
+            const QString pctText = QString::number(stat.pourcentage, 'f', 1) + QStringLiteral("%");
+
+            painter.setPen(Qt::black);
+            painter.drawText(QRect(leftMargin + 10, y, col1W - 20, statRowH), Qt::AlignVCenter | Qt::AlignLeft, speciesText);
+            painter.drawText(QRect(leftMargin + col1W, y, col2W, statRowH), Qt::AlignVCenter | Qt::AlignCenter, qtyText);
+            painter.drawText(QRect(leftMargin + col1W + col2W, y, col3W, statRowH), Qt::AlignVCenter | Qt::AlignCenter, pctText);
+
+            y += statRowH;
+        }
+    }
+
+    y += 20;
+    painter.setPen(QColor(QStringLiteral("#8a8a8a")));
+    painter.setFont(footerFont);
+    painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
+                     QStringLiteral("AQUATEC - Rapport généré le %1").arg(exportStamp));
+
+    restoreActionColumn();
+
+    painter.end();
+    QMessageBox::information(parent, QStringLiteral("Export PDF"),
+                             QStringLiteral("Fichier PDF exporté avec succès:\n%1").arg(filePath));
+}
+
+void MainWindow::on_cap_btnExporter_clicked()
+{
+    exportCapturesPdfReport(this, ui);
+}
+
+void MainWindow::on_cap_sbQuantite_3_valueChanged(int value)
+{
+    m_captureQuantiteFiltre = value;
+    loadCaptures();
+}
+
+static void updateCapturesStats(MainWindow* parent, Ui::MainWindow* ui)
+{
+    if (!parent || !ui || !ui->frame_zonesb_2) return;
+    
+    const QVector<captures::SpeciesStatData> stats = captures::calculerTop5Species();
+    
+    if (stats.isEmpty()) {
+        qWarning() << "Aucune statistique: " << captures::lastError();
+        return;
+    }
+    
+    // Noms des widgets pour les 5 colonnes
+    const QStringList labelNames = {
+        QStringLiteral("label_zoneNordb_2"),
+        QStringLiteral("label_zoneSudb_2"),
+        QStringLiteral("label_zoneEstb_2"),
+        QStringLiteral("label_zoneOuestb_3"),
+        QStringLiteral("label_zoneOuestb_2")
+    };
+    
+    const QStringList progressNames = {
+        QStringLiteral("progressZoneNordb_2"),
+        QStringLiteral("progressZoneSudb_2"),
+        QStringLiteral("progressZoneEstb_2"),
+        QStringLiteral("progressZoneOuestb_3"),
+        QStringLiteral("progressZoneOuestb_2")
+    };
+    
+    const QStringList valueNames = {
+        QStringLiteral("value_zoneNordb_2"),
+        QStringLiteral("value_zoneSudb_2"),
+        QStringLiteral("value_zoneEstb_2"),
+        QStringLiteral("value_zoneOuestb_3"),
+        QStringLiteral("value_zoneOuestb_2")
+    };
+    
+    // Mettre à jour chaque colonne
+    for (int i = 0; i < 5; ++i) {
+        // Récupérer les widgets pour cette colonne
+        auto* label = ui->frame_zonesb_2->findChild<QLabel*>(labelNames[i]);
+        auto* progressBar = ui->frame_zonesb_2->findChild<QProgressBar*>(progressNames[i]);
+        auto* valueLabel = ui->frame_zonesb_2->findChild<QLabel*>(valueNames[i]);
+        
+        if (!label || !progressBar || !valueLabel) {
+            continue;
+        }
+        
+        if (i < stats.size()) {
+            // Remplir avec les données
+            const captures::SpeciesStatData& stat = stats[i];
+            
+            label->setText(stat.species);
+            progressBar->setValue(static_cast<int>(stat.pourcentage));
+            valueLabel->setText(QString::number(stat.quantite) + QStringLiteral("/") + 
+                               QString::number(stat.quantite));
+        } else {
+            // Vider la colonne
+            label->setText(QString());
+            progressBar->setValue(0);
+            valueLabel->setText(QStringLiteral("0/0"));
+        }
+    }
 }
 
 static QString weatherDescriptionFr(int weatherCode)
