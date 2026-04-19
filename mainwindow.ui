@@ -2689,7 +2689,7 @@ border:1.5px solid  rgb(0, 0, 115);            border-radius: 15px;</string>
            <item>
             <widget class="QLabel" name="label_legend_chalutierp">
              <property name="styleSheet">
-              <string notr="true">color: #27ae60;
+                            <string notr="true">color: #27ae60;
                                         font-weight: bold;
                                         font-size: 14px;
                                         padding: 3px;</string>
@@ -2702,7 +2702,7 @@ border:1.5px solid  rgb(0, 0, 115);            border-radius: 15px;</string>
            <item>
             <widget class="QLabel" name="label_legend_palangrierp">
              <property name="styleSheet">
-              <string notr="true">color: #3498db;
+                            <string notr="true">color: #3498db;
                                         font-weight: bold;
                                         font-size: 14px;
                                         padding: 3px;</string>
@@ -2715,7 +2715,7 @@ border:1.5px solid  rgb(0, 0, 115);            border-radius: 15px;</string>
            <item>
             <widget class="QLabel" name="label_legend_caseyeurp">
              <property name="styleSheet">
-              <string notr="true">color: #e74c3c;
+                            <string notr="true">color: #e74c3c;
                                         font-weight: bold;
                                         font-size: 14px;
                                         padding: 3px;</string>
@@ -3084,9 +3084,9 @@ border-radius: 15px;</string>
       <widget class="QLabel" name="label_8p">
        <property name="geometry">
         <rect>
-         <x>110</x>
+         <x>70</x>
          <y>390</y>
-         <width>181</width>
+         <width>241</width>
          <height>61</height>
         </rect>
        </property>
@@ -3098,7 +3098,7 @@ border-radius: 15px;</string>
     padding: 10px 20px;</string>
        </property>
        <property name="text">
-        <string>✅ Visage détecté</string>
+        <string>                 ✅ Visage détecté</string>
        </property>
       </widget>
       <widget class="QLabel" name="labelfp_2">

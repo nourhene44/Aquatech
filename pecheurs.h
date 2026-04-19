@@ -21,7 +21,7 @@ public:
         QDate dateInscription;
         QDate dateAffectation;
         int heures = 0;
-        QString photo;
+        QByteArray photo;
     };
 
     struct DisponibiliteStats {
@@ -38,7 +38,7 @@ public:
              const QString& email, int heures,
              const QDate& dateInscription, const QDate& dateAffectation,
              int idBateau,
-             const QString& photo = QString());
+             const QByteArray& photo = QByteArray());
 
     bool ajouter() const;
     static bool supprimer(const QString& id);
@@ -69,7 +69,7 @@ private:
     QDate dateInscription_;
     QDate dateAffectation_;
     int idBateau_;
-    QString photo_;
+    QByteArray photo_;
 };
 
 #endif // PECHEURS_H

@@ -12,9 +12,14 @@
 #include <QTableWidgetItem>
 #include <QDate>
 #include <QDateTime>
+#include <QEventLoop>
+#include <QEvent>
+#include <QRegion>
+#include <QDialog>
 #include <QMessageBox>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
+#include <QVideoFrame>
 #include <QTime>
 #include <QSqlDatabase>
 #include <QSqlQuery>
@@ -25,7 +30,6 @@
 #include <QMediaDevices>
 #include <QMediaCaptureSession>
 #include <QImageCapture>
-#include <QVideoWidget>
 #include <QPainter>
 #include <QPainterPath>
 #include <QLinearGradient>
@@ -45,6 +49,9 @@
 #include <QHeaderView>
 #include <QIcon>
 #include <QSslSocket>
+#include <QSerialPort>
+#include <QCoreApplication>
+#include <QFileInfo>
 #include "bateaauuu.h"
 #include "captures.h"
 #include <QNetworkAccessManager>
@@ -57,6 +64,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonParseError>
+#include <vector>
 #include <algorithm>
 #include <functional>
 #include <initializer_list>
@@ -159,16 +167,227 @@ static QString pecheurFaceRole(Ui::MainWindow* ui)
     return ui && ui->comboBoxp ? ui->comboBoxp->currentText().trimmed() : QString();
 }
 
+static QString pecheurFaceOpenStatusText()
+{
+    return QStringLiteral("Positionnez votre visage.");
+}
+
 static void setPecheurFaceStatus(Ui::MainWindow* ui, const QString& text)
 {
     if (!ui) return;
     if (ui->labelFaceStatusp) {
+        ui->labelFaceStatusp->setAlignment(Qt::AlignCenter);
+        ui->labelFaceStatusp->setWordWrap(true);
         ui->labelFaceStatusp->setText(text);
     }
     // Status label visible sur le frame FaceID principal.
     if (ui->label_8p) {
+        ui->label_8p->setAlignment(Qt::AlignCenter);
+        ui->label_8p->setWordWrap(true);
         ui->label_8p->setText(text);
     }
+}
+
+static QRect pecheurFacePreviewRect(QWidget* container)
+{
+    if (!container) return QRect();
+
+    const int margin = 8;
+    const int availableWidth = qMax(0, container->width() - 2 * margin);
+    const int availableHeight = qMax(0, container->height() - 2 * margin);
+    const int diameter = qMax(40, qMin(availableWidth, availableHeight));
+    const int x = (container->width() - diameter) / 2;
+    const int y = (container->height() - diameter) / 2;
+    return QRect(x, y, diameter, diameter);
+}
+
+static QPixmap buildCircularFacePreviewPixmap(const QImage& image, int diameter)
+{
+    if (image.isNull() || diameter <= 0) return QPixmap();
+
+    const qreal borderWidth = 3.0;
+    const qreal imageInset = borderWidth + 1.0;
+
+    QImage frame = image.convertToFormat(QImage::Format_ARGB32_Premultiplied)
+                        .scaled(diameter, diameter, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+
+    const int cropX = qMax(0, (frame.width() - diameter) / 2);
+    const int cropY = qMax(0, (frame.height() - diameter) / 2);
+    const QRect cropRect(cropX, cropY, qMin(diameter, frame.width()), qMin(diameter, frame.height()));
+
+    QPixmap pixmap(diameter, diameter);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    painter.setClipPath(QPainterPath());
+    QPainterPath clipPath;
+    clipPath.addEllipse(imageInset,
+                        imageInset,
+                        diameter - 2.0 * imageInset,
+                        diameter - 2.0 * imageInset);
+    painter.setClipPath(clipPath);
+    painter.drawImage(QRectF(imageInset,
+                             imageInset,
+                             diameter - 2.0 * imageInset,
+                             diameter - 2.0 * imageInset),
+                      frame,
+                      cropRect);
+    painter.end();
+
+    return pixmap;
+}
+
+static void applyPecheurFacePreviewShape(QLabel* previewLabel)
+{
+    if (!previewLabel) return;
+
+    previewLabel->setStyleSheet(QStringLiteral(
+        "QLabel {"
+        "background: transparent;"
+        "border: 3px dashed #2EF1A6;"
+        "border-radius: 999px;"
+        "}"
+    ));
+}
+
+static void showPecheurPhotoPreviewDialog(QWidget* parent, const QPixmap& source)
+{
+    if (source.isNull()) return;
+
+    auto* dialog = new QDialog(parent);
+    dialog->setAttribute(Qt::WA_DeleteOnClose, true);
+    dialog->setWindowTitle(QStringLiteral("Photo du pêcheur"));
+    dialog->setModal(true);
+    dialog->resize(760, 760);
+
+    auto* layout = new QVBoxLayout(dialog);
+    layout->setContentsMargins(12, 12, 12, 12);
+
+    auto* imageLabel = new QLabel(dialog);
+    imageLabel->setAlignment(Qt::AlignCenter);
+    imageLabel->setStyleSheet(QStringLiteral("background: #0f1720; border: 1px solid #2d3f55; border-radius: 10px;"));
+
+    const QSize targetSize = dialog->size() - QSize(32, 32);
+    imageLabel->setPixmap(source.scaled(targetSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+
+    layout->addWidget(imageLabel);
+    dialog->show();
+}
+
+static QByteArray photoBlobFromVariant(const QVariant& value)
+{
+    if (!value.isValid() || value.isNull()) {
+        return QByteArray();
+    }
+
+    const QByteArray raw = value.toByteArray();
+    if (raw.isEmpty()) {
+        return QByteArray();
+    }
+
+    auto looksLikeBase64 = [](const QByteArray& data) {
+        const QByteArray trimmed = data.trimmed();
+        if (trimmed.isEmpty() || (trimmed.size() % 4) != 0) {
+            return false;
+        }
+
+        for (const char ch : trimmed) {
+            const bool okChar = (ch >= 'A' && ch <= 'Z')
+                || (ch >= 'a' && ch <= 'z')
+                || (ch >= '0' && ch <= '9')
+                || ch == '+' || ch == '/' || ch == '=';
+            if (!okChar) {
+                return false;
+            }
+        }
+
+        return true;
+    };
+
+    if (looksLikeBase64(raw)) {
+        const QByteArray decoded = QByteArray::fromBase64(raw, QByteArray::AbortOnBase64DecodingErrors);
+        if (!decoded.isEmpty()) {
+            return decoded;
+        }
+    }
+
+    return raw;
+}
+
+static constexpr qint64 kFaceLiveFrameTimeoutMs = 900;
+
+static bool frameHasLiveCameraContent(const QImage& image)
+{
+    if (image.isNull()) return false;
+
+    const QImage rgb = image.convertToFormat(QImage::Format_RGB888);
+    if (rgb.isNull() || rgb.width() <= 0 || rgb.height() <= 0) return false;
+
+    const int stepX = qMax(1, rgb.width() / 64);
+    const int stepY = qMax(1, rgb.height() / 64);
+
+    qint64 samples = 0;
+    qint64 darkCount = 0;
+    qint64 brightCount = 0;
+    qint64 centerBrightCount = 0;
+    qint64 centerSamples = 0;
+    qint64 outerBrightCount = 0;
+    qint64 outerSamples = 0;
+    qint64 sum = 0;
+    qint64 sumSq = 0;
+
+    const QRect centerRect(rgb.width() / 4, rgb.height() / 4, rgb.width() / 2, rgb.height() / 2);
+
+    for (int y = 0; y < rgb.height(); y += stepY) {
+        const uchar* row = rgb.constScanLine(y);
+        for (int x = 0; x < rgb.width(); x += stepX) {
+            const int idx = x * 3;
+            const int r = row[idx + 0];
+            const int g = row[idx + 1];
+            const int b = row[idx + 2];
+            const int lum = (r + g + b) / 3;
+
+            ++samples;
+            sum += lum;
+            sumSq += static_cast<qint64>(lum) * static_cast<qint64>(lum);
+            if (lum < 20) ++darkCount;
+            if (lum > 225) {
+                ++brightCount;
+                if (centerRect.contains(x, y)) ++centerBrightCount;
+                else ++outerBrightCount;
+            }
+
+            if (centerRect.contains(x, y)) ++centerSamples;
+            else ++outerSamples;
+        }
+    }
+
+    if (samples <= 0) return false;
+
+    const double mean = static_cast<double>(sum) / static_cast<double>(samples);
+    const double variance = (static_cast<double>(sumSq) / static_cast<double>(samples)) - (mean * mean);
+    const double darkRatio = static_cast<double>(darkCount) / static_cast<double>(samples);
+    const double brightRatio = static_cast<double>(brightCount) / static_cast<double>(samples);
+    const double centerBrightRatio = centerSamples > 0
+        ? static_cast<double>(centerBrightCount) / static_cast<double>(centerSamples)
+        : 0.0;
+    const double outerBrightRatio = outerSamples > 0
+        ? static_cast<double>(outerBrightCount) / static_cast<double>(outerSamples)
+        : 0.0;
+
+    const bool looksLikeCameraOffPlaceholder =
+        darkRatio > 0.78
+        && brightRatio > 0.002
+        && brightRatio < 0.18
+        && centerBrightRatio > (outerBrightRatio * 2.0 + 0.01);
+
+    if (looksLikeCameraOffPlaceholder) {
+        return false;
+    }
+
+    return mean > 10.0 && variance > 12.0;
 }
 
 static QString gmailAppPassword()
@@ -243,13 +462,15 @@ static bool sendMissionMailSmtp(const QString& recipient,
     const QString subject = QStringLiteral("Affectation a une mission");
     const QString body = QStringLiteral(
         "Bonjour %1 %2,\n\n"
-        "Vous avez ete affecte a une mission.\n\n"
-        "Date d'affectation : %3\n"
-        "ID bateau : %4\n\n"
-        "Merci.")
+        "Nous vous informons que vous avez été affecté(e) à une mission.\n\n"
+        "Date d’affectation : %3 à %4h\n"
+        "ID du bateau : %5\n\n"
+        "Nous vous remercions de bien vouloir prendre les dispositions nécessaires.\n\n"
+        "Cordialement, ")
             .arg(nom.trimmed(),
                  prenom.trimmed(),
-                 dateAffectation.toString(QStringLiteral("dd/MM/yyyy HH:mm")),
+                 dateAffectation.date().toString(QStringLiteral("dd/MM/yyyy")),
+                 dateAffectation.time().toString(QStringLiteral("HH:mm")),
                  QString::number(idBateau));
 
     QByteArray message;
@@ -456,9 +677,9 @@ static QPixmap buildDisponibiliteCirclePixmap(int disponible, int bientot, int i
     }
 
     QVector<QPair<QColor, int>> slices = {
-        { QColor(QStringLiteral("#00C853")), sDisponible },
-        { QColor(QStringLiteral("#007BFF")), sBientot },
-        { QColor(QStringLiteral("#FF1744")), sIndisponible },
+        { QColor(QStringLiteral("#27ae60")), sDisponible },
+        { QColor(QStringLiteral("#3498db")), sBientot },
+        { QColor(QStringLiteral("#e74c3c")), sIndisponible },
         { QColor(QStringLiteral("#9b59b6")), sEnConge }
     };
 
@@ -501,16 +722,6 @@ static QString canonicalEmployeRole(const QString& raw)
     if (key.contains(QStringLiteral("ouvri"))) return QStringLiteral("Ouvrier");
     if (key.contains(QStringLiteral("pech"))) return QStringLiteral("Pecheur");
     return raw.trimmed();
-}
-
-static int employeRoleCodeForIdUi(const QString& roleRaw)
-{
-    const QString role = canonicalEmployeRole(roleRaw);
-    if (role == QStringLiteral("Gardien")) return 3;
-    if (role == QStringLiteral("Technicien")) return 4;
-    if (role == QStringLiteral("Responsable")) return 5;
-    if (role == QStringLiteral("Ouvrier")) return 6;
-    return 0;
 }
 
 static QPixmap buildEmployeRoleCirclePixmap(int gardien,
@@ -1175,6 +1386,68 @@ static bool authenticateLoginFromDb(QSqlDatabase db,
     return query.value(0).toInt() > 0;
 }
 
+static bool isValidEmailAddress(const QString& email)
+{
+    static const QRegularExpression rx(QStringLiteral("^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$"),
+                                       QRegularExpression::CaseInsensitiveOption);
+    return rx.match(email.trimmed()).hasMatch();
+}
+
+static bool pecheurEmailExistsInDb(const QString& email, QString* errorOut)
+{
+    const QString mail = email.trimmed();
+    if (mail.isEmpty()) {
+        if (errorOut) *errorOut = QStringLiteral("Adresse e-mail vide.");
+        return false;
+    }
+
+    Connection* conn = Connection::getInstance();
+    if (!conn || !conn->ensureOpen()) {
+        if (errorOut) *errorOut = QStringLiteral("Connexion a la base impossible.");
+        return false;
+    }
+
+    QSqlDatabase db = conn->getDatabase();
+    const QString tableName = resolveTableName(db, {
+        QStringLiteral("PECHEUR"),
+        QStringLiteral("PECHEURS"),
+        QStringLiteral("TPECHEUR"),
+        QStringLiteral("T_PECHEUR")
+    });
+    if (tableName.isEmpty()) {
+        if (errorOut) *errorOut = QStringLiteral("Table des pecheurs introuvable.");
+        return false;
+    }
+
+    const QStringList cols = getColumnNames(db, tableName);
+    const QString emailCol = matchColumnBySynonyms(cols, {
+        QStringLiteral("email"),
+        QStringLiteral("mail"),
+        QStringLiteral("adressemail"),
+        QStringLiteral("adresse_email")
+    });
+    if (emailCol.isEmpty()) {
+        if (errorOut) *errorOut = QStringLiteral("Colonne e-mail introuvable.");
+        return false;
+    }
+
+    QSqlQuery query(db);
+    query.prepare(QStringLiteral("SELECT COUNT(*) FROM %1 WHERE UPPER(TRIM(%2)) = UPPER(TRIM(?))")
+                      .arg(tableName, emailCol));
+    query.addBindValue(mail);
+
+    if (!query.exec() || !query.next()) {
+        if (errorOut) *errorOut = query.lastError().text();
+        return false;
+    }
+
+    const bool exists = query.value(0).toInt() > 0;
+    if (!exists && errorOut) {
+        *errorOut = QStringLiteral("Adresse e-mail introuvable (mail non trouve).\nVerifiez l'email du pecheur.");
+    }
+    return exists;
+}
+
 // Ajoute une colonne d'actions avec des boutons styl├⌐s (sans logique m├⌐tier sp├⌐cifique)
 
 static void ensureActionsColumnPopulated(QTableWidget* table, const QString& buttonStyle)
@@ -1445,6 +1718,111 @@ void MainWindow::adjustTopClientsStatsColumns()
     table->setColumnWidth(4, 160);  // valeur statistique
 }
 
+static void updateTopClientsStats(Ui::MainWindow* ui)
+{
+    if (!ui || !ui->tableTopClients_4) return;
+
+    QTableWidget* table = ui->tableTopClients_4;
+    table->clearContents();
+    table->setRowCount(0);
+    table->setColumnCount(5);
+    table->setHorizontalHeaderItem(0, new QTableWidgetItem(QStringLiteral("ID")));
+    table->setHorizontalHeaderItem(1, new QTableWidgetItem(QStringLiteral("Nom")));
+    table->setHorizontalHeaderItem(2, new QTableWidgetItem(QStringLiteral("Prenom")));
+    table->setHorizontalHeaderItem(3, new QTableWidgetItem(QStringLiteral("Telephone")));
+    table->setHorizontalHeaderItem(4, new QTableWidgetItem(QStringLiteral("Fidelite")));
+
+    Connection* conn = Connection::getInstance();
+    if (!conn || !conn->ensureOpen()) {
+        return;
+    }
+
+    QSqlDatabase db = conn->getDatabase();
+    const QString tableName = resolveTableName(db, {
+        QStringLiteral("CLIENT"),
+        QStringLiteral("CLIENTS"),
+        QStringLiteral("TCLIENT"),
+        QStringLiteral("T_CLIENT")
+    });
+    if (tableName.isEmpty()) {
+        return;
+    }
+
+    const QStringList dbCols = getColumnNames(db, tableName);
+    if (dbCols.isEmpty()) {
+        return;
+    }
+
+    const QString idCol = matchColumnBySynonyms(dbCols, {
+        QStringLiteral("id"), QStringLiteral("idclient"), QStringLiteral("clientid"), QStringLiteral("id_client")
+    });
+    const QString nomCol = matchColumnBySynonyms(dbCols, {
+        QStringLiteral("nom"), QStringLiteral("nomclient"), QStringLiteral("name"), QStringLiteral("lastname"), QStringLiteral("nom_client")
+    });
+    const QString prenomCol = matchColumnBySynonyms(dbCols, {
+        QStringLiteral("prenom"), QStringLiteral("prenomclient"), QStringLiteral("firstname"), QStringLiteral("prenom_client")
+    });
+    const QString telCol = matchColumnBySynonyms(dbCols, {
+        QStringLiteral("telephone"), QStringLiteral("tel"), QStringLiteral("phone")
+    });
+    const QString profilCol = matchColumnBySynonyms(dbCols, {
+        QStringLiteral("profil"), QStringLiteral("profilclient"), QStringLiteral("profile"), QStringLiteral("profil_client")
+    });
+    if (idCol.isEmpty() || nomCol.isEmpty() || prenomCol.isEmpty()) {
+        return;
+    }
+
+    const QString telExpr = telCol.isEmpty() ? QStringLiteral("''") : telCol;
+
+    if (table->horizontalHeaderItem(4)) {
+        table->horizontalHeaderItem(4)->setText(QStringLiteral("Fidelite"));
+    }
+
+    QString scoreExpr = QStringLiteral("0");
+    QString fidelityExpr = QStringLiteral("'Autre'");
+    if (!profilCol.isEmpty()) {
+        scoreExpr = QStringLiteral(
+            "CASE "
+            "WHEN UPPER(%1) LIKE 'FIDE%%' THEN 3 "
+            "WHEN UPPER(%1) LIKE 'REGU%%' THEN 2 "
+            "WHEN UPPER(%1) LIKE 'OCCA%%' THEN 1 "
+            "ELSE 0 END").arg(profilCol);
+
+        fidelityExpr = QStringLiteral(
+            "CASE "
+            "WHEN UPPER(%1) LIKE 'FIDE%%' THEN 'Fidele' "
+            "WHEN UPPER(%1) LIKE 'REGU%%' THEN 'Regulier' "
+            "WHEN UPPER(%1) LIKE 'OCCA%%' THEN 'Occasionnel' "
+            "ELSE 'Autre' END").arg(profilCol);
+    }
+
+    const QString sql = QStringLiteral(
+        "SELECT * FROM ("
+        "SELECT %1 AS idv, %2 AS nomv, %3 AS prenomv, %4 AS telv, %5 AS fidelityv, %6 AS scorev "
+        "FROM %7 "
+        "ORDER BY scorev DESC, %2 ASC, %3 ASC"
+        ") WHERE ROWNUM <= 5")
+            .arg(idCol, nomCol, prenomCol, telExpr, fidelityExpr, scoreExpr, tableName);
+
+    QSqlQuery q(db);
+    if (!q.exec(sql)) {
+        qWarning() << "Top clients: query failed" << q.lastError().text();
+        return;
+    }
+
+    int row = 0;
+    while (q.next()) {
+        table->insertRow(row);
+        table->setItem(row, 0, new QTableWidgetItem(q.value(0).toString().trimmed()));
+        table->setItem(row, 1, new QTableWidgetItem(q.value(1).toString().trimmed()));
+        table->setItem(row, 2, new QTableWidgetItem(q.value(2).toString().trimmed()));
+        table->setItem(row, 3, new QTableWidgetItem(q.value(3).toString().trimmed()));
+
+        table->setItem(row, 4, new QTableWidgetItem(q.value(4).toString().trimmed()));
+        ++row;
+    }
+}
+
 // Public helper implementations added to avoid accessing private members from lambdas.
 
 void MainWindow::refreshClientsPage()
@@ -1644,6 +2022,9 @@ void MainWindow::refreshClientsPage()
     updateOne(ui->progressCc,   ui->value_Cc,   countFidele);
     updateOne(ui->progressCCc,  ui->value_CCc,  countOccas);
     updateOne(ui->progressc,    ui->value_c,    countRegul);
+
+    updateTopClientsStats(ui);
+    adjustTopClientsStatsColumns();
 }
 
 MainWindow::MainWindow(QWidget *parent)
@@ -1654,6 +2035,10 @@ MainWindow::MainWindow(QWidget *parent)
     , m_editingCaptureId()
 {
     ui->setupUi(this);
+
+    if (ui && ui->frame_10p) {
+        ui->frame_10p->installEventFilter(this);
+    }
 
     // Masquer les mots de passe (affichage en points)
     auto setPasswordEcho = [](QLineEdit* edit) {
@@ -1730,7 +2115,6 @@ MainWindow::MainWindow(QWidget *parent)
     }
 
     const QDateTime now = QDateTime::currentDateTime();
-    const QDate today = now.date();
     if (ui->dateTimeEdit) {
         ui->dateTimeEdit->setDateTime(now);
         ui->dateTimeEdit->setReadOnly(false);
@@ -1827,6 +2211,12 @@ MainWindow::MainWindow(QWidget *parent)
 
     refreshClientsPage();
 
+    if (ui->btnRefresh_4) {
+        connect(ui->btnRefresh_4, &QPushButton::clicked, this, [this]() {
+            refreshClientsPage();
+        });
+    }
+
     QSqlDatabase db = Connection::getInstance()->getDatabase();
     if (ui->tableWidgetee) {
         // Chargement initial des employ├⌐s via helper d├⌐di├⌐ (r├⌐solution de table + synonymes)
@@ -1900,29 +2290,8 @@ MainWindow::MainWindow(QWidget *parent)
         }
     }
 
-    // Connexions (page p├¬cheurs / FaceID)
-    if (ui->brmp) {
-        connect(ui->brmp, &QPushButton::clicked, this, &MainWindow::on_brmp_clicked);
-    }
-if (ui->pushButton_pdfb_5) {
-    connect(ui->pushButton_pdfb_5, &QPushButton::clicked, this, &MainWindow::on_pushButton_pdfb_5_clicked);
-}
-
-    if (ui->btnFaceIDp) {
-        connect(ui->btnFaceIDp, &QPushButton::clicked, this, &MainWindow::on_btnFaceIDp_clicked);
-    }
-    if (ui->bmi_6p) {
-        connect(ui->bmi_6p, &QPushButton::clicked, this, &MainWindow::on_bmi_6p_clicked);
-    }
-    if (ui->pushButton_10p) {
-        connect(ui->pushButton_10p, &QPushButton::clicked, this, &MainWindow::on_pushButton_10p_clicked);
-    }
-    if (ui->bmip) {
-        connect(ui->bmip, &QPushButton::clicked, this, &MainWindow::on_bmip_clicked);
-    }
-    if (ui->pushButton_11p) {
-        connect(ui->pushButton_11p, &QPushButton::clicked, this, &MainWindow::on_pushButton_11p_clicked);
-    }
+    // Les boutons pecheurs utilisent l'auto-connexion Qt (connectSlotsByName),
+    // evite ici les connexions manuelles en double.
 
     // Filtres employ├⌐s : recherche + ├⌐tat + statut
     if (ui->pushButton_9e) {
@@ -2001,6 +2370,9 @@ if (ui->pushButton_pdfb_5) {
 
     // Chargement m├⌐t├⌐o initial
     refreshWeatherForPage3();
+
+    // D├⌐marrer la liaison Arduino <-> Qt pour l'atelier capteur/quais.
+    initializeArduinoLink();
 }
 
 // Navigation / actions : impl├⌐mentations uniques plus bas dans le fichier.
@@ -3375,12 +3747,53 @@ void MainWindow::setupPecheurFaceCapture()
 {
     if (!ui || !ui->frame_10p) return;
 
-    if (!m_faceVideoWidget) {
-        m_faceVideoWidget = new QVideoWidget(ui->frame_10p);
-        m_faceVideoWidget->setObjectName(QStringLiteral("faceCameraPreviewp"));
-        m_faceVideoWidget->setGeometry(8, 8, ui->frame_10p->width() - 16, ui->frame_10p->height() - 16);
-        m_faceVideoWidget->setStyleSheet(QStringLiteral("background-color: #081018; border-radius: 10px;"));
-        m_faceVideoWidget->show();
+    if (!m_facePreviewLabel) {
+        m_facePreviewLabel = new QLabel(ui->frame_10p);
+        m_facePreviewLabel->setObjectName(QStringLiteral("faceCameraPreviewp"));
+        m_facePreviewLabel->setAlignment(Qt::AlignCenter);
+        m_facePreviewLabel->setAttribute(Qt::WA_TranslucentBackground, true);
+        m_facePreviewLabel->setScaledContents(false);
+        applyPecheurFacePreviewShape(m_facePreviewLabel);
+        m_facePreviewLabel->show();
+    }
+
+    if (!m_faceVideoSink) {
+        m_faceVideoSink = new QVideoSink(this);
+        connect(m_faceVideoSink, &QVideoSink::videoFrameChanged, this, [this](const QVideoFrame& frame) {
+            if (!m_facePreviewLabel || !frame.isValid()) return;
+
+            QImage image = frame.toImage();
+            if (image.isNull()) return;
+
+            const bool liveContent = frameHasLiveCameraContent(image);
+            const bool wasLive = m_faceHasRecentFrame;
+            m_faceHasRecentFrame = liveContent;
+            if (liveContent) {
+                const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+                m_faceLastFrameAtMs = nowMs;
+                if (!wasLive) {
+                    m_faceOpenStatusUntilMs = nowMs + 1000;
+                }
+
+                if (nowMs <= m_faceOpenStatusUntilMs) {
+                    setPecheurFaceStatus(ui, QStringLiteral("Caméra ouverte."));
+                } else {
+                    setPecheurFaceStatus(ui, pecheurFaceOpenStatusText());
+                }
+            } else {
+                m_faceOpenStatusUntilMs = 0;
+                setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
+            }
+
+            const QRect rect = pecheurFacePreviewRect(ui ? ui->frame_10p : nullptr);
+            const int diameter = rect.width() > 0 ? rect.width() : qMin(m_facePreviewLabel->width(), m_facePreviewLabel->height());
+            if (diameter <= 0) {
+                return;
+            }
+
+            m_facePreviewLabel->setPixmap(buildCircularFacePreviewPixmap(image, diameter));
+            m_facePreviewLabel->update();
+        });
     }
 
     if (!m_faceCaptureSession) {
@@ -3389,6 +3802,25 @@ void MainWindow::setupPecheurFaceCapture()
     if (!m_faceImageCapture) {
         m_faceImageCapture = new QImageCapture(this);
         connect(m_faceImageCapture, &QImageCapture::imageCaptured, this, [this](int, const QImage& image) {
+            if (image.isNull() || !frameHasLiveCameraContent(image)) {
+                if (m_faceCaptureRetryRemaining > 0) {
+                    --m_faceCaptureRetryRemaining;
+                    m_faceCapturePending = true;
+                    setPecheurFaceStatus(ui, QStringLiteral("Capture en cours... (%1 essais restants)")
+                                            .arg(m_faceCaptureRetryRemaining));
+                    QTimer::singleShot(180, this, [this]() { attemptPecheurFaceCapture(); });
+                    return;
+                }
+
+                m_faceCapturePending = false;
+                m_faceCaptureRetryRemaining = 0;
+                m_pendingPecheurPhotoBytes.clear();
+                const QString msg = QStringLiteral("Caméra fermée. Ouvrez la caméra avant de capturer.");
+                setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
+                QMessageBox::warning(this, QStringLiteral("Capture"), msg);
+                return;
+            }
+
             m_faceCapturePending = false;
             m_faceCaptureRetryRemaining = 0;
 
@@ -3396,9 +3828,9 @@ void MainWindow::setupPecheurFaceCapture()
             QBuffer buffer(&encoded);
             buffer.open(QIODevice::WriteOnly);
             image.save(&buffer, "JPG", 90);
-            m_pendingPecheurPhotoBase64 = encoded.toBase64();
+            m_pendingPecheurPhotoBytes = encoded;
 
-            setPecheurFaceStatus(ui, QStringLiteral("Photo capturée. Enregistrement en cours..."));
+            setPecheurFaceStatus(ui, QStringLiteral("✅ Visage détecté et centré.\nEnregistrement en cours..."));
 
             if (persistCapturedPecheurPhoto()) {
                 stopPecheurFaceCapture();
@@ -3406,7 +3838,7 @@ void MainWindow::setupPecheurFaceCapture()
                     ui->framefaceidp->hide();
                 }
                 setPecheurMainWidgetsVisible(ui, true);
-                setPecheurFaceStatus(ui, QStringLiteral("Photo enregistrée."));
+                setPecheurFaceStatus(ui, QStringLiteral("✅ Visage détecté et centré.\nPhoto enregistrée."));
                 QMessageBox::information(this, QStringLiteral("Visage"), QStringLiteral("Photo enregistrée dans la base."));
             } else {
                 const QString err = Pecheurs::lastError().trimmed();
@@ -3444,33 +3876,98 @@ void MainWindow::setupPecheurFaceCapture()
 
         m_faceCamera = new QCamera(device, this);
         connect(m_faceCamera, &QCamera::errorOccurred, this, [this](QCamera::Error, const QString& errorString) {
+            m_faceHasRecentFrame = false;
             const QString msg = QStringLiteral("Erreur caméra: %1").arg(errorString);
             setPecheurFaceStatus(ui, msg);
             QMessageBox::warning(this, QStringLiteral("Caméra"), msg);
         });
+        connect(m_faceCamera, &QCamera::activeChanged, this, [this](bool active) {
+            if (!active) {
+                m_faceHasRecentFrame = false;
+                m_faceOpenStatusUntilMs = 0;
+                setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
+            }
+        });
 
         m_faceCaptureSession->setCamera(m_faceCamera);
         m_faceCaptureSession->setImageCapture(m_faceImageCapture);
-        m_faceCaptureSession->setVideoOutput(m_faceVideoWidget);
+        m_faceCaptureSession->setVideoOutput(m_faceVideoSink);
     }
 
-    if (m_faceVideoWidget) {
-        m_faceVideoWidget->setGeometry(8, 8, ui->frame_10p->width() - 16, ui->frame_10p->height() - 16);
-        m_faceVideoWidget->raise();
-        m_faceVideoWidget->show();
+    if (m_facePreviewLabel) {
+        updatePecheurFacePreviewGeometry();
+        m_facePreviewLabel->raise();
+        m_facePreviewLabel->show();
     }
 
-    setPecheurFaceStatus(ui, QStringLiteral("Caméra prête."));
+    setPecheurFaceStatus(ui, QStringLiteral("Initialisation caméra..."));
 
     if (!m_faceCamera->isActive()) {
         m_faceCamera->start();
     }
+
+    QTimer::singleShot(700, this, [this]() {
+        if (!ui) return;
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        const bool hasLiveFrame = m_faceHasRecentFrame && ((now - m_faceLastFrameAtMs) <= kFaceLiveFrameTimeoutMs);
+        if (m_faceCamera && m_faceCamera->isActive() && hasLiveFrame) {
+            setPecheurFaceStatus(ui, pecheurFaceOpenStatusText());
+        } else {
+            setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
+        }
+    });
+}
+
+void MainWindow::updatePecheurFacePreviewGeometry()
+{
+    if (!ui || !ui->frame_10p || !m_facePreviewLabel) {
+        return;
+    }
+
+    const QRect rect = pecheurFacePreviewRect(ui->frame_10p);
+    if (!rect.isValid()) {
+        return;
+    }
+
+    if (m_facePreviewLabel) {
+        m_facePreviewLabel->setGeometry(rect);
+        applyPecheurFacePreviewShape(m_facePreviewLabel);
+
+        if (const QPixmap current = m_facePreviewLabel->pixmap(Qt::ReturnByValue); !current.isNull()) {
+            m_facePreviewLabel->setPixmap(current.scaled(rect.size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
+        }
+    }
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    if (ui && watched == ui->frame_10p && event && event->type() == QEvent::Resize) {
+        updatePecheurFacePreviewGeometry();
+    }
+
+    if (event && event->type() == QEvent::MouseButtonPress) {
+        if (auto* photoLabel = qobject_cast<QLabel*>(watched)) {
+            const QVariant previewData = photoLabel->property("pecheurPhotoPreview");
+            if (previewData.isValid()) {
+                const QPixmap preview = previewData.value<QPixmap>();
+                if (!preview.isNull()) {
+                    showPecheurPhotoPreviewDialog(this, preview);
+                    return true;
+                }
+            }
+        }
+    }
+
+    return QMainWindow::eventFilter(watched, event);
 }
 
 void MainWindow::stopPecheurFaceCapture()
 {
     m_faceCapturePending = false;
     m_faceCaptureRetryRemaining = 0;
+    m_faceHasRecentFrame = false;
+    m_faceLastFrameAtMs = 0;
+    m_faceOpenStatusUntilMs = 0;
     if (m_faceCamera && m_faceCamera->isActive()) {
         m_faceCamera->stop();
     }
@@ -3486,6 +3983,23 @@ void MainWindow::attemptPecheurFaceCapture()
 
     if (!m_faceCamera->isActive()) {
         m_faceCamera->start();
+    }
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const bool hasLiveFrame = m_faceHasRecentFrame && ((now - m_faceLastFrameAtMs) <= kFaceLiveFrameTimeoutMs);
+    if (!hasLiveFrame) {
+        if (m_faceCaptureRetryRemaining > 0) {
+            --m_faceCaptureRetryRemaining;
+            setPecheurFaceStatus(ui, QStringLiteral("Initialisation caméra..."));
+            QTimer::singleShot(250, this, [this]() { attemptPecheurFaceCapture(); });
+            return;
+        }
+
+        m_faceCapturePending = false;
+        const QString msg = QStringLiteral("Caméra fermée. Ouvrez la caméra avant de capturer.");
+        setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
+        QMessageBox::warning(this, QStringLiteral("Visage"), msg);
+        return;
     }
 
     if (!m_faceImageCapture->isReadyForCapture()) {
@@ -3568,7 +4082,7 @@ bool MainWindow::persistCapturedPecheurPhoto()
         return false;
     }
 
-    m_pendingPecheurPhotoBase64.clear();
+    m_pendingPecheurPhotoBytes.clear();
     loadPecheurs();
     return true;
 }
@@ -3592,7 +4106,7 @@ void MainWindow::on_brmp_clicked()
     if (!ui) return;
 
     // Remettre l'etat normal cote pecheurs
-    m_pendingPecheurPhotoBase64.clear();
+    m_pendingPecheurPhotoBytes.clear();
     stopPecheurFaceCapture();
     if (ui->framefaceidp) ui->framefaceidp->hide();
     setPecheurMainWidgetsVisible(ui, true);
@@ -3607,7 +4121,7 @@ void MainWindow::on_pushButton_pdfb_5_clicked()
     if (!ui) return;
 
     // Remettre l'etat normal cote pecheurs
-    m_pendingPecheurPhotoBase64.clear();
+    m_pendingPecheurPhotoBytes.clear();
     stopPecheurFaceCapture();
     if (ui->framefaceidp) ui->framefaceidp->hide();
     setPecheurMainWidgetsVisible(ui, true);
@@ -3630,12 +4144,26 @@ void MainWindow::on_bmi_6p_clicked()
     }
 
     if (!m_faceCamera->isActive()) {
-        m_faceCamera->start();
+        QMessageBox::warning(this,
+                             QStringLiteral("Visage"),
+                             QStringLiteral("La caméra est fermée. Ouvrez la caméra puis positionnez un visage dans le cercle."));
+        setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
+        return;
+    }
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const bool hasLiveFrame = m_faceHasRecentFrame && ((now - m_faceLastFrameAtMs) <= kFaceLiveFrameTimeoutMs);
+    if (!hasLiveFrame) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Visage"),
+                             QStringLiteral("Caméra fermée. Aucun flux vidéo détecté."));
+        setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
+        return;
     }
 
     m_faceCapturePending = true;
-    m_faceCaptureRetryRemaining = 12;
-    setPecheurFaceStatus(ui, QStringLiteral("Capture du visage en cours..."));
+    m_faceCaptureRetryRemaining = 30;
+    setPecheurFaceStatus(ui, QStringLiteral("✅ Visage détecté et centré.\nValidation en cours..."));
     attemptPecheurFaceCapture();
 }
 
@@ -3649,6 +4177,21 @@ void MainWindow::on_bmip_clicked()
 
     if (email.isEmpty()) {
         QMessageBox::warning(this, QStringLiteral("Mission"), QStringLiteral("Veuillez renseigner l'email du pêcheur."));
+        return;
+    }
+
+    if (!isValidEmailAddress(email)) {
+        QMessageBox::warning(this, QStringLiteral("Mission"), QStringLiteral("Format d'e-mail invalide."));
+        return;
+    }
+
+    QString emailLookupError;
+    if (!pecheurEmailExistsInDb(email, &emailLookupError)) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Mission"),
+                             emailLookupError.isEmpty()
+                                 ? QStringLiteral("Adresse e-mail introuvable (mail non trouve).")
+                                 : emailLookupError);
         return;
     }
 
@@ -3707,7 +4250,7 @@ void MainWindow::on_pushButton_11p_clicked()
 {
     // Annuler FaceID, reafficher les widgets principaux
     if (!ui) return;
-    m_pendingPecheurPhotoBase64.clear();
+    m_pendingPecheurPhotoBytes.clear();
     stopPecheurFaceCapture();
     if (ui->framefaceidp) ui->framefaceidp->setVisible(false);
     setPecheurMainWidgetsVisible(ui, true);
@@ -3717,7 +4260,7 @@ void MainWindow::on_pushButton_10p_clicked()
 {
     if (!ui) return;
 
-    m_pendingPecheurPhotoBase64.clear();
+    m_pendingPecheurPhotoBytes.clear();
     m_faceCapturePending = false;
     m_faceCaptureRetryRemaining = 0;
     setPecheurFaceStatus(ui, QStringLiteral("Pret a capturer..."));
@@ -3919,7 +4462,181 @@ void MainWindow::legacy_pushButton_7b_clicked()
 
 MainWindow::~MainWindow()
 {
+    m_arduino.close_arduino();
     delete ui;
+}
+
+void MainWindow::initializeArduinoLink()
+{
+    const int arduinoState = m_arduino.connect_arduino();
+    if (arduinoState != arduino::ARDUINO_AVAILABLE) {
+        qWarning() << "Arduino non detecte. Liaison serie inactive.";
+        return;
+    }
+
+    QSerialPort* serial = m_arduino.serial();
+    if (!serial) {
+        qWarning() << "Port serie Arduino invalide.";
+        return;
+    }
+
+    connect(serial, &QSerialPort::readyRead, this, &MainWindow::onArduinoDataReceived);
+    qInfo() << "Arduino connecte sur" << m_arduino.getarduino_port_name();
+}
+
+void MainWindow::onArduinoDataReceived()
+{
+    m_arduinoBuffer += m_arduino.read_from_arduino();
+
+    int newlineIndex = m_arduinoBuffer.indexOf('\n');
+    while (newlineIndex >= 0) {
+        const QByteArray rawLine = m_arduinoBuffer.left(newlineIndex);
+        m_arduinoBuffer.remove(0, newlineIndex + 1);
+
+        const QString message = QString::fromUtf8(rawLine).trimmed();
+        if (!message.isEmpty()) {
+            processArduinoMessage(message);
+        }
+
+        newlineIndex = m_arduinoBuffer.indexOf('\n');
+    }
+}
+
+void MainWindow::processArduinoMessage(const QString& message)
+{
+    const QString key = normalizeKey(message);
+
+    if (key == QStringLiteral("arrivee")) {
+        assignFreeQuaiAndNotifyArduino();
+        return;
+    }
+
+    if (key == QStringLiteral("depart")) {
+        releaseAssignedQuai();
+        return;
+    }
+
+    qInfo() << "Message Arduino ignore:" << message;
+}
+
+int MainWindow::findFreeQuaiId() const
+{
+    Connection* conn = Connection::getInstance();
+    if (!conn->ensureOpen()) {
+        return -1;
+    }
+
+    QSqlDatabase db = conn->getDatabase();
+    QSqlQuery query(db);
+    if (!query.exec(QStringLiteral("SELECT ID_QUAI, STATUT FROM QUAIS ORDER BY ID_QUAI"))) {
+        return -1;
+    }
+
+    while (query.next()) {
+        const int quaiId = query.value(0).toInt();
+        const QString status = query.value(1).toString().trimmed();
+        const QString statusKey = normalizeKey(status);
+        if (statusKey.startsWith(QStringLiteral("libre"))) {
+            return quaiId;
+        }
+    }
+
+    return -1;
+}
+
+int MainWindow::findAnyOccupiedQuaiId() const
+{
+    Connection* conn = Connection::getInstance();
+    if (!conn->ensureOpen()) {
+        return -1;
+    }
+
+    QSqlDatabase db = conn->getDatabase();
+    QSqlQuery query(db);
+    if (!query.exec(QStringLiteral("SELECT ID_QUAI, STATUT FROM QUAIS ORDER BY ID_QUAI"))) {
+        return -1;
+    }
+
+    while (query.next()) {
+        const int quaiId = query.value(0).toInt();
+        const QString status = query.value(1).toString().trimmed();
+        const QString statusKey = normalizeKey(status);
+        if (statusKey.startsWith(QStringLiteral("occu"))) {
+            return quaiId;
+        }
+    }
+
+    return -1;
+}
+
+bool MainWindow::updateQuaiStatus(int quaiId, const QString& status)
+{
+    if (quaiId <= 0) {
+        return false;
+    }
+
+    Connection* conn = Connection::getInstance();
+    if (!conn->ensureOpen()) {
+        return false;
+    }
+
+    QSqlDatabase db = conn->getDatabase();
+    QSqlQuery query(db);
+    query.prepare(QStringLiteral("UPDATE QUAIS SET STATUT = ? WHERE ID_QUAI = ?"));
+
+    QString dbStatus = status.trimmed();
+    const QString statusKey = normalizeKey(dbStatus);
+    if (statusKey.startsWith(QStringLiteral("occu"))) {
+        dbStatus = QStringLiteral("Occupe");
+    } else if (statusKey.startsWith(QStringLiteral("libre"))) {
+        dbStatus = QStringLiteral("Libre");
+    }
+
+    query.addBindValue(dbStatus);
+    query.addBindValue(quaiId);
+
+    if (!query.exec()) {
+        qWarning() << "Echec update statut quai" << quaiId << query.lastError().text();
+        return false;
+    }
+
+    return true;
+}
+
+bool MainWindow::assignFreeQuaiAndNotifyArduino()
+{
+    const int freeQuaiId = findFreeQuaiId();
+    if (freeQuaiId <= 0) {
+        m_arduino.write_to_arduino(QByteArray("COMPLET\n"));
+        return false;
+    }
+
+    if (!updateQuaiStatus(freeQuaiId, QStringLiteral("Occupe"))) {
+        m_arduino.write_to_arduino(QByteArray("COMPLET\n"));
+        return false;
+    }
+
+    m_lastAssignedQuaiId = freeQuaiId;
+    m_arduino.write_to_arduino(QStringLiteral("QUAI:%1\n").arg(freeQuaiId).toUtf8());
+    refreshQuaiTable();
+    return true;
+}
+
+void MainWindow::releaseAssignedQuai()
+{
+    int quaiToRelease = m_lastAssignedQuaiId;
+    if (quaiToRelease <= 0) {
+        quaiToRelease = findAnyOccupiedQuaiId();
+    }
+
+    if (quaiToRelease <= 0) {
+        return;
+    }
+
+    if (updateQuaiStatus(quaiToRelease, QStringLiteral("Libre"))) {
+        m_lastAssignedQuaiId = -1;
+        refreshQuaiTable();
+    }
 }
 
 // ----------------------
@@ -4371,7 +5088,7 @@ Pecheurs MainWindow::pecheurFromForm() const
         idBateau = bateauIdFromText(bateauEdit->text());
     }
 
-    return Pecheurs(id, nom, prenom, sexe, role, dispo, email, heures, dateInscription, dateAffectation, idBateau, m_pendingPecheurPhotoBase64);
+    return Pecheurs(id, nom, prenom, sexe, role, dispo, email, heures, dateInscription, dateAffectation, idBateau, m_pendingPecheurPhotoBytes);
 }
 
 void MainWindow::loadPecheurs()
@@ -4438,16 +5155,18 @@ void MainWindow::loadPecheurs()
         table->setItem(row, 8, new QTableWidgetItem(dAff.isValid() ? dAff.toString("dd/MM/yyyy") + heureTexte : QString()));
         table->setItem(row, 9, new QTableWidgetItem(QString::number(heures)));
 
-        const QString photo64 = record.photo.trimmed();
-        if (!photo64.isEmpty()) {
-            const QByteArray bytes = QByteArray::fromBase64(photo64.toLatin1());
+        const QByteArray photoBytes = record.photo;
+        if (!photoBytes.isEmpty()) {
             QPixmap avatar;
-            if (avatar.loadFromData(bytes)) {
+            if (avatar.loadFromData(photoBytes)) {
                 auto *photoLabel = new QLabel();
                 photoLabel->setAlignment(Qt::AlignCenter);
                 photoLabel->setStyleSheet(QStringLiteral("background: transparent;"));
                 photoLabel->setPixmap(avatar.scaled(48, 48, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-                photoLabel->setToolTip(QStringLiteral("Photo enregistrée"));
+                photoLabel->setToolTip(QStringLiteral("Photo enregistrée (cliquez pour agrandir)"));
+                photoLabel->setCursor(Qt::PointingHandCursor);
+                photoLabel->setProperty("pecheurPhotoPreview", avatar);
+                photoLabel->installEventFilter(this);
                 table->setCellWidget(row, 10, photoLabel);
             } else {
                 table->setItem(row, 10, new QTableWidgetItem(QStringLiteral("Image invalide")));
@@ -4666,7 +5385,7 @@ void MainWindow::loadPecheurFromTable()
 {
     if (!ui || !ui->tableWidgetp) return;
 
-    m_pendingPecheurPhotoBase64.clear();
+    m_pendingPecheurPhotoBytes.clear();
 
     const int currentRow = ui->tableWidgetp->currentRow();
     if (currentRow < 0) {
@@ -4794,7 +5513,7 @@ void MainWindow::loadPecheurFromTable()
 
 void MainWindow::resetAjouterButton()
 {
-    m_pendingPecheurPhotoBase64.clear();
+    m_pendingPecheurPhotoBytes.clear();
 
     if (ui && ui->bap) {
         ui->bap->setText("Ajouter");

@@ -8,13 +8,16 @@
 #include <QCamera>
 #include <QImageCapture>
 #include <QMediaCaptureSession>
-#include <QVideoWidget>
+#include <QVideoSink>
 #include "connection.h"
 #include "quai.h"
 #include "pecheurs.h"
 #include "employe.h"
 #include "captures.h"
+#include "arduino.h"
 
+class QObject;
+class QEvent;
 class QNetworkAccessManager;
 
 QT_BEGIN_NAMESPACE
@@ -164,6 +167,7 @@ public:
 
 protected:
     Quai m_quai;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     Ui::MainWindow *ui;
@@ -173,12 +177,16 @@ private:
     QString m_editingCaptureId;
     int m_captureQuantiteFiltre = 0;
     QDate m_captureDateFiltre;
-    QString m_pendingPecheurPhotoBase64;
+    QByteArray m_pendingPecheurPhotoBytes;
     QString m_faceCaptureTempFile;
     QCamera* m_faceCamera = nullptr;
     QMediaCaptureSession* m_faceCaptureSession = nullptr;
     QImageCapture* m_faceImageCapture = nullptr;
-    QVideoWidget* m_faceVideoWidget = nullptr;
+    QLabel* m_facePreviewLabel = nullptr;
+    QVideoSink* m_faceVideoSink = nullptr;
+    bool m_faceHasRecentFrame = false;
+    qint64 m_faceLastFrameAtMs = 0;
+    qint64 m_faceOpenStatusUntilMs = 0;
     bool m_faceCapturePending = false;
     int m_faceCaptureRetryRemaining = 0;
     QLabel* m_curveLineLabelQuaiStats = nullptr;
@@ -216,6 +224,7 @@ private:
     void attemptPecheurFaceCapture();
     void syncPecheurFaceCaptureFields();
     bool persistCapturedPecheurPhoto();
+    void updatePecheurFacePreviewGeometry();
 
     // --- Quotas (page Captures) ---
     void loadQuotas(bool showErrors = false);
@@ -241,6 +250,14 @@ private:
     bool exportWidgetToPdf(QWidget *widget,
                            const QString &defaultFileName,
                            const QString &dialogTitle);
+    void initializeArduinoLink();
+    void onArduinoDataReceived();
+    void processArduinoMessage(const QString& message);
+    int findFreeQuaiId() const;
+    int findAnyOccupiedQuaiId() const;
+    bool updateQuaiStatus(int quaiId, const QString& status);
+    bool assignFreeQuaiAndNotifyArduino();
+    void releaseAssignedQuai();
 
     // Mise en forme tableaux
     void adjustClientTableColumns();
@@ -248,6 +265,10 @@ private:
 
     // Gestion des clients (recherche + statistiques)
     void refreshClientsPage();
+
+    arduino m_arduino;
+    QByteArray m_arduinoBuffer;
+    int m_lastAssignedQuaiId = -1;
 };
 
 #endif // MAINWINDOW_H
