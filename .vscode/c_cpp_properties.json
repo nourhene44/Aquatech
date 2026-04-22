@@ -1,0 +1,23 @@
+{
+  "configurations": [
+    {
+      "name": "Arduino",
+      "includePath": [
+        "${workspaceFolder}",
+        "C:/Users/esrab/AppData/Local/Arduino15/packages/arduino/hardware/avr/1.8.6/cores/arduino",
+        "C:/Users/esrab/AppData/Local/Arduino15/packages/arduino/hardware/avr/1.8.6/variants/standard",
+        "C:/Users/esrab/AppData/Local/Arduino15/packages/arduino/hardware/avr/1.8.6/libraries/**",
+        "C:/Users/esrab/AppData/Local/Arduino15/libraries/**"
+      ],
+      "defines": [
+        "ARDUINO=10819",
+        "ARDUINO_AVR_UNO"
+      ],
+      "compilerPath": "",
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "windows-gcc-x64"
+    }
+  ],
+  "version": 4
+}

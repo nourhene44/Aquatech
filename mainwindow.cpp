@@ -2371,6 +2371,13 @@ MainWindow::MainWindow(QWidget *parent)
     // Chargement m├⌐t├⌐o initial
     refreshWeatherForPage3();
 
+    // Reconnexion automatique Arduino si le port est temporairement occupé.
+    m_arduinoReconnectTimer = new QTimer(this);
+    m_arduinoReconnectTimer->setInterval(2000);
+    connect(m_arduinoReconnectTimer, &QTimer::timeout, this, [this]() {
+        initializeArduinoLink();
+    });
+
     // D├⌐marrer la liaison Arduino <-> Qt pour l'atelier capteur/quais.
     initializeArduinoLink();
 }
@@ -4468,25 +4475,50 @@ MainWindow::~MainWindow()
 
 void MainWindow::initializeArduinoLink()
 {
+    QSerialPort* existingSerial = m_arduino.serial();
+    if (existingSerial && existingSerial->isOpen()) {
+        if (m_arduinoReconnectTimer && m_arduinoReconnectTimer->isActive()) {
+            m_arduinoReconnectTimer->stop();
+        }
+        return;
+    }
+
+    qInfo() << "initializeArduinoLink: Tentative de connexion Arduino";
+    
     const int arduinoState = m_arduino.connect_arduino();
     if (arduinoState != arduino::ARDUINO_AVAILABLE) {
-        qWarning() << "Arduino non detecte. Liaison serie inactive.";
+        qWarning() << "initializeArduinoLink: Arduino non détecté. Liaison série inactive.";
+
+        if (m_arduinoReconnectTimer && !m_arduinoReconnectTimer->isActive()) {
+            qInfo() << "initializeArduinoLink: Reconnexion auto activée (2s).";
+            m_arduinoReconnectTimer->start();
+        }
         return;
     }
 
     QSerialPort* serial = m_arduino.serial();
     if (!serial) {
-        qWarning() << "Port serie Arduino invalide.";
+        qWarning() << "initializeArduinoLink: Port série Arduino invalide.";
+
+        if (m_arduinoReconnectTimer && !m_arduinoReconnectTimer->isActive()) {
+            m_arduinoReconnectTimer->start();
+        }
         return;
     }
 
-    connect(serial, &QSerialPort::readyRead, this, &MainWindow::onArduinoDataReceived);
-    qInfo() << "Arduino connecte sur" << m_arduino.getarduino_port_name();
+    connect(serial, &QSerialPort::readyRead, this, &MainWindow::onArduinoDataReceived, Qt::UniqueConnection);
+
+    if (m_arduinoReconnectTimer && m_arduinoReconnectTimer->isActive()) {
+        m_arduinoReconnectTimer->stop();
+    }
+
+    qInfo() << "initializeArduinoLink: Arduino connecté sur" << m_arduino.getarduino_port_name();
 }
 
 void MainWindow::onArduinoDataReceived()
 {
     m_arduinoBuffer += m_arduino.read_from_arduino();
+    qInfo() << "onArduinoDataReceived: Buffer contient" << m_arduinoBuffer.size() << "bytes";
 
     int newlineIndex = m_arduinoBuffer.indexOf('\n');
     while (newlineIndex >= 0) {
@@ -4495,6 +4527,7 @@ void MainWindow::onArduinoDataReceived()
 
         const QString message = QString::fromUtf8(rawLine).trimmed();
         if (!message.isEmpty()) {
+            qInfo() << "onArduinoDataReceived: Message complet reçu:" << message;
             processArduinoMessage(message);
         }
 
@@ -4505,30 +4538,73 @@ void MainWindow::onArduinoDataReceived()
 void MainWindow::processArduinoMessage(const QString& message)
 {
     const QString key = normalizeKey(message);
+    qInfo() << "processArduinoMessage: Message reçu:" << message << "Key:" << key;
+
+    if (key.startsWith(QStringLiteral("quaireceived:"))) {
+        bool ok = false;
+        const int quaiId = key.section(QLatin1Char(':'), 1, 1).toInt(&ok);
+        if (ok && quaiId > 0) {
+            qInfo() << "processArduinoMessage: ACK quai reçu:" << quaiId;
+            confirmQuaiAssignmentFromArduino(quaiId);
+            return;
+        }
+    }
 
     if (key == QStringLiteral("arrivee")) {
+        qInfo() << "processArduinoMessage: Signal ARRIVEE reçu";
         assignFreeQuaiAndNotifyArduino();
         return;
     }
 
     if (key == QStringLiteral("depart")) {
+        qInfo() << "processArduinoMessage: Signal DEPART reçu";
         releaseAssignedQuai();
         return;
     }
 
-    qInfo() << "Message Arduino ignore:" << message;
+    qInfo() << "processArduinoMessage: Message ignoré:" << message;
+}
+
+void MainWindow::confirmQuaiAssignmentFromArduino(int quaiId)
+{
+    if (quaiId <= 0) {
+        return;
+    }
+
+    if (m_lastAssignedQuaiId == quaiId) {
+        qInfo() << "confirmQuaiAssignmentFromArduino: Quai déjà confirmé" << quaiId;
+        return;
+    }
+
+    if (m_pendingQuaiId > 0 && m_pendingQuaiId != quaiId) {
+        qWarning() << "confirmQuaiAssignmentFromArduino: ACK inattendu. pending=" << m_pendingQuaiId
+                   << "ack=" << quaiId;
+    }
+
+    if (!updateQuaiStatus(quaiId, QStringLiteral("Occupe"))) {
+        qWarning() << "confirmQuaiAssignmentFromArduino: Echec mise à jour Occupe pour" << quaiId;
+        m_pendingQuaiId = quaiId;
+        return;
+    }
+
+    m_lastAssignedQuaiId = quaiId;
+    m_pendingQuaiId = -1;
+    refreshQuaiTable();
+    qInfo() << "confirmQuaiAssignmentFromArduino: Quai" << quaiId << "confirmé et occupé";
 }
 
 int MainWindow::findFreeQuaiId() const
 {
     Connection* conn = Connection::getInstance();
     if (!conn->ensureOpen()) {
+        qWarning() << "findFreeQuaiId: Connection DB failed";
         return -1;
     }
 
     QSqlDatabase db = conn->getDatabase();
     QSqlQuery query(db);
     if (!query.exec(QStringLiteral("SELECT ID_QUAI, STATUT FROM QUAIS ORDER BY ID_QUAI"))) {
+        qWarning() << "findFreeQuaiId: Query failed:" << query.lastError().text();
         return -1;
     }
 
@@ -4536,11 +4612,16 @@ int MainWindow::findFreeQuaiId() const
         const int quaiId = query.value(0).toInt();
         const QString status = query.value(1).toString().trimmed();
         const QString statusKey = normalizeKey(status);
-        if (statusKey.startsWith(QStringLiteral("libre"))) {
+        qInfo() << "findFreeQuaiId: Quai" << quaiId << "Status:" << status << "Key:" << statusKey;
+        
+        // Considère comme libre si le statut commence par "libre" ou est vide/NULL
+        if (statusKey.isEmpty() || statusKey.startsWith(QStringLiteral("libre"))) {
+            qInfo() << "findFreeQuaiId: Quai" << quaiId << "est LIBRE";
             return quaiId;
         }
     }
 
+    qWarning() << "findFreeQuaiId: Aucun quai libre trouvé";
     return -1;
 }
 
@@ -4572,11 +4653,13 @@ int MainWindow::findAnyOccupiedQuaiId() const
 bool MainWindow::updateQuaiStatus(int quaiId, const QString& status)
 {
     if (quaiId <= 0) {
+        qWarning() << "updateQuaiStatus: ID quai invalide:" << quaiId;
         return false;
     }
 
     Connection* conn = Connection::getInstance();
     if (!conn->ensureOpen()) {
+        qWarning() << "updateQuaiStatus: DB connection failed";
         return false;
     }
 
@@ -4586,56 +4669,100 @@ bool MainWindow::updateQuaiStatus(int quaiId, const QString& status)
 
     QString dbStatus = status.trimmed();
     const QString statusKey = normalizeKey(dbStatus);
+    
     if (statusKey.startsWith(QStringLiteral("occu"))) {
         dbStatus = QStringLiteral("Occupe");
     } else if (statusKey.startsWith(QStringLiteral("libre"))) {
         dbStatus = QStringLiteral("Libre");
+    } else {
+        // Si le statut ne correspond pas, on le met tel quel
+        qInfo() << "updateQuaiStatus: Statut non reconnu, valeur brute utilisée:" << status;
     }
 
     query.addBindValue(dbStatus);
     query.addBindValue(quaiId);
 
     if (!query.exec()) {
-        qWarning() << "Echec update statut quai" << quaiId << query.lastError().text();
+        qWarning() << "updateQuaiStatus: UPDATE failed for quai" << quaiId 
+                   << "Error:" << query.lastError().text();
         return false;
     }
 
-    return true;
+    // Vérifier que la mise à jour a bien eu lieu
+    int rowsAffected = query.numRowsAffected();
+    qInfo() << "updateQuaiStatus: Quai" << quaiId << "mis à jour à" << dbStatus 
+            << "Rows affected:" << rowsAffected;
+
+    return rowsAffected > 0;
 }
 
 bool MainWindow::assignFreeQuaiAndNotifyArduino()
 {
+    qInfo() << "assignFreeQuaiAndNotifyArduino: Début";
+
+    // Si un quai est déjà attribué à ce bateau, renvoyer le même ID
+    // au lieu d'occuper un nouveau quai lors des retries ARRIVEE.
+    if (m_lastAssignedQuaiId > 0) {
+        const QByteArray existingMsg = QStringLiteral("QUAI:%1\n").arg(m_lastAssignedQuaiId).toUtf8();
+        qInfo() << "assignFreeQuaiAndNotifyArduino: Quai déjà attribué, renvoi" << existingMsg;
+        m_arduino.write_to_arduino(existingMsg);
+        return true;
+    }
+
+    // Si un quai est en attente de confirmation Arduino, on le renvoie.
+    if (m_pendingQuaiId > 0) {
+        const QByteArray pendingMsg = QStringLiteral("QUAI:%1\n").arg(m_pendingQuaiId).toUtf8();
+        qInfo() << "assignFreeQuaiAndNotifyArduino: Quai en attente ACK, renvoi" << pendingMsg;
+        m_arduino.write_to_arduino(pendingMsg);
+        return true;
+    }
+    
     const int freeQuaiId = findFreeQuaiId();
     if (freeQuaiId <= 0) {
+        qWarning() << "assignFreeQuaiAndNotifyArduino: Aucun quai libre trouvé!";
         m_arduino.write_to_arduino(QByteArray("COMPLET\n"));
+        m_pendingQuaiId = -1;
         return false;
     }
 
-    if (!updateQuaiStatus(freeQuaiId, QStringLiteral("Occupe"))) {
-        m_arduino.write_to_arduino(QByteArray("COMPLET\n"));
+    qInfo() << "assignFreeQuaiAndNotifyArduino: Quai" << freeQuaiId << "trouvé et libre";
+
+    m_pendingQuaiId = freeQuaiId;
+    const QByteArray msg = QStringLiteral("QUAI:%1\n").arg(freeQuaiId).toUtf8();
+    qInfo() << "assignFreeQuaiAndNotifyArduino: Envoi message Arduino:" << msg;
+    if (!m_arduino.write_to_arduino(msg)) {
+        qWarning() << "assignFreeQuaiAndNotifyArduino: Echec envoi vers Arduino";
+        m_pendingQuaiId = -1;
         return false;
     }
 
-    m_lastAssignedQuaiId = freeQuaiId;
-    m_arduino.write_to_arduino(QStringLiteral("QUAI:%1\n").arg(freeQuaiId).toUtf8());
-    refreshQuaiTable();
     return true;
 }
 
 void MainWindow::releaseAssignedQuai()
 {
-    int quaiToRelease = m_lastAssignedQuaiId;
-    if (quaiToRelease <= 0) {
-        quaiToRelease = findAnyOccupiedQuaiId();
-    }
+    qInfo() << "releaseAssignedQuai: Début";
+
+    const int quaiToRelease = m_lastAssignedQuaiId;
 
     if (quaiToRelease <= 0) {
+        if (m_pendingQuaiId > 0) {
+            qInfo() << "releaseAssignedQuai: Annulation du quai pending" << m_pendingQuaiId;
+            m_pendingQuaiId = -1;
+        }
+        qInfo() << "releaseAssignedQuai: Aucun quai assigné à libérer.";
         return;
     }
 
+    qInfo() << "releaseAssignedQuai: Libération du quai" << quaiToRelease;
+
     if (updateQuaiStatus(quaiToRelease, QStringLiteral("Libre"))) {
         m_lastAssignedQuaiId = -1;
+        m_pendingQuaiId = -1;
         refreshQuaiTable();
+        qInfo() << "releaseAssignedQuai: Quai" << quaiToRelease << "libéré avec succès";
+    } else {
+        qWarning() << "releaseAssignedQuai: Échec mise à jour statut du quai" << quaiToRelease;
     }
 }
 

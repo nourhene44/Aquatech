@@ -192,6 +192,7 @@ private:
     QLabel* m_curveLineLabelQuaiStats = nullptr;
     QTimer* m_statsTimer = nullptr;
     QTimer* m_weatherTimer = nullptr;
+    QTimer* m_arduinoReconnectTimer = nullptr;
     QNetworkAccessManager* m_weatherNetwork = nullptr;
     QString m_selectedCity = QStringLiteral("Bizerte");
 
@@ -253,6 +254,7 @@ private:
     void initializeArduinoLink();
     void onArduinoDataReceived();
     void processArduinoMessage(const QString& message);
+    void confirmQuaiAssignmentFromArduino(int quaiId);
     int findFreeQuaiId() const;
     int findAnyOccupiedQuaiId() const;
     bool updateQuaiStatus(int quaiId, const QString& status);
@@ -268,6 +270,7 @@ private:
 
     arduino m_arduino;
     QByteArray m_arduinoBuffer;
+    int m_pendingQuaiId = -1;
     int m_lastAssignedQuaiId = -1;
 };
 
