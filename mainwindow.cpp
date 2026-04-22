@@ -1,7 +1,12 @@
 ﻿#include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "arduinoserial.h"
+#include <QStatusBar>
+#include <QDialog>
+#include <QPlainTextEdit>
 #include <QAbstractButton>
 #include <QComboBox>
+#include <QFrame>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -12,32 +17,20 @@
 #include <QTableWidgetItem>
 #include <QDate>
 #include <QDateTime>
-#include <QEventLoop>
-#include <QEvent>
-#include <QRegion>
-#include <QDialog>
 #include <QMessageBox>
 #include <QRegularExpression>
-#include <QRegularExpressionValidator>
-#include <QVideoFrame>
-#include <QTime>
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSqlRecord>
 #include <QSqlError>
 #include <QSqlDriver>
-#include <QCameraDevice>
-#include <QMediaDevices>
-#include <QMediaCaptureSession>
-#include <QImageCapture>
 #include <QPainter>
 #include <QPainterPath>
 #include <QLinearGradient>
 #include <QPixmap>
-#include <QFile>
-#include <QBuffer>
-#include <QImage>
 #include <QPdfWriter>
+#include <QFile>
+#include <QFileInfo>
 #include <QFileDialog>
 #include <QPageSize>
 #include <QPageLayout>
@@ -47,11 +40,15 @@
 #include <QDoubleSpinBox>
 #include <QProgressBar>
 #include <QHeaderView>
+#include <QAction>
 #include <QIcon>
-#include <QSslSocket>
-#include <QSerialPort>
-#include <QCoreApplication>
-#include <QFileInfo>
+#include <QPalette>
+#include <QToolButton>
+#include <QFrame>
+#include <QSystemTrayIcon>
+#include <QEvent>
+#include <QStyle>
+#include <QStringList>
 #include "bateaauuu.h"
 #include "captures.h"
 #include <QNetworkAccessManager>
@@ -64,10 +61,12 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonParseError>
-#include <vector>
 #include <algorithm>
 #include <functional>
 #include <initializer_list>
+#include <QRandomGenerator>
+#include <QSslSocket>
+#include <QSettings>
 
 // Helpers g├⌐n├⌐riques pour la base de donn├⌐es et le texte UI
 
@@ -97,11 +96,226 @@ static int toIntOrZero(const QString& text)
     return 0;
 }
 
+static void applyRememberedLogin(Ui::MainWindow* ui)
+{
+    if (!ui) return;
+
+    QSettings settings(QStringLiteral("AquaTech"), QStringLiteral("AquaTech"));
+    const bool remember = settings.value(QStringLiteral("auth/rememberMe"), false).toBool();
+    const QString savedUser = settings.value(QStringLiteral("auth/rememberedUsername")).toString();
+    const QString savedPass = settings.value(QStringLiteral("auth/rememberedPassword")).toString();
+
+    if (ui->checkBoxb) {
+        ui->checkBoxb->setChecked(remember);
+    }
+
+    if (remember) {
+        if (ui->lineEdit_b) ui->lineEdit_b->setText(savedUser);
+        if (ui->lineEdit_2b) ui->lineEdit_2b->setText(savedPass);
+    } else {
+        if (ui->lineEdit_b) ui->lineEdit_b->clear();
+        if (ui->lineEdit_2b) ui->lineEdit_2b->clear();
+    }
+}
+
+static void storeRememberedLogin(const QString& username,
+                                 const QString& password,
+                                 bool remember)
+{
+    QSettings settings(QStringLiteral("AquaTech"), QStringLiteral("AquaTech"));
+    settings.setValue(QStringLiteral("auth/rememberMe"), remember);
+
+    if (remember) {
+        settings.setValue(QStringLiteral("auth/rememberedUsername"), username);
+        settings.setValue(QStringLiteral("auth/rememberedPassword"), password);
+    } else {
+        settings.remove(QStringLiteral("auth/rememberedUsername"));
+        settings.remove(QStringLiteral("auth/rememberedPassword"));
+    }
+
+    settings.sync();
+}
+
+static QIcon makeEyeIcon(const QColor& color, bool slashed, int sizePx)
+{
+    const int size = qMax(16, sizePx);
+    QPixmap px(size, size);
+    px.fill(Qt::transparent);
+
+    QPainter p(&px);
+    p.setRenderHint(QPainter::Antialiasing, true);
+
+    QPen pen(color);
+    const qreal penW = qMax<qreal>(1.6, (qreal)size * 0.08);
+    pen.setWidthF(penW);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    p.setPen(pen);
+    p.setBrush(Qt::NoBrush);
+
+    // Outer eye shape
+    const QPointF left(size * 0.10, size * 0.50);
+    const QPointF right(size * 0.90, size * 0.50);
+    const QPointF top(size * 0.50, size * 0.18);
+    const QPointF bottom(size * 0.50, size * 0.82);
+
+    QPainterPath eye;
+    eye.moveTo(left);
+    eye.quadTo(top, right);
+    eye.quadTo(bottom, left);
+    p.drawPath(eye);
+
+    // Iris + pupil
+    p.drawEllipse(QPointF(size * 0.50, size * 0.50), size * 0.20, size * 0.20);
+    p.setBrush(color);
+    p.drawEllipse(QPointF(size * 0.50, size * 0.50), size * 0.08, size * 0.08);
+    p.setBrush(Qt::NoBrush);
+
+    if (slashed) {
+        p.drawLine(QPointF(size * 0.16, size * 0.84), QPointF(size * 0.84, size * 0.16));
+    }
+
+    return QIcon(px);
+}
+
+class EyeToggleFilter final : public QObject
+{
+public:
+    EyeToggleFilter(QLineEdit* edit, QToolButton* button)
+        : QObject(edit)
+        , m_edit(edit)
+        , m_button(button)
+    {
+    }
+
+    void updateUi()
+    {
+        if (!m_edit || !m_button) return;
+
+        const int editH = (m_edit->height() > 0) ? m_edit->height() : 28;
+        // Slightly smaller than the field height (user requested "a little small")
+        const int btnSize = qMax(20, (editH * 2) / 3);
+        const int iconPx = qMax(16, btnSize - 6);
+
+        const QColor color = m_edit->palette().color(QPalette::Text);
+        const QIcon iconVisible = makeEyeIcon(color, false, iconPx);
+        const QIcon iconHidden = makeEyeIcon(color, true, iconPx);
+
+        m_button->setFixedSize(QSize(btnSize, btnSize));
+        m_button->setIconSize(QSize(iconPx, iconPx));
+        m_button->setIcon(m_button->isChecked() ? iconVisible : iconHidden);
+
+        const int frame = m_edit->style()->pixelMetric(QStyle::PM_DefaultFrameWidth, nullptr, m_edit);
+        const QRect r = m_edit->rect();
+        const int x = r.right() - frame - btnSize + 1;
+        const int y = (r.height() - btnSize) / 2;
+        m_button->move(x, y);
+        m_button->raise();
+
+        QMargins m = m_edit->textMargins();
+        const int right = btnSize + 6;
+        if (m.right() != right) {
+            m_edit->setTextMargins(m.left(), m.top(), right, m.bottom());
+        }
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (watched == m_edit) {
+            switch (event->type()) {
+            case QEvent::Show:
+            case QEvent::Resize:
+            case QEvent::StyleChange:
+            case QEvent::FontChange:
+            case QEvent::PaletteChange:
+                updateUi();
+                break;
+            default:
+                break;
+            }
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    QLineEdit* m_edit;
+    QToolButton* m_button;
+};
+
+static void installPasswordEyeToggle(QLineEdit* edit)
+{
+    if (!edit) return;
+
+    if (edit->property("_aquatech_eye_toggle").toBool()) return;
+    edit->setProperty("_aquatech_eye_toggle", true);
+
+    // Hidden by default
+    edit->setEchoMode(QLineEdit::Password);
+    edit->setInputMethodHints(Qt::ImhHiddenText | Qt::ImhNoPredictiveText | Qt::ImhNoAutoUppercase);
+
+    auto* button = new QToolButton(edit);
+    button->setCheckable(true);
+    button->setChecked(false);
+    button->setCursor(Qt::PointingHandCursor);
+    button->setAutoRaise(true);
+    button->setFocusPolicy(Qt::NoFocus);
+    button->setToolTip(QObject::tr("Afficher / Masquer"));
+    button->setStyleSheet(QStringLiteral("QToolButton{border:none;padding:0px;background:transparent;}"));
+
+    auto* filter = new EyeToggleFilter(edit, button);
+    edit->installEventFilter(filter);
+    filter->updateUi();
+
+    QObject::connect(button, &QToolButton::toggled, edit, [edit, filter](bool checked) {
+        const int cursorPos = edit->cursorPosition();
+        const int selStart = edit->selectionStart();
+        const int selLen = edit->selectedText().size();
+
+        edit->setEchoMode(checked ? QLineEdit::Normal : QLineEdit::Password);
+        if (filter) filter->updateUi();
+
+        edit->setCursorPosition(cursorPos);
+        if (selStart >= 0) {
+            edit->setSelection(selStart, selLen);
+        }
+    });
+}
+
+
+QString MainWindow::generateCode()
+{
+    const int code = QRandomGenerator::global()->bounded(100000, 1000000);
+    return QString::number(code);
+}
+
+QString MainWindow::fallbackAdminPassword() const
+{
+    QSettings settings(QStringLiteral("AquaTech"), QStringLiteral("AquaTech"));
+    const QString pass = settings.value(QStringLiteral("auth/adminPassword")).toString();
+    return pass.isEmpty() ? QStringLiteral("admin") : pass;
+}
+
+void MainWindow::setFallbackAdminPassword(const QString& newPassword)
+{
+    QSettings settings(QStringLiteral("AquaTech"), QStringLiteral("AquaTech"));
+    settings.setValue(QStringLiteral("auth/adminPassword"), newPassword);
+    settings.sync();
+}
+
+void MainWindow::clearPasswordResetState()
+{
+    m_passwordResetCode.clear();
+    m_passwordResetEmail.clear();
+    m_passwordResetVerified = false;
+}
+
 static bool parseQuotaKg(const QString& text, double* outKg)
 {
     if (outKg) *outKg = 0.0;
     QString t = text;
     t = t.trimmed();
+
     if (t.isEmpty()) return false;
 
     t.replace(QLatin1Char(','), QLatin1Char('.'));
@@ -121,12 +335,6 @@ static bool parseQuotaKg(const QString& text, double* outKg)
     return true;
 }
 
-static bool isLettersOnlyName(const QString& text)
-{
-    static const QRegularExpression rx(QStringLiteral("^[\\p{L}]+$"));
-    return rx.match(text.trimmed()).hasMatch();
-}
-
 static int bateauIdFromText(const QString& text)
 {
     return Pecheurs::bateauIdFromText(text);
@@ -138,442 +346,133 @@ static QLineEdit* pecheurBateauLineEdit(Ui::MainWindow* ui)
     return ui->stackedWidget ? ui->stackedWidget->findChild<QLineEdit*>(QStringLiteral("lineEdit_2p_2")) : nullptr;
 }
 
+
+bool MainWindow::sendEmail(const QString& to,
+                           const QString& code,
+                           QString* errorOut)
+{
+    const QString userEnv = QString::fromUtf8(qgetenv("AQUATECH_SMTP_USER"));
+    const QString passEnv = QString::fromUtf8(qgetenv("AQUATECH_SMTP_PASS"));
+
+    const QString user = userEnv.isEmpty() ? QStringLiteral("personinkonnu@gmail.com") : userEnv;
+    QString pass = passEnv.isEmpty() ? QStringLiteral("ogtj yhmr lnnz uasi") : passEnv;
+    pass.remove(QLatin1Char(' '));
+
+    if (to.trimmed().isEmpty()) {
+        if (errorOut) *errorOut = QStringLiteral("Adresse email destinataire vide.");
+        return false;
+    }
+
+    QSslSocket socket;
+    socket.connectToHostEncrypted(QStringLiteral("smtp.gmail.com"), 465);
+
+    if (!socket.waitForEncrypted(10000)) {
+        if (errorOut) *errorOut = socket.errorString();
+        return false;
+    }
+
+    auto readResponse = [&]() -> QByteArray {
+        if (!socket.waitForReadyRead(10000)) {
+            return {};
+        }
+        QByteArray data = socket.readAll();
+        while (socket.waitForReadyRead(150)) {
+            data += socket.readAll();
+        }
+        return data;
+    };
+
+    auto sendCommand = [&](const QByteArray& cmd) -> QByteArray {
+        socket.write(cmd + "\r\n");
+        if (!socket.waitForBytesWritten(10000)) {
+            return {};
+        }
+        return readResponse();
+    };
+
+    const auto startsWithCode = [](const QByteArray& resp, const QByteArray& code3) -> bool {
+        if (resp.size() < 3) return false;
+        return resp.left(3) == code3;
+    };
+
+    QByteArray resp = readResponse(); // 220 greeting
+    if (resp.isEmpty()) {
+        if (errorOut) *errorOut = QStringLiteral("Pas de r\u00e9ponse du serveur SMTP.");
+        return false;
+    }
+
+    resp = sendCommand("EHLO localhost");
+    if (!startsWithCode(resp, "250")) {
+        if (errorOut) *errorOut = QStringLiteral("SMTP EHLO \u00e9chou\u00e9: %1").arg(QString::fromUtf8(resp));
+        return false;
+    }
+
+    resp = sendCommand("AUTH LOGIN");
+    if (!startsWithCode(resp, "334")) {
+        if (errorOut) *errorOut = QStringLiteral("SMTP AUTH LOGIN \u00e9chou\u00e9: %1").arg(QString::fromUtf8(resp));
+        return false;
+    }
+
+    resp = sendCommand(user.toUtf8().toBase64());
+    if (!startsWithCode(resp, "334")) {
+        if (errorOut) *errorOut = QStringLiteral("SMTP USERNAME \u00e9chou\u00e9: %1").arg(QString::fromUtf8(resp));
+        return false;
+    }
+
+    resp = sendCommand(pass.toUtf8().toBase64());
+    if (!startsWithCode(resp, "235")) {
+        if (errorOut) *errorOut = QStringLiteral("SMTP PASSWORD \u00e9chou\u00e9: %1").arg(QString::fromUtf8(resp));
+        return false;
+    }
+
+    resp = sendCommand(QByteArray("MAIL FROM:<") + user.toUtf8() + ">");
+    if (!startsWithCode(resp, "250")) {
+        if (errorOut) *errorOut = QStringLiteral("SMTP MAIL FROM \u00e9chou\u00e9: %1").arg(QString::fromUtf8(resp));
+        return false;
+    }
+
+    resp = sendCommand(QByteArray("RCPT TO:<") + to.toUtf8() + ">");
+    if (!startsWithCode(resp, "250")) {
+        if (errorOut) *errorOut = QStringLiteral("SMTP RCPT TO \u00e9chou\u00e9: %1").arg(QString::fromUtf8(resp));
+        return false;
+    }
+
+    resp = sendCommand("DATA");
+    if (!startsWithCode(resp, "354")) {
+        if (errorOut) *errorOut = QStringLiteral("SMTP DATA \u00e9chou\u00e9: %1").arg(QString::fromUtf8(resp));
+        return false;
+    }
+
+    QByteArray message;
+    message += "From: AquaTech <" + user.toUtf8() + ">\r\n";
+    message += "To: <" + to.toUtf8() + ">\r\n";
+    message += "Subject: Code de verification\r\n";
+    message += "\r\n";
+    message += "Votre code : " + code.toUtf8() + "\r\n";
+    message += "\r\n";
+    message += ".\r\n";
+
+    socket.write(message);
+    if (!socket.waitForBytesWritten(10000)) {
+        if (errorOut) *errorOut = QStringLiteral("SMTP: envoi du message \u00e9chou\u00e9.");
+        return false;
+    }
+
+    resp = readResponse();
+    if (!startsWithCode(resp, "250")) {
+        if (errorOut) *errorOut = QStringLiteral("SMTP fin de DATA \u00e9chou\u00e9e: %1").arg(QString::fromUtf8(resp));
+        return false;
+    }
+
+    sendCommand("QUIT");
+    return true;
+}
+
+
 static QComboBox* pecheurBateauCombo(Ui::MainWindow* ui)
 {
     if (!ui) return nullptr;
     return ui->comboBox_9;
-}
-
-static QDateTime nullPecheurAffectationDateTime()
-{
-    return QDateTime(QDate(1900, 1, 1), QTime(0, 0));
-}
-
-static bool isPecheurAffectationNull(const QDateTime& dateTime)
-{
-    return !dateTime.isValid() || dateTime <= nullPecheurAffectationDateTime();
-}
-
-static QString pecheurFaceDisplayName(Ui::MainWindow* ui)
-{
-    if (!ui) return QString();
-    const QString nom = ui->lineEdit_2p ? ui->lineEdit_2p->text().trimmed() : QString();
-    const QString prenom = ui->lineEdit_3p ? ui->lineEdit_3p->text().trimmed() : QString();
-    return QStringLiteral("%1 %2").arg(nom, prenom).trimmed();
-}
-
-static QString pecheurFaceRole(Ui::MainWindow* ui)
-{
-    return ui && ui->comboBoxp ? ui->comboBoxp->currentText().trimmed() : QString();
-}
-
-static QString pecheurFaceOpenStatusText()
-{
-    return QStringLiteral("Positionnez votre visage.");
-}
-
-static void setPecheurFaceStatus(Ui::MainWindow* ui, const QString& text)
-{
-    if (!ui) return;
-    if (ui->labelFaceStatusp) {
-        ui->labelFaceStatusp->setAlignment(Qt::AlignCenter);
-        ui->labelFaceStatusp->setWordWrap(true);
-        ui->labelFaceStatusp->setText(text);
-    }
-    // Status label visible sur le frame FaceID principal.
-    if (ui->label_8p) {
-        ui->label_8p->setAlignment(Qt::AlignCenter);
-        ui->label_8p->setWordWrap(true);
-        ui->label_8p->setText(text);
-    }
-}
-
-static QRect pecheurFacePreviewRect(QWidget* container)
-{
-    if (!container) return QRect();
-
-    const int margin = 8;
-    const int availableWidth = qMax(0, container->width() - 2 * margin);
-    const int availableHeight = qMax(0, container->height() - 2 * margin);
-    const int diameter = qMax(40, qMin(availableWidth, availableHeight));
-    const int x = (container->width() - diameter) / 2;
-    const int y = (container->height() - diameter) / 2;
-    return QRect(x, y, diameter, diameter);
-}
-
-static QPixmap buildCircularFacePreviewPixmap(const QImage& image, int diameter)
-{
-    if (image.isNull() || diameter <= 0) return QPixmap();
-
-    const qreal borderWidth = 3.0;
-    const qreal imageInset = borderWidth + 1.0;
-
-    QImage frame = image.convertToFormat(QImage::Format_ARGB32_Premultiplied)
-                        .scaled(diameter, diameter, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-
-    const int cropX = qMax(0, (frame.width() - diameter) / 2);
-    const int cropY = qMax(0, (frame.height() - diameter) / 2);
-    const QRect cropRect(cropX, cropY, qMin(diameter, frame.width()), qMin(diameter, frame.height()));
-
-    QPixmap pixmap(diameter, diameter);
-    pixmap.fill(Qt::transparent);
-
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-    painter.setClipPath(QPainterPath());
-    QPainterPath clipPath;
-    clipPath.addEllipse(imageInset,
-                        imageInset,
-                        diameter - 2.0 * imageInset,
-                        diameter - 2.0 * imageInset);
-    painter.setClipPath(clipPath);
-    painter.drawImage(QRectF(imageInset,
-                             imageInset,
-                             diameter - 2.0 * imageInset,
-                             diameter - 2.0 * imageInset),
-                      frame,
-                      cropRect);
-    painter.end();
-
-    return pixmap;
-}
-
-static void applyPecheurFacePreviewShape(QLabel* previewLabel)
-{
-    if (!previewLabel) return;
-
-    previewLabel->setStyleSheet(QStringLiteral(
-        "QLabel {"
-        "background: transparent;"
-        "border: 3px dashed #2EF1A6;"
-        "border-radius: 999px;"
-        "}"
-    ));
-}
-
-static void showPecheurPhotoPreviewDialog(QWidget* parent, const QPixmap& source)
-{
-    if (source.isNull()) return;
-
-    auto* dialog = new QDialog(parent);
-    dialog->setAttribute(Qt::WA_DeleteOnClose, true);
-    dialog->setWindowTitle(QStringLiteral("Photo du pêcheur"));
-    dialog->setModal(true);
-    dialog->resize(760, 760);
-
-    auto* layout = new QVBoxLayout(dialog);
-    layout->setContentsMargins(12, 12, 12, 12);
-
-    auto* imageLabel = new QLabel(dialog);
-    imageLabel->setAlignment(Qt::AlignCenter);
-    imageLabel->setStyleSheet(QStringLiteral("background: #0f1720; border: 1px solid #2d3f55; border-radius: 10px;"));
-
-    const QSize targetSize = dialog->size() - QSize(32, 32);
-    imageLabel->setPixmap(source.scaled(targetSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-
-    layout->addWidget(imageLabel);
-    dialog->show();
-}
-
-static QByteArray photoBlobFromVariant(const QVariant& value)
-{
-    if (!value.isValid() || value.isNull()) {
-        return QByteArray();
-    }
-
-    const QByteArray raw = value.toByteArray();
-    if (raw.isEmpty()) {
-        return QByteArray();
-    }
-
-    auto looksLikeBase64 = [](const QByteArray& data) {
-        const QByteArray trimmed = data.trimmed();
-        if (trimmed.isEmpty() || (trimmed.size() % 4) != 0) {
-            return false;
-        }
-
-        for (const char ch : trimmed) {
-            const bool okChar = (ch >= 'A' && ch <= 'Z')
-                || (ch >= 'a' && ch <= 'z')
-                || (ch >= '0' && ch <= '9')
-                || ch == '+' || ch == '/' || ch == '=';
-            if (!okChar) {
-                return false;
-            }
-        }
-
-        return true;
-    };
-
-    if (looksLikeBase64(raw)) {
-        const QByteArray decoded = QByteArray::fromBase64(raw, QByteArray::AbortOnBase64DecodingErrors);
-        if (!decoded.isEmpty()) {
-            return decoded;
-        }
-    }
-
-    return raw;
-}
-
-static constexpr qint64 kFaceLiveFrameTimeoutMs = 900;
-
-static bool frameHasLiveCameraContent(const QImage& image)
-{
-    if (image.isNull()) return false;
-
-    const QImage rgb = image.convertToFormat(QImage::Format_RGB888);
-    if (rgb.isNull() || rgb.width() <= 0 || rgb.height() <= 0) return false;
-
-    const int stepX = qMax(1, rgb.width() / 64);
-    const int stepY = qMax(1, rgb.height() / 64);
-
-    qint64 samples = 0;
-    qint64 darkCount = 0;
-    qint64 brightCount = 0;
-    qint64 centerBrightCount = 0;
-    qint64 centerSamples = 0;
-    qint64 outerBrightCount = 0;
-    qint64 outerSamples = 0;
-    qint64 sum = 0;
-    qint64 sumSq = 0;
-
-    const QRect centerRect(rgb.width() / 4, rgb.height() / 4, rgb.width() / 2, rgb.height() / 2);
-
-    for (int y = 0; y < rgb.height(); y += stepY) {
-        const uchar* row = rgb.constScanLine(y);
-        for (int x = 0; x < rgb.width(); x += stepX) {
-            const int idx = x * 3;
-            const int r = row[idx + 0];
-            const int g = row[idx + 1];
-            const int b = row[idx + 2];
-            const int lum = (r + g + b) / 3;
-
-            ++samples;
-            sum += lum;
-            sumSq += static_cast<qint64>(lum) * static_cast<qint64>(lum);
-            if (lum < 20) ++darkCount;
-            if (lum > 225) {
-                ++brightCount;
-                if (centerRect.contains(x, y)) ++centerBrightCount;
-                else ++outerBrightCount;
-            }
-
-            if (centerRect.contains(x, y)) ++centerSamples;
-            else ++outerSamples;
-        }
-    }
-
-    if (samples <= 0) return false;
-
-    const double mean = static_cast<double>(sum) / static_cast<double>(samples);
-    const double variance = (static_cast<double>(sumSq) / static_cast<double>(samples)) - (mean * mean);
-    const double darkRatio = static_cast<double>(darkCount) / static_cast<double>(samples);
-    const double brightRatio = static_cast<double>(brightCount) / static_cast<double>(samples);
-    const double centerBrightRatio = centerSamples > 0
-        ? static_cast<double>(centerBrightCount) / static_cast<double>(centerSamples)
-        : 0.0;
-    const double outerBrightRatio = outerSamples > 0
-        ? static_cast<double>(outerBrightCount) / static_cast<double>(outerSamples)
-        : 0.0;
-
-    const bool looksLikeCameraOffPlaceholder =
-        darkRatio > 0.78
-        && brightRatio > 0.002
-        && brightRatio < 0.18
-        && centerBrightRatio > (outerBrightRatio * 2.0 + 0.01);
-
-    if (looksLikeCameraOffPlaceholder) {
-        return false;
-    }
-
-    return mean > 10.0 && variance > 12.0;
-}
-
-static QString gmailAppPassword()
-{
-    return QStringLiteral("offsujmzgyrigukg");
-}
-
-static bool smtpReadResponse(QSslSocket& socket, int expectedCode, QString* errorOut = nullptr)
-{
-    QByteArray response;
-    while (socket.waitForReadyRead(10000)) {
-        response += socket.readAll();
-        const QList<QByteArray> lines = response.split('\n');
-        bool hasFinalLine = false;
-        QByteArray lastLine;
-        for (const QByteArray& line : lines) {
-            if (line.size() >= 4 && line[3] == ' ') {
-                hasFinalLine = true;
-                lastLine = line;
-            }
-        }
-        if (!hasFinalLine) {
-            continue;
-        }
-
-        const QByteArray trimmed = lastLine.trimmed();
-        bool ok = false;
-        const int code = QString::fromLatin1(trimmed.left(3)).toInt(&ok);
-        if (ok && code == expectedCode) {
-            return true;
-        }
-
-        if (errorOut) {
-            *errorOut = QString::fromLatin1(response);
-        }
-        return false;
-    }
-
-    if (errorOut) {
-        *errorOut = socket.errorString();
-    }
-    return false;
-}
-
-static bool smtpSendCommand(QSslSocket& socket, const QByteArray& command, int expectedCode, QString* errorOut = nullptr)
-{
-    if (socket.write(command) == -1 || !socket.waitForBytesWritten(10000)) {
-        if (errorOut) {
-            *errorOut = socket.errorString();
-        }
-        return false;
-    }
-    return smtpReadResponse(socket, expectedCode, errorOut);
-}
-
-static bool sendMissionMailSmtp(const QString& recipient,
-                                const QString& nom,
-                                const QString& prenom,
-                                const QDateTime& dateAffectation,
-                                int idBateau,
-                                QString* errorOut = nullptr)
-{
-    if (recipient.trimmed().isEmpty()) {
-        if (errorOut) {
-            *errorOut = QStringLiteral("Adresse e-mail vide.");
-        }
-        return false;
-    }
-
-    const QString sender = QStringLiteral("aquatech.2626@gmail.com");
-    const QString password = gmailAppPassword();
-    const QString subject = QStringLiteral("Affectation a une mission");
-    const QString body = QStringLiteral(
-        "Bonjour %1 %2,\n\n"
-        "Nous vous informons que vous avez été affecté(e) à une mission.\n\n"
-        "Date d’affectation : %3 à %4h\n"
-        "ID du bateau : %5\n\n"
-        "Nous vous remercions de bien vouloir prendre les dispositions nécessaires.\n\n"
-        "Cordialement, ")
-            .arg(nom.trimmed(),
-                 prenom.trimmed(),
-                 dateAffectation.date().toString(QStringLiteral("dd/MM/yyyy")),
-                 dateAffectation.time().toString(QStringLiteral("HH:mm")),
-                 QString::number(idBateau));
-
-    QByteArray message;
-    message += QByteArray("From: ") + sender.toUtf8() + QByteArray("\r\n");
-    message += QByteArray("To: ") + recipient.trimmed().toUtf8() + QByteArray("\r\n");
-    message += QByteArray("Subject: ") + subject.toUtf8() + QByteArray("\r\n");
-    message += QByteArray("MIME-Version: 1.0\r\n");
-    message += QByteArray("Content-Type: text/plain; charset=UTF-8\r\n");
-    message += QByteArray("Content-Transfer-Encoding: 8bit\r\n");
-    message += QByteArray("\r\n");
-    message += body.toUtf8();
-    message += QByteArray("\r\n");
-
-    QSslSocket socket;
-    socket.connectToHost(QStringLiteral("smtp.gmail.com"), 587);
-    if (!socket.waitForConnected(10000)) {
-        if (errorOut) *errorOut = socket.errorString();
-        return false;
-    }
-
-    QString smtpError;
-    if (!smtpReadResponse(socket, 220, &smtpError)) {
-        if (errorOut) *errorOut = QStringLiteral("Serveur SMTP inattendu: %1").arg(smtpError);
-        socket.disconnectFromHost();
-        return false;
-    }
-
-    if (!smtpSendCommand(socket, "EHLO localhost\r\n", 250, &smtpError)) {
-        if (errorOut) *errorOut = QStringLiteral("EHLO echoue: %1").arg(smtpError);
-        socket.disconnectFromHost();
-        return false;
-    }
-
-    if (!smtpSendCommand(socket, "STARTTLS\r\n", 220, &smtpError)) {
-        if (errorOut) *errorOut = QStringLiteral("STARTTLS echoue: %1").arg(smtpError);
-        socket.disconnectFromHost();
-        return false;
-    }
-
-    socket.startClientEncryption();
-    if (!socket.waitForEncrypted(10000)) {
-        if (errorOut) *errorOut = QStringLiteral("Echec TLS: %1").arg(socket.errorString());
-        socket.disconnectFromHost();
-        return false;
-    }
-
-    if (!smtpSendCommand(socket, "EHLO localhost\r\n", 250, &smtpError)) {
-        if (errorOut) *errorOut = QStringLiteral("EHLO TLS echoue: %1").arg(smtpError);
-        socket.disconnectFromHost();
-        return false;
-    }
-
-    if (!smtpSendCommand(socket, "AUTH LOGIN\r\n", 334, &smtpError)) {
-        if (errorOut) *errorOut = QStringLiteral("Authentification echouee: %1").arg(smtpError);
-        socket.disconnectFromHost();
-        return false;
-    }
-    if (!smtpSendCommand(socket, sender.toUtf8().toBase64() + "\r\n", 334, &smtpError)) {
-        if (errorOut) *errorOut = QStringLiteral("Login SMTP echoue: %1").arg(smtpError);
-        socket.disconnectFromHost();
-        return false;
-    }
-    if (!smtpSendCommand(socket, password.toUtf8().toBase64() + "\r\n", 235, &smtpError)) {
-        if (errorOut) *errorOut = QStringLiteral("Mot de passe SMTP echoue: %1").arg(smtpError);
-        socket.disconnectFromHost();
-        return false;
-    }
-
-    if (!smtpSendCommand(socket, QByteArray("MAIL FROM:<") + sender.toUtf8() + ">\r\n", 250, &smtpError)) {
-        if (errorOut) *errorOut = QStringLiteral("MAIL FROM echoue: %1").arg(smtpError);
-        socket.disconnectFromHost();
-        return false;
-    }
-    if (!smtpSendCommand(socket, QByteArray("RCPT TO:<") + recipient.trimmed().toUtf8() + ">\r\n", 250, &smtpError)) {
-        if (errorOut) *errorOut = QStringLiteral("RCPT TO echoue: %1").arg(smtpError);
-        socket.disconnectFromHost();
-        return false;
-    }
-    if (!smtpSendCommand(socket, "DATA\r\n", 354, &smtpError)) {
-        if (errorOut) *errorOut = QStringLiteral("DATA echoue: %1").arg(smtpError);
-        socket.disconnectFromHost();
-        return false;
-    }
-
-    if (socket.write(message) == -1 || !socket.waitForBytesWritten(10000)) {
-        if (errorOut) *errorOut = socket.errorString();
-        socket.disconnectFromHost();
-        return false;
-    }
-    if (socket.write(".\r\n") == -1 || !socket.waitForBytesWritten(10000)) {
-        if (errorOut) *errorOut = socket.errorString();
-        socket.disconnectFromHost();
-        return false;
-    }
-    if (!smtpReadResponse(socket, 250, &smtpError)) {
-        if (errorOut) *errorOut = QStringLiteral("Envoi du message echoue: %1").arg(smtpError);
-        socket.disconnectFromHost();
-        return false;
-    }
-
-    smtpSendCommand(socket, "QUIT\r\n", 221, nullptr);
-    socket.disconnectFromHost();
-    return true;
 }
 
 static void loadPecheurBateauChoices(Ui::MainWindow* ui)
@@ -592,9 +491,6 @@ static void loadPecheurBateauChoices(Ui::MainWindow* ui)
     if (query.exec(QStringLiteral("SELECT ID_BATEAU, NOM FROM BATEAUX ORDER BY ID_BATEAU"))) {
         while (query.next()) {
             const int id = query.value(0).toInt();
-            if (id == 0) {
-                continue;
-            }
             const QString nom = query.value(1).toString().trimmed();
             const QString label = nom.isEmpty()
                 ? QString::number(id)
@@ -677,9 +573,9 @@ static QPixmap buildDisponibiliteCirclePixmap(int disponible, int bientot, int i
     }
 
     QVector<QPair<QColor, int>> slices = {
-        { QColor(QStringLiteral("#27ae60")), sDisponible },
-        { QColor(QStringLiteral("#3498db")), sBientot },
-        { QColor(QStringLiteral("#e74c3c")), sIndisponible },
+        { QColor(QStringLiteral("#00C853")), sDisponible },
+        { QColor(QStringLiteral("#007BFF")), sBientot },
+        { QColor(QStringLiteral("#FF1744")), sIndisponible },
         { QColor(QStringLiteral("#9b59b6")), sEnConge }
     };
 
@@ -722,6 +618,16 @@ static QString canonicalEmployeRole(const QString& raw)
     if (key.contains(QStringLiteral("ouvri"))) return QStringLiteral("Ouvrier");
     if (key.contains(QStringLiteral("pech"))) return QStringLiteral("Pecheur");
     return raw.trimmed();
+}
+
+static int employeRoleCodeForIdUi(const QString& roleRaw)
+{
+    const QString role = canonicalEmployeRole(roleRaw);
+    if (role == QStringLiteral("Gardien")) return 3;
+    if (role == QStringLiteral("Technicien")) return 4;
+    if (role == QStringLiteral("Responsable")) return 5;
+    if (role == QStringLiteral("Ouvrier")) return 6;
+    return 0;
 }
 
 static QPixmap buildEmployeRoleCirclePixmap(int gardien,
@@ -1386,66 +1292,144 @@ static bool authenticateLoginFromDb(QSqlDatabase db,
     return query.value(0).toInt() > 0;
 }
 
-static bool isValidEmailAddress(const QString& email)
+bool MainWindow::resetAdminPassword(const QString& adminEmail,
+                                   const QString& newPassword,
+                                   QString* errorOut)
 {
-    static const QRegularExpression rx(QStringLiteral("^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$"),
-                                       QRegularExpression::CaseInsensitiveOption);
-    return rx.match(email.trimmed()).hasMatch();
-}
-
-static bool pecheurEmailExistsInDb(const QString& email, QString* errorOut)
-{
-    const QString mail = email.trimmed();
-    if (mail.isEmpty()) {
-        if (errorOut) *errorOut = QStringLiteral("Adresse e-mail vide.");
+    const QString trimmedPass = newPassword;
+    if (trimmedPass.trimmed().isEmpty()) {
+        if (errorOut) {
+            *errorOut = QStringLiteral("Nouveau mot de passe vide.");
+        }
         return false;
     }
 
     Connection* conn = Connection::getInstance();
     if (!conn || !conn->ensureOpen()) {
-        if (errorOut) *errorOut = QStringLiteral("Connexion a la base impossible.");
+        if (errorOut) {
+            *errorOut = QStringLiteral("Connexion DB \u00e9chou\u00e9e.");
+        }
         return false;
     }
 
     QSqlDatabase db = conn->getDatabase();
-    const QString tableName = resolveTableName(db, {
-        QStringLiteral("PECHEUR"),
-        QStringLiteral("PECHEURS"),
-        QStringLiteral("TPECHEUR"),
-        QStringLiteral("T_PECHEUR")
+    const QString usersTable = resolveTableName(db, {
+        QStringLiteral("UTILISATEUR"), QStringLiteral("UTILISATEURS"),
+        QStringLiteral("USER"), QStringLiteral("USERS"),
+        QStringLiteral("COMPTE"), QStringLiteral("COMPTES"),
+        QStringLiteral("LOGIN")
     });
-    if (tableName.isEmpty()) {
-        if (errorOut) *errorOut = QStringLiteral("Table des pecheurs introuvable.");
+
+    // Si la table n'existe pas, on bascule sur un fallback local.
+    if (usersTable.isEmpty()) {
+        setFallbackAdminPassword(trimmedPass);
+        return true;
+    }
+
+    const QStringList cols = getColumnNames(db, usersTable);
+    if (cols.isEmpty()) {
+        if (errorOut) {
+            *errorOut = QStringLiteral("Colonnes utilisateurs introuvables.");
+        }
         return false;
     }
 
-    const QStringList cols = getColumnNames(db, tableName);
-    const QString emailCol = matchColumnBySynonyms(cols, {
-        QStringLiteral("email"),
-        QStringLiteral("mail"),
-        QStringLiteral("adressemail"),
-        QStringLiteral("adresse_email")
+    QString passCol = matchColumnBySynonyms(cols, {
+        QStringLiteral("password"), QStringLiteral("motdepasse"), QStringLiteral("mdp"),
+        QStringLiteral("pass")
     });
-    if (emailCol.isEmpty()) {
-        if (errorOut) *errorOut = QStringLiteral("Colonne e-mail introuvable.");
+    if (passCol.isEmpty()) {
+        // Schma non compatible: on bascule sur un mot de passe admin stock localement.
+        setFallbackAdminPassword(trimmedPass);
+        return true;
+    }
+
+    const QString usernameCol = matchColumnBySynonyms(cols, {
+        QStringLiteral("username"), QStringLiteral("user"), QStringLiteral("login"),
+        QStringLiteral("nomutilisateur"), QStringLiteral("nom")
+    });
+    const QString emailCol = matchColumnBySynonyms(cols, {
+        QStringLiteral("email"), QStringLiteral("mail"), QStringLiteral("adresseemail"), QStringLiteral("adresse_mail")
+    });
+
+    const QString trimmedEmail = adminEmail.trimmed();
+    QStringList whereParts;
+    QList<QVariant> whereBinds;
+
+    if (!usernameCol.isEmpty()) {
+        whereParts << QStringLiteral("%1 = ?").arg(usernameCol);
+        whereBinds << QStringLiteral("admin");
+    }
+    if (!trimmedEmail.isEmpty() && !emailCol.isEmpty()) {
+        whereParts << QStringLiteral("%1 = ?").arg(emailCol);
+        whereBinds << trimmedEmail;
+    }
+
+    // En dernier recours, on reprend la m\u00eame logique "userCol" que l'auth.
+    if (whereParts.isEmpty()) {
+        const QString userCol = matchColumnBySynonyms(cols, {
+            QStringLiteral("username"), QStringLiteral("user"), QStringLiteral("login"),
+            QStringLiteral("email"), QStringLiteral("nomutilisateur"), QStringLiteral("nom")
+        });
+        if (!userCol.isEmpty()) {
+            whereParts << QStringLiteral("%1 = ?").arg(userCol);
+            whereBinds << QStringLiteral("admin");
+        }
+    }
+
+    if (whereParts.isEmpty()) {
+        if (errorOut) {
+            *errorOut = QStringLiteral("Impossible d'identifier la colonne utilisateur/email.");
+        }
         return false;
     }
 
     QSqlQuery query(db);
-    query.prepare(QStringLiteral("SELECT COUNT(*) FROM %1 WHERE UPPER(TRIM(%2)) = UPPER(TRIM(?))")
-                      .arg(tableName, emailCol));
-    query.addBindValue(mail);
+    query.prepare(QStringLiteral("UPDATE %1 SET %2 = ? WHERE %3")
+                      .arg(usersTable, passCol, whereParts.join(QStringLiteral(" AND "))));
+    query.addBindValue(trimmedPass);
+    for (const QVariant& v : std::as_const(whereBinds)) {
+        query.addBindValue(v);
+    }
 
-    if (!query.exec() || !query.next()) {
-        if (errorOut) *errorOut = query.lastError().text();
+    if (!query.exec()) {
+        if (errorOut) {
+            *errorOut = query.lastError().text();
+        }
         return false;
     }
 
-    const bool exists = query.value(0).toInt() > 0;
-    if (!exists && errorOut) {
-        *errorOut = QStringLiteral("Adresse e-mail introuvable (mail non trouve).\nVerifiez l'email du pecheur.");
+    if (query.numRowsAffected() <= 0) {
+        // Tentative email-only si disponible.
+        if (!trimmedEmail.isEmpty() && !emailCol.isEmpty()) {
+            QSqlQuery q2(db);
+            q2.prepare(QStringLiteral("UPDATE %1 SET %2 = ? WHERE %3 = ?")
+                           .arg(usersTable, passCol, emailCol));
+            q2.addBindValue(trimmedPass);
+            q2.addBindValue(trimmedEmail);
+            if (!q2.exec()) {
+                if (errorOut) {
+                    *errorOut = q2.lastError().text();
+                }
+                return false;
+            }
+            if (q2.numRowsAffected() <= 0) {
+                if (errorOut) {
+                    *errorOut = QStringLiteral("Compte admin introuvable dans la base.");
+                }
+                return false;
+            }
+        } else {
+            if (errorOut) {
+                *errorOut = QStringLiteral("Compte admin introuvable dans la base.");
+            }
+            return false;
+        }
     }
-    return exists;
+
+    // Maintient un fallback coh\u00e9rent si jamais la table users est absente plus tard.
+    setFallbackAdminPassword(trimmedPass);
+    return true;
 }
 
 // Ajoute une colonne d'actions avec des boutons styl├⌐s (sans logique m├⌐tier sp├⌐cifique)
@@ -1718,111 +1702,6 @@ void MainWindow::adjustTopClientsStatsColumns()
     table->setColumnWidth(4, 160);  // valeur statistique
 }
 
-static void updateTopClientsStats(Ui::MainWindow* ui)
-{
-    if (!ui || !ui->tableTopClients_4) return;
-
-    QTableWidget* table = ui->tableTopClients_4;
-    table->clearContents();
-    table->setRowCount(0);
-    table->setColumnCount(5);
-    table->setHorizontalHeaderItem(0, new QTableWidgetItem(QStringLiteral("ID")));
-    table->setHorizontalHeaderItem(1, new QTableWidgetItem(QStringLiteral("Nom")));
-    table->setHorizontalHeaderItem(2, new QTableWidgetItem(QStringLiteral("Prenom")));
-    table->setHorizontalHeaderItem(3, new QTableWidgetItem(QStringLiteral("Telephone")));
-    table->setHorizontalHeaderItem(4, new QTableWidgetItem(QStringLiteral("Fidelite")));
-
-    Connection* conn = Connection::getInstance();
-    if (!conn || !conn->ensureOpen()) {
-        return;
-    }
-
-    QSqlDatabase db = conn->getDatabase();
-    const QString tableName = resolveTableName(db, {
-        QStringLiteral("CLIENT"),
-        QStringLiteral("CLIENTS"),
-        QStringLiteral("TCLIENT"),
-        QStringLiteral("T_CLIENT")
-    });
-    if (tableName.isEmpty()) {
-        return;
-    }
-
-    const QStringList dbCols = getColumnNames(db, tableName);
-    if (dbCols.isEmpty()) {
-        return;
-    }
-
-    const QString idCol = matchColumnBySynonyms(dbCols, {
-        QStringLiteral("id"), QStringLiteral("idclient"), QStringLiteral("clientid"), QStringLiteral("id_client")
-    });
-    const QString nomCol = matchColumnBySynonyms(dbCols, {
-        QStringLiteral("nom"), QStringLiteral("nomclient"), QStringLiteral("name"), QStringLiteral("lastname"), QStringLiteral("nom_client")
-    });
-    const QString prenomCol = matchColumnBySynonyms(dbCols, {
-        QStringLiteral("prenom"), QStringLiteral("prenomclient"), QStringLiteral("firstname"), QStringLiteral("prenom_client")
-    });
-    const QString telCol = matchColumnBySynonyms(dbCols, {
-        QStringLiteral("telephone"), QStringLiteral("tel"), QStringLiteral("phone")
-    });
-    const QString profilCol = matchColumnBySynonyms(dbCols, {
-        QStringLiteral("profil"), QStringLiteral("profilclient"), QStringLiteral("profile"), QStringLiteral("profil_client")
-    });
-    if (idCol.isEmpty() || nomCol.isEmpty() || prenomCol.isEmpty()) {
-        return;
-    }
-
-    const QString telExpr = telCol.isEmpty() ? QStringLiteral("''") : telCol;
-
-    if (table->horizontalHeaderItem(4)) {
-        table->horizontalHeaderItem(4)->setText(QStringLiteral("Fidelite"));
-    }
-
-    QString scoreExpr = QStringLiteral("0");
-    QString fidelityExpr = QStringLiteral("'Autre'");
-    if (!profilCol.isEmpty()) {
-        scoreExpr = QStringLiteral(
-            "CASE "
-            "WHEN UPPER(%1) LIKE 'FIDE%%' THEN 3 "
-            "WHEN UPPER(%1) LIKE 'REGU%%' THEN 2 "
-            "WHEN UPPER(%1) LIKE 'OCCA%%' THEN 1 "
-            "ELSE 0 END").arg(profilCol);
-
-        fidelityExpr = QStringLiteral(
-            "CASE "
-            "WHEN UPPER(%1) LIKE 'FIDE%%' THEN 'Fidele' "
-            "WHEN UPPER(%1) LIKE 'REGU%%' THEN 'Regulier' "
-            "WHEN UPPER(%1) LIKE 'OCCA%%' THEN 'Occasionnel' "
-            "ELSE 'Autre' END").arg(profilCol);
-    }
-
-    const QString sql = QStringLiteral(
-        "SELECT * FROM ("
-        "SELECT %1 AS idv, %2 AS nomv, %3 AS prenomv, %4 AS telv, %5 AS fidelityv, %6 AS scorev "
-        "FROM %7 "
-        "ORDER BY scorev DESC, %2 ASC, %3 ASC"
-        ") WHERE ROWNUM <= 5")
-            .arg(idCol, nomCol, prenomCol, telExpr, fidelityExpr, scoreExpr, tableName);
-
-    QSqlQuery q(db);
-    if (!q.exec(sql)) {
-        qWarning() << "Top clients: query failed" << q.lastError().text();
-        return;
-    }
-
-    int row = 0;
-    while (q.next()) {
-        table->insertRow(row);
-        table->setItem(row, 0, new QTableWidgetItem(q.value(0).toString().trimmed()));
-        table->setItem(row, 1, new QTableWidgetItem(q.value(1).toString().trimmed()));
-        table->setItem(row, 2, new QTableWidgetItem(q.value(2).toString().trimmed()));
-        table->setItem(row, 3, new QTableWidgetItem(q.value(3).toString().trimmed()));
-
-        table->setItem(row, 4, new QTableWidgetItem(q.value(4).toString().trimmed()));
-        ++row;
-    }
-}
-
 // Public helper implementations added to avoid accessing private members from lambdas.
 
 void MainWindow::refreshClientsPage()
@@ -2022,9 +1901,6 @@ void MainWindow::refreshClientsPage()
     updateOne(ui->progressCc,   ui->value_Cc,   countFidele);
     updateOne(ui->progressCCc,  ui->value_CCc,  countOccas);
     updateOne(ui->progressc,    ui->value_c,    countRegul);
-
-    updateTopClientsStats(ui);
-    adjustTopClientsStatsColumns();
 }
 
 MainWindow::MainWindow(QWidget *parent)
@@ -2036,21 +1912,15 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
-    if (ui && ui->frame_10p) {
-        ui->frame_10p->installEventFilter(this);
-    }
+    // Eye toggle (show/hide) for each password field
+    installPasswordEyeToggle(ui->lineEdit_2b);   // login
+    installPasswordEyeToggle(ui->lineEdit_12b);  // mot de passe actuel (param├¿tres)
+    installPasswordEyeToggle(ui->lineEdit_13b);  // nouveau mot de passe (param├¿tres)
+    installPasswordEyeToggle(ui->lineEdit_10b);  // nouveau mot de passe (r├⌐cup├⌐ration)
+    installPasswordEyeToggle(ui->lineEdit_11b);  // confirmer mot de passe (r├⌐cup├⌐ration)
 
-    // Masquer les mots de passe (affichage en points)
-    auto setPasswordEcho = [](QLineEdit* edit) {
-        if (!edit) return;
-        edit->setEchoMode(QLineEdit::Password);
-        edit->setInputMethodHints(Qt::ImhHiddenText | Qt::ImhNoPredictiveText | Qt::ImhNoAutoUppercase);
-    };
-    setPasswordEcho(ui->lineEdit_2b);   // login
-    setPasswordEcho(ui->lineEdit_12b);  // mot de passe actuel (param├¿tres)
-    setPasswordEcho(ui->lineEdit_13b);  // nouveau mot de passe (param├¿tres)
-    setPasswordEcho(ui->lineEdit_10b);  // nouveau mot de passe (r├⌐cup├⌐ration)
-    setPasswordEcho(ui->lineEdit_11b);  // confirmer mot de passe (r├⌐cup├⌐ration)
+    // Se souvenir de moi: recharger les identifiants sauvegard├⌐s
+    applyRememberedLogin(ui);
 
 
 
@@ -2066,6 +1936,8 @@ MainWindow::MainWindow(QWidget *parent)
     // Fix accents (├⌐/├¿/ΓÇª) + emojis on all pages.
     normalizeUiTexts();
 
+    setupArduinoIntegration();
+
     // Page employ├⌐s : masquer les anciens boutons flottants (├⌐dition/suppression/refresh)
     // et utiliser uniquement la colonne Actions de la table.
     if (auto *btnEditLegacy = this->findChild<QPushButton*>(QStringLiteral("pushButton_6e_2"))) btnEditLegacy->hide();
@@ -2078,14 +1950,6 @@ MainWindow::MainWindow(QWidget *parent)
         ui->lineEditp->setReadOnly(false);
         ui->lineEditp->setEnabled(true);
         ui->lineEditp->setMinimumWidth(140);
-    }
-
-    static const QRegularExpression pecheurNameInputRx(QStringLiteral("^[\\p{L}]*$"));
-    if (ui->lineEdit_2p) {
-        ui->lineEdit_2p->setValidator(new QRegularExpressionValidator(pecheurNameInputRx, ui->lineEdit_2p));
-    }
-    if (ui->lineEdit_3p) {
-        ui->lineEdit_3p->setValidator(new QRegularExpressionValidator(pecheurNameInputRx, ui->lineEdit_3p));
     }
 
     // IDs: champs modifiables selon demande utilisateur
@@ -2115,15 +1979,22 @@ MainWindow::MainWindow(QWidget *parent)
     }
 
     const QDateTime now = QDateTime::currentDateTime();
+    const QDate today = now.date();
     if (ui->dateTimeEdit) {
         ui->dateTimeEdit->setDateTime(now);
         ui->dateTimeEdit->setReadOnly(false);
     }
     if (ui->dateTimeEdit_2) {
-        ui->dateTimeEdit_2->setCalendarPopup(true);
-        ui->dateTimeEdit_2->setSpecialValueText(QStringLiteral("Non affecté"));
-        ui->dateTimeEdit_2->setMinimumDateTime(nullPecheurAffectationDateTime());
-        ui->dateTimeEdit_2->setDateTime(nullPecheurAffectationDateTime());
+        ui->dateTimeEdit_2->setDateTime(now);
+        ui->dateTimeEdit_2->setMinimumDate(today);
+    }
+
+    // Page bateaux: valeurs par défaut (sinon QDateEdit démarre souvent en 2000-01-01)
+    if (ui->dateEdit) {
+        ui->dateEdit->setDate(today); // Date d'entrée
+    }
+    if (ui->dateEdit_2) {
+        ui->dateEdit_2->setDate(today); // Date dernière maintenance
     }
 
     const auto refreshPecheurGeneratedId = [this]() {
@@ -2211,12 +2082,6 @@ MainWindow::MainWindow(QWidget *parent)
 
     refreshClientsPage();
 
-    if (ui->btnRefresh_4) {
-        connect(ui->btnRefresh_4, &QPushButton::clicked, this, [this]() {
-            refreshClientsPage();
-        });
-    }
-
     QSqlDatabase db = Connection::getInstance()->getDatabase();
     if (ui->tableWidgetee) {
         // Chargement initial des employ├⌐s via helper d├⌐di├⌐ (r├⌐solution de table + synonymes)
@@ -2225,6 +2090,7 @@ MainWindow::MainWindow(QWidget *parent)
     loadCaptures();
     loadQuotas(false);
     loadBateaux();
+    setupBateauMaintenanceAlertSystem();
     loadPecheurBateauChoices(ui);
     // Chargement initial de la table des quais avec actions connect├⌐es
     refreshQuaiTable();
@@ -2290,10 +2156,25 @@ MainWindow::MainWindow(QWidget *parent)
         }
     }
 
-    // Les boutons pecheurs utilisent l'auto-connexion Qt (connectSlotsByName),
-    // evite ici les connexions manuelles en double.
+    // Connexions (page p├¬cheurs / FaceID)
+    if (ui->brmp) {
+        connect(ui->brmp, &QPushButton::clicked, this, &MainWindow::on_brmp_clicked);
+    }
+if (ui->pushButton_pdfb_5) {
+    connect(ui->pushButton_pdfb_5, &QPushButton::clicked, this, &MainWindow::on_pushButton_pdfb_5_clicked);
+}
 
-    // Filtres employ├⌐s : recherche + ├⌐tat + statut
+    if (ui->btnFaceIDp) {
+        connect(ui->btnFaceIDp, &QPushButton::clicked, this, &MainWindow::on_btnFaceIDp_clicked);
+    }
+    if (ui->bmi_6p) {
+        connect(ui->bmi_6p, &QPushButton::clicked, this, &MainWindow::on_bmi_6p_clicked);
+    }
+    if (ui->pushButton_11p) {
+        connect(ui->pushButton_11p, &QPushButton::clicked, this, &MainWindow::on_pushButton_11p_clicked);
+    }
+
+    // Filtres  recherche + ├⌐tat + statut
     if (ui->pushButton_9e) {
         connect(ui->pushButton_9e, &QPushButton::clicked, this, [this]() { loadEmployes(); });
     }
@@ -2370,16 +2251,6 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Chargement m├⌐t├⌐o initial
     refreshWeatherForPage3();
-
-    // Reconnexion automatique Arduino si le port est temporairement occupé.
-    m_arduinoReconnectTimer = new QTimer(this);
-    m_arduinoReconnectTimer->setInterval(2000);
-    connect(m_arduinoReconnectTimer, &QTimer::timeout, this, [this]() {
-        initializeArduinoLink();
-    });
-
-    // D├⌐marrer la liaison Arduino <-> Qt pour l'atelier capteur/quais.
-    initializeArduinoLink();
 }
 
 // Navigation / actions : impl├⌐mentations uniques plus bas dans le fichier.
@@ -2424,6 +2295,35 @@ void MainWindow::legacy_pushButton_b_3b_clicked()
 {
     showFrame(ui->frame_3b);
 }
+
+// Bouton Connexion : afficher frame Connexion, cacher frame QR
+void MainWindow::legacy_pushButton_b_2b_clicked()
+{
+    showFrame(ui->frameb);
+}
+void MainWindow::on_p4b_clicked()
+{
+    // Depuis le menu GBateau : ouvrir la gestion des quais
+    if (ui->stackedWidget && ui->page_3) {
+        ui->stackedWidget->setCurrentWidget(ui->page_3);
+    }
+
+    // loadQuais(); (removed)
+}
+
+void MainWindow::on_p6b_clicked()
+{
+    // Depuis le menu GBateau : ouvrir la gestion des employ├⌐s
+    if (ui->stackedWidget && ui->pagee) {
+        ui->stackedWidget->setCurrentWidget(ui->pagee);
+    }
+
+    loadEmployes();
+}
+
+// ----------------------
+// CRUD Employes (helpers) - style atelier
+// ----------------------
 
 void MainWindow::loadEmployes()
 {
@@ -3040,6 +2940,14 @@ captures MainWindow::captureFromForm() const
     const double poids = ui && ui->cap_dsPoids_3 ? ui->cap_dsPoids_3->value() : 0.0;
     const QDate dateCapture = ui && ui->cap_deDateCapture_3 ? ui->cap_deDateCapture_3->date() : QDate();
 
+    const bool isEditing = !m_editingCaptureId.isEmpty();
+    const bool useTemp = isEditing ? m_editingCaptureHasTemperature : m_hasArduinoTemperature;
+    const double tempC = isEditing ? m_editingCaptureTemperatureC : m_lastArduinoTemperatureC;
+
+    if (useTemp) {
+        return captures(idCapture, idBateau, typePoisson, quantite, poids, dateCapture, tempC);
+    }
+
     return captures(idCapture, idBateau, typePoisson, quantite, poids, dateCapture);
 }
 
@@ -3074,7 +2982,7 @@ void MainWindow::loadCaptures()
 
     table->clearContents();
     table->setRowCount(0);
-    table->setColumnCount(7);
+    table->setColumnCount(8);
 
     const QStringList headers = {
         QStringLiteral("ID Capture"),
@@ -3082,6 +2990,7 @@ void MainWindow::loadCaptures()
         QStringLiteral("Type Poisson"),
         QStringLiteral("Quantite"),
         QStringLiteral("Poids"),
+        QStringLiteral("Temp\u00E9rature (\u00B0C)"),
         QStringLiteral("Date"),
         QStringLiteral("Actions")
     };
@@ -3099,7 +3008,10 @@ void MainWindow::loadCaptures()
         table->setItem(row, 2, new QTableWidgetItem(record.typePoisson));
         table->setItem(row, 3, new QTableWidgetItem(QString::number(record.quantite)));
         table->setItem(row, 4, new QTableWidgetItem(QString::number(record.poids, 'f', 2)));
-        table->setItem(row, 5, new QTableWidgetItem(record.dateCapture.isValid()
+        table->setItem(row, 5, new QTableWidgetItem(record.hasTemperature
+                                 ? QString::number(record.temperatureC, 'f', 1)
+                                 : QString()));
+        table->setItem(row, 6, new QTableWidgetItem(record.dateCapture.isValid()
                                                      ? record.dateCapture.toString(QStringLiteral("yyyy-MM-dd"))
                                                      : QString()));
 
@@ -3152,7 +3064,7 @@ void MainWindow::loadCaptures()
         actionLayout->addWidget(btnDelete, 0, Qt::AlignVCenter);
         actionLayout->addStretch();
 
-        table->setCellWidget(row, 6, actionWidget);
+        table->setCellWidget(row, 7, actionWidget);
         ++row;
     }
 
@@ -3161,9 +3073,16 @@ void MainWindow::loadCaptures()
     table->setColumnWidth(2, 140);
     table->setColumnWidth(3, 90);
     table->setColumnWidth(4, 90);
-    table->setColumnWidth(5, 120);
-    table->setColumnWidth(6, 114);
+    table->setColumnWidth(5, 130);
+    table->setColumnWidth(6, 120);
+    table->setColumnWidth(7, 114);
     table->verticalHeader()->setDefaultSectionSize(42);
+
+    // If the Arduino is providing a live temperature, keep the table in sync
+    // so the temperature cell updates in real-time.
+    if (m_hasArduinoTemperature) {
+        updateCapturesTableLiveTemperature(m_lastArduinoTemperatureC);
+    }
     
     // Mettre à jour les statistiques
     updateCapturesStats(this, ui);
@@ -3214,7 +3133,8 @@ void MainWindow::loadCaptureFromTable(int row)
     const QString typePoisson = table->item(row, 2) ? table->item(row, 2)->text().trimmed() : QString();
     const QString quantite = table->item(row, 3) ? table->item(row, 3)->text().trimmed() : QString();
     const QString poids = table->item(row, 4) ? table->item(row, 4)->text().trimmed() : QString();
-    const QString dateTxt = table->item(row, 5) ? table->item(row, 5)->text().trimmed() : QString();
+    const QString tempTxt = table->item(row, 5) ? table->item(row, 5)->text().trimmed() : QString();
+    const QString dateTxt = table->item(row, 6) ? table->item(row, 6)->text().trimmed() : QString();
 
     if (idCapture.isEmpty()) {
         QMessageBox::warning(this, QStringLiteral("Modification capture"), QStringLiteral("ID capture introuvable."));
@@ -3222,6 +3142,17 @@ void MainWindow::loadCaptureFromTable(int row)
     }
 
     m_editingCaptureId = idCapture;
+
+    m_editingCaptureHasTemperature = false;
+    m_editingCaptureTemperatureC = 0.0;
+    if (!tempTxt.isEmpty()) {
+        bool ok = false;
+        const double t = tempTxt.toDouble(&ok);
+        if (ok) {
+            m_editingCaptureTemperatureC = t;
+            m_editingCaptureHasTemperature = true;
+        }
+    }
 
     if (ui->cap_lineEdit_11) ui->cap_lineEdit_11->setText(idCapture);
     if (ui->cap_lineEdit_9) ui->cap_lineEdit_9->setText(idBateau);
@@ -3274,6 +3205,8 @@ void MainWindow::supprimerCaptureFromRow(int row)
 void MainWindow::resetCaptureForm()
 {
     m_editingCaptureId.clear();
+    m_editingCaptureHasTemperature = false;
+    m_editingCaptureTemperatureC = 0.0;
 
     if (ui && ui->cap_lineEdit_11) ui->cap_lineEdit_11->clear();
     if (ui && ui->cap_lineEdit_9) ui->cap_lineEdit_9->clear();
@@ -3664,23 +3597,6 @@ void MainWindow::on_p3b_clicked()
     // loadClients(); (removed)
 }
 
-void MainWindow::on_p4b_clicked()
-{
-    // Depuis le menu GBateau : ouvrir la gestion des quais
-    if (ui && ui->stackedWidget && ui->page_3) {
-        ui->stackedWidget->setCurrentWidget(ui->page_3);
-    }
-}
-
-void MainWindow::on_p6b_clicked()
-{
-    // Depuis le menu GBateau : ouvrir la gestion des employes
-    if (ui && ui->stackedWidget && ui->pagee) {
-        ui->stackedWidget->setCurrentWidget(ui->pagee);
-    }
-    loadEmployes();
-}
-
 void MainWindow::legacy_btnai_clicked()
 {
     if (!ui) return;
@@ -3750,357 +3666,11 @@ static void setPecheurMainWidgetsVisible(Ui::MainWindow* ui, bool visible)
     if (ui->pushButton_6p) ui->pushButton_6p->setVisible(visible);
 }
 
-void MainWindow::setupPecheurFaceCapture()
-{
-    if (!ui || !ui->frame_10p) return;
-
-    if (!m_facePreviewLabel) {
-        m_facePreviewLabel = new QLabel(ui->frame_10p);
-        m_facePreviewLabel->setObjectName(QStringLiteral("faceCameraPreviewp"));
-        m_facePreviewLabel->setAlignment(Qt::AlignCenter);
-        m_facePreviewLabel->setAttribute(Qt::WA_TranslucentBackground, true);
-        m_facePreviewLabel->setScaledContents(false);
-        applyPecheurFacePreviewShape(m_facePreviewLabel);
-        m_facePreviewLabel->show();
-    }
-
-    if (!m_faceVideoSink) {
-        m_faceVideoSink = new QVideoSink(this);
-        connect(m_faceVideoSink, &QVideoSink::videoFrameChanged, this, [this](const QVideoFrame& frame) {
-            if (!m_facePreviewLabel || !frame.isValid()) return;
-
-            QImage image = frame.toImage();
-            if (image.isNull()) return;
-
-            const bool liveContent = frameHasLiveCameraContent(image);
-            const bool wasLive = m_faceHasRecentFrame;
-            m_faceHasRecentFrame = liveContent;
-            if (liveContent) {
-                const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-                m_faceLastFrameAtMs = nowMs;
-                if (!wasLive) {
-                    m_faceOpenStatusUntilMs = nowMs + 1000;
-                }
-
-                if (nowMs <= m_faceOpenStatusUntilMs) {
-                    setPecheurFaceStatus(ui, QStringLiteral("Caméra ouverte."));
-                } else {
-                    setPecheurFaceStatus(ui, pecheurFaceOpenStatusText());
-                }
-            } else {
-                m_faceOpenStatusUntilMs = 0;
-                setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
-            }
-
-            const QRect rect = pecheurFacePreviewRect(ui ? ui->frame_10p : nullptr);
-            const int diameter = rect.width() > 0 ? rect.width() : qMin(m_facePreviewLabel->width(), m_facePreviewLabel->height());
-            if (diameter <= 0) {
-                return;
-            }
-
-            m_facePreviewLabel->setPixmap(buildCircularFacePreviewPixmap(image, diameter));
-            m_facePreviewLabel->update();
-        });
-    }
-
-    if (!m_faceCaptureSession) {
-        m_faceCaptureSession = new QMediaCaptureSession(this);
-    }
-    if (!m_faceImageCapture) {
-        m_faceImageCapture = new QImageCapture(this);
-        connect(m_faceImageCapture, &QImageCapture::imageCaptured, this, [this](int, const QImage& image) {
-            if (image.isNull() || !frameHasLiveCameraContent(image)) {
-                if (m_faceCaptureRetryRemaining > 0) {
-                    --m_faceCaptureRetryRemaining;
-                    m_faceCapturePending = true;
-                    setPecheurFaceStatus(ui, QStringLiteral("Capture en cours... (%1 essais restants)")
-                                            .arg(m_faceCaptureRetryRemaining));
-                    QTimer::singleShot(180, this, [this]() { attemptPecheurFaceCapture(); });
-                    return;
-                }
-
-                m_faceCapturePending = false;
-                m_faceCaptureRetryRemaining = 0;
-                m_pendingPecheurPhotoBytes.clear();
-                const QString msg = QStringLiteral("Caméra fermée. Ouvrez la caméra avant de capturer.");
-                setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
-                QMessageBox::warning(this, QStringLiteral("Capture"), msg);
-                return;
-            }
-
-            m_faceCapturePending = false;
-            m_faceCaptureRetryRemaining = 0;
-
-            QByteArray encoded;
-            QBuffer buffer(&encoded);
-            buffer.open(QIODevice::WriteOnly);
-            image.save(&buffer, "JPG", 90);
-            m_pendingPecheurPhotoBytes = encoded;
-
-            setPecheurFaceStatus(ui, QStringLiteral("✅ Visage détecté et centré.\nEnregistrement en cours..."));
-
-            if (persistCapturedPecheurPhoto()) {
-                stopPecheurFaceCapture();
-                if (ui && ui->framefaceidp) {
-                    ui->framefaceidp->hide();
-                }
-                setPecheurMainWidgetsVisible(ui, true);
-                setPecheurFaceStatus(ui, QStringLiteral("✅ Visage détecté et centré.\nPhoto enregistrée."));
-                QMessageBox::information(this, QStringLiteral("Visage"), QStringLiteral("Photo enregistrée dans la base."));
-            } else {
-                const QString err = Pecheurs::lastError().trimmed();
-                const QString msg = err.isEmpty()
-                                      ? QStringLiteral("Photo capturée mais enregistrement en base échoué.")
-                                      : QStringLiteral("Échec enregistrement: %1").arg(err);
-                setPecheurFaceStatus(ui, msg);
-                QMessageBox::warning(this, QStringLiteral("Visage"), msg);
-            }
-        });
-
-        connect(m_faceImageCapture, &QImageCapture::errorOccurred, this, [this](int, QImageCapture::Error, const QString& errorString) {
-            if (m_faceCapturePending
-                && m_faceCaptureRetryRemaining > 0
-                && errorString.contains(QStringLiteral("not ready"), Qt::CaseInsensitive)) {
-                --m_faceCaptureRetryRemaining;
-                QTimer::singleShot(250, this, [this]() { attemptPecheurFaceCapture(); });
-                return;
-            }
-
-            m_faceCapturePending = false;
-            m_faceCaptureRetryRemaining = 0;
-            const QString msg = QStringLiteral("Erreur capture: %1").arg(errorString);
-            setPecheurFaceStatus(ui, msg);
-            QMessageBox::warning(this, QStringLiteral("Visage"), msg);
-        });
-    }
-
-    if (!m_faceCamera) {
-        const QCameraDevice device = QMediaDevices::defaultVideoInput();
-        if (device.isNull()) {
-            QMessageBox::warning(this, QStringLiteral("Caméra"), QStringLiteral("Aucune caméra disponible."));
-            return;
-        }
-
-        m_faceCamera = new QCamera(device, this);
-        connect(m_faceCamera, &QCamera::errorOccurred, this, [this](QCamera::Error, const QString& errorString) {
-            m_faceHasRecentFrame = false;
-            const QString msg = QStringLiteral("Erreur caméra: %1").arg(errorString);
-            setPecheurFaceStatus(ui, msg);
-            QMessageBox::warning(this, QStringLiteral("Caméra"), msg);
-        });
-        connect(m_faceCamera, &QCamera::activeChanged, this, [this](bool active) {
-            if (!active) {
-                m_faceHasRecentFrame = false;
-                m_faceOpenStatusUntilMs = 0;
-                setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
-            }
-        });
-
-        m_faceCaptureSession->setCamera(m_faceCamera);
-        m_faceCaptureSession->setImageCapture(m_faceImageCapture);
-        m_faceCaptureSession->setVideoOutput(m_faceVideoSink);
-    }
-
-    if (m_facePreviewLabel) {
-        updatePecheurFacePreviewGeometry();
-        m_facePreviewLabel->raise();
-        m_facePreviewLabel->show();
-    }
-
-    setPecheurFaceStatus(ui, QStringLiteral("Initialisation caméra..."));
-
-    if (!m_faceCamera->isActive()) {
-        m_faceCamera->start();
-    }
-
-    QTimer::singleShot(700, this, [this]() {
-        if (!ui) return;
-        const qint64 now = QDateTime::currentMSecsSinceEpoch();
-        const bool hasLiveFrame = m_faceHasRecentFrame && ((now - m_faceLastFrameAtMs) <= kFaceLiveFrameTimeoutMs);
-        if (m_faceCamera && m_faceCamera->isActive() && hasLiveFrame) {
-            setPecheurFaceStatus(ui, pecheurFaceOpenStatusText());
-        } else {
-            setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
-        }
-    });
-}
-
-void MainWindow::updatePecheurFacePreviewGeometry()
-{
-    if (!ui || !ui->frame_10p || !m_facePreviewLabel) {
-        return;
-    }
-
-    const QRect rect = pecheurFacePreviewRect(ui->frame_10p);
-    if (!rect.isValid()) {
-        return;
-    }
-
-    if (m_facePreviewLabel) {
-        m_facePreviewLabel->setGeometry(rect);
-        applyPecheurFacePreviewShape(m_facePreviewLabel);
-
-        if (const QPixmap current = m_facePreviewLabel->pixmap(Qt::ReturnByValue); !current.isNull()) {
-            m_facePreviewLabel->setPixmap(current.scaled(rect.size(), Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
-        }
-    }
-}
-
-bool MainWindow::eventFilter(QObject *watched, QEvent *event)
-{
-    if (ui && watched == ui->frame_10p && event && event->type() == QEvent::Resize) {
-        updatePecheurFacePreviewGeometry();
-    }
-
-    if (event && event->type() == QEvent::MouseButtonPress) {
-        if (auto* photoLabel = qobject_cast<QLabel*>(watched)) {
-            const QVariant previewData = photoLabel->property("pecheurPhotoPreview");
-            if (previewData.isValid()) {
-                const QPixmap preview = previewData.value<QPixmap>();
-                if (!preview.isNull()) {
-                    showPecheurPhotoPreviewDialog(this, preview);
-                    return true;
-                }
-            }
-        }
-    }
-
-    return QMainWindow::eventFilter(watched, event);
-}
-
-void MainWindow::stopPecheurFaceCapture()
-{
-    m_faceCapturePending = false;
-    m_faceCaptureRetryRemaining = 0;
-    m_faceHasRecentFrame = false;
-    m_faceLastFrameAtMs = 0;
-    m_faceOpenStatusUntilMs = 0;
-    if (m_faceCamera && m_faceCamera->isActive()) {
-        m_faceCamera->stop();
-    }
-}
-
-void MainWindow::attemptPecheurFaceCapture()
-{
-    if (!ui || !m_faceImageCapture || !m_faceCamera) {
-        m_faceCapturePending = false;
-        m_faceCaptureRetryRemaining = 0;
-        return;
-    }
-
-    if (!m_faceCamera->isActive()) {
-        m_faceCamera->start();
-    }
-
-    const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    const bool hasLiveFrame = m_faceHasRecentFrame && ((now - m_faceLastFrameAtMs) <= kFaceLiveFrameTimeoutMs);
-    if (!hasLiveFrame) {
-        if (m_faceCaptureRetryRemaining > 0) {
-            --m_faceCaptureRetryRemaining;
-            setPecheurFaceStatus(ui, QStringLiteral("Initialisation caméra..."));
-            QTimer::singleShot(250, this, [this]() { attemptPecheurFaceCapture(); });
-            return;
-        }
-
-        m_faceCapturePending = false;
-        const QString msg = QStringLiteral("Caméra fermée. Ouvrez la caméra avant de capturer.");
-        setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
-        QMessageBox::warning(this, QStringLiteral("Visage"), msg);
-        return;
-    }
-
-    if (!m_faceImageCapture->isReadyForCapture()) {
-        if (m_faceCaptureRetryRemaining > 0) {
-            --m_faceCaptureRetryRemaining;
-            setPecheurFaceStatus(ui, QStringLiteral("Initialisation caméra..."));
-            QTimer::singleShot(250, this, [this]() { attemptPecheurFaceCapture(); });
-            return;
-        }
-
-        m_faceCapturePending = false;
-        const QString msg = QStringLiteral("Camera non prete. Fermez les applications qui utilisent la camera puis reessayez.");
-        setPecheurFaceStatus(ui, msg);
-        QMessageBox::warning(this, QStringLiteral("Visage"), msg);
-        return;
-    }
-
-    const int requestId = m_faceImageCapture->capture();
-    if (requestId < 0) {
-        if (m_faceCaptureRetryRemaining > 0) {
-            --m_faceCaptureRetryRemaining;
-            QTimer::singleShot(250, this, [this]() { attemptPecheurFaceCapture(); });
-            return;
-        }
-
-        m_faceCapturePending = false;
-        const QString msg = QStringLiteral("Capture impossible. Vérifiez la caméra puis réessayez.");
-        setPecheurFaceStatus(ui, msg);
-        QMessageBox::warning(this, QStringLiteral("Visage"), msg);
-    }
-}
-
-void MainWindow::syncPecheurFaceCaptureFields()
-{
-    if (!ui) return;
-
-    const QString fullName = pecheurFaceDisplayName(ui);
-    const QString role = pecheurFaceRole(ui);
-
-    if (ui->lineEdit_11p) {
-        ui->lineEdit_11p->setReadOnly(true);
-        ui->lineEdit_11p->setText(fullName);
-    }
-    if (ui->lineEdit_12p) {
-        ui->lineEdit_12p->setReadOnly(true);
-        ui->lineEdit_12p->setText(role);
-    }
-    if (ui->labelFaceInfop) {
-        ui->labelFaceInfop->setText(fullName.isEmpty()
-                                     ? QStringLiteral("Pêcheur : [Nom]")
-                                     : QStringLiteral("Pêcheur : %1").arg(fullName));
-    }
-}
-
-bool MainWindow::persistCapturedPecheurPhoto()
-{
-    if (!ui) return false;
-
-    const QString id = ui->lineEditp ? ui->lineEditp->text().trimmed().toUpper() : QString();
-    if (id.isEmpty()) {
-        return false;
-    }
-
-    const bool editing = !m_editingPecheurId.isEmpty();
-    Pecheurs p = pecheurFromForm();
-    bool ok = false;
-
-    if (editing) {
-        ok = p.modifierAvecAncienId(m_editingPecheurId);
-    } else if (Pecheurs::idExiste(id)) {
-        ok = p.modifierAvecAncienId(id);
-    } else {
-        ok = p.ajouter();
-        if (ok) {
-            m_editingPecheurId = id;
-        }
-    }
-
-    if (!ok) {
-        return false;
-    }
-
-    m_pendingPecheurPhotoBytes.clear();
-    loadPecheurs();
-    return true;
-}
-
 void MainWindow::on_btnFaceIDp_clicked()
 {
-    // Afficher FaceID, préremplir les champs et lancer la caméra
+    // Afficher FaceID, masquer les widgets principaux
     if (!ui) return;
     setPecheurMainWidgetsVisible(ui, false);
-    syncPecheurFaceCaptureFields();
-    setupPecheurFaceCapture();
     if (ui->framefaceidp) {
         ui->framefaceidp->setVisible(true);
         ui->framefaceidp->raise();
@@ -4112,9 +3682,7 @@ void MainWindow::on_brmp_clicked()
     // Retour Menu depuis pagepecheur -> menu GBateau
     if (!ui) return;
 
-    // Remettre l'etat normal cote pecheurs
-    m_pendingPecheurPhotoBytes.clear();
-    stopPecheurFaceCapture();
+    // Remettre l'├⌐tat normal c├┤t├⌐ p├¬cheurs
     if (ui->framefaceidp) ui->framefaceidp->hide();
     setPecheurMainWidgetsVisible(ui, true);
 
@@ -4127,9 +3695,7 @@ void MainWindow::on_pushButton_pdfb_5_clicked()
     // Retour Menu depuis pagepecheur -> menu GBateau
     if (!ui) return;
 
-    // Remettre l'etat normal cote pecheurs
-    m_pendingPecheurPhotoBytes.clear();
-    stopPecheurFaceCapture();
+    // Remettre l'├⌐tat normal c├┤t├⌐ p├¬cheurs
     if (ui->framefaceidp) ui->framefaceidp->hide();
     setPecheurMainWidgetsVisible(ui, true);
 
@@ -4140,152 +3706,24 @@ void MainWindow::on_pushButton_pdfb_5_clicked()
 
 void MainWindow::on_bmi_6p_clicked()
 {
-    // Capturer le visage et tenter de l'enregistrer dans la base
+    // Fermer FaceID, r├⌐afficher les widgets principaux
     if (!ui) return;
-
-    if (!m_faceImageCapture || !m_faceCamera) {
-        setupPecheurFaceCapture();
-    }
-    if (!m_faceImageCapture || !m_faceCamera) {
-        return;
-    }
-
-    if (!m_faceCamera->isActive()) {
-        QMessageBox::warning(this,
-                             QStringLiteral("Visage"),
-                             QStringLiteral("La caméra est fermée. Ouvrez la caméra puis positionnez un visage dans le cercle."));
-        setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
-        return;
-    }
-
-    const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    const bool hasLiveFrame = m_faceHasRecentFrame && ((now - m_faceLastFrameAtMs) <= kFaceLiveFrameTimeoutMs);
-    if (!hasLiveFrame) {
-        QMessageBox::warning(this,
-                             QStringLiteral("Visage"),
-                             QStringLiteral("Caméra fermée. Aucun flux vidéo détecté."));
-        setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
-        return;
-    }
-
-    m_faceCapturePending = true;
-    m_faceCaptureRetryRemaining = 30;
-    setPecheurFaceStatus(ui, QStringLiteral("✅ Visage détecté et centré.\nValidation en cours..."));
-    attemptPecheurFaceCapture();
-}
-
-void MainWindow::on_bmip_clicked()
-{
-    if (!ui) return;
-
-    const QString email = ui->lineEditp_2 ? ui->lineEditp_2->text().trimmed() : QString();
-    const QString nom = ui->lineEdit_2p ? ui->lineEdit_2p->text().trimmed() : QString();
-    const QString prenom = ui->lineEdit_3p ? ui->lineEdit_3p->text().trimmed() : QString();
-
-    if (email.isEmpty()) {
-        QMessageBox::warning(this, QStringLiteral("Mission"), QStringLiteral("Veuillez renseigner l'email du pêcheur."));
-        return;
-    }
-
-    if (!isValidEmailAddress(email)) {
-        QMessageBox::warning(this, QStringLiteral("Mission"), QStringLiteral("Format d'e-mail invalide."));
-        return;
-    }
-
-    QString emailLookupError;
-    if (!pecheurEmailExistsInDb(email, &emailLookupError)) {
-        QMessageBox::warning(this,
-                             QStringLiteral("Mission"),
-                             emailLookupError.isEmpty()
-                                 ? QStringLiteral("Adresse e-mail introuvable (mail non trouve).")
-                                 : emailLookupError);
-        return;
-    }
-
-    if (nom.isEmpty() || prenom.isEmpty()) {
-        QMessageBox::warning(this, QStringLiteral("Mission"), QStringLiteral("Veuillez renseigner le nom et le prénom du pêcheur."));
-        return;
-    }
-
-    int idBateau = 0;
-    if (QComboBox* bateauCombo = pecheurBateauCombo(ui)) {
-        bool ok = false;
-        idBateau = bateauCombo->currentData().toInt(&ok);
-        if (!ok || idBateau <= 0) {
-            idBateau = bateauIdFromText(bateauCombo->currentText());
-        }
-    } else if (QLineEdit* bateauEdit = pecheurBateauLineEdit(ui)) {
-        idBateau = bateauIdFromText(bateauEdit->text());
-    }
-
-    if (idBateau <= 0) {
-        QMessageBox::warning(this, QStringLiteral("Mission"), QStringLiteral("Veuillez choisir un ID bateau valide avant l'affectation."));
-        return;
-    }
-
-    QDateTime affectation = ui->dateTimeEdit_2 ? ui->dateTimeEdit_2->dateTime() : QDateTime();
-    if (isPecheurAffectationNull(affectation)) {
-        affectation = QDateTime::currentDateTime();
-        if (ui->dateTimeEdit_2) {
-            ui->dateTimeEdit_2->setDateTime(affectation);
-        }
-    }
-
-    QString mailError;
-    if (!sendMissionMailSmtp(email, nom, prenom, affectation, idBateau, &mailError)) {
-        QMessageBox::critical(this, QStringLiteral("Mission"), QStringLiteral("Envoi e-mail echoue: %1").arg(mailError));
-        return;
-    }
-
-    Pecheurs p = pecheurFromForm();
-    const QString ancienId = !m_editingPecheurId.isEmpty() ? m_editingPecheurId : (ui->lineEditp ? ui->lineEditp->text().trimmed().toUpper() : QString());
-    const bool canPersist = !ancienId.isEmpty() && (m_editingPecheurId == ancienId || Pecheurs::idExiste(ancienId));
-    if (canPersist) {
-        if (!p.modifierAvecAncienId(ancienId)) {
-            QMessageBox::warning(this, QStringLiteral("Mission"), QStringLiteral("L'email a été préparé, mais la mise à jour en base a échoué: %1").arg(Pecheurs::lastError()));
-            return;
-        }
-        loadPecheurs();
-    }
-
-    QMessageBox::information(this,
-                             QStringLiteral("Mission"),
-                             QStringLiteral("Email de mission envoyé à %1 %2.").arg(nom, prenom));
-}
-
-void MainWindow::on_pushButton_11p_clicked()
-{
-    // Annuler FaceID, reafficher les widgets principaux
-    if (!ui) return;
-    m_pendingPecheurPhotoBytes.clear();
-    stopPecheurFaceCapture();
     if (ui->framefaceidp) ui->framefaceidp->setVisible(false);
     setPecheurMainWidgetsVisible(ui, true);
 }
 
-void MainWindow::on_pushButton_10p_clicked()
+void MainWindow::on_pushButton_11p_clicked()
 {
+    // Annuler FaceID, r├⌐afficher les widgets principaux
     if (!ui) return;
-
-    m_pendingPecheurPhotoBytes.clear();
-    m_faceCapturePending = false;
-    m_faceCaptureRetryRemaining = 0;
-    setPecheurFaceStatus(ui, QStringLiteral("Pret a capturer..."));
-
-    setupPecheurFaceCapture();
+    if (ui->framefaceidp) ui->framefaceidp->setVisible(false);
+    setPecheurMainWidgetsVisible(ui, true);
 }
 
 void MainWindow::on_pushButton_b_clicked()
 {
     legacy_pushButton_b_4b_clicked();
 }
-
-void MainWindow::legacy_pushButton_b_2b_clicked()
-{
-    // Ancien slot login: redirige vers la logique de connexion actuelle.
-    legacy_pushButton_b_4b_clicked();
-}
-
 void MainWindow::legacy_pushButton_b_4b_clicked()
 {
     if (!ui) {
@@ -4314,10 +3752,15 @@ void MainWindow::legacy_pushButton_b_4b_clicked()
     QString authError;
     authenticated = authenticateLoginFromDb(conn->getDatabase(), username, password, &authError);
 
-    // Fallback minimal si la table utilisateurs n'existe pas encore.
-    if (!authenticated && (authError.contains(QStringLiteral("introuvable"), Qt::CaseInsensitive)
-                           || authError.contains(QStringLiteral("non trouv"), Qt::CaseInsensitive))) {
-        authenticated = (username == QStringLiteral("admin") && password == QStringLiteral("admin"));
+    // Fallback minimal si la table utilisateurs n'existe pas encore OU si le schma ne contient
+    // pas les colonnes login/mot de passe attendues.
+    const bool schemaMissing = authError.contains(QStringLiteral("introuvable"), Qt::CaseInsensitive)
+        || authError.contains(QStringLiteral("non trouv"), Qt::CaseInsensitive)
+        || authError.contains(QStringLiteral("colonne"), Qt::CaseInsensitive)
+        || authError.contains(QStringLiteral("mot de passe"), Qt::CaseInsensitive);
+
+    if (!authenticated && schemaMissing) {
+        authenticated = (username == QStringLiteral("admin") && password == fallbackAdminPassword());
     }
 
     if (!authenticated) {
@@ -4326,6 +3769,10 @@ void MainWindow::legacy_pushButton_b_4b_clicked()
                              QStringLiteral("Identifiants invalides."));
         return;
     }
+
+    // Se souvenir de moi: sauvegarder (ou effacer) APR├êS une connexion r├⌐ussie
+    const bool remember = ui->checkBoxb && ui->checkBoxb->isChecked();
+    storeRememberedLogin(username, password, remember);
 
     if (ui->lineEdit_2b) {
         ui->lineEdit_2b->clear();
@@ -4339,65 +3786,220 @@ void MainWindow::legacy_pushButton_b_4b_clicked()
 void MainWindow::on_pushButton_20b_clicked()
 {
     // Mot de passe oubli├⌐ ? -> page r├⌐cup├⌐ration (Rmdpb)
-    if (ui->stackedWidget && ui->Rmdpb) {
-        ui->stackedWidget->setCurrentWidget(ui->Rmdpb);
+    if (!ui || !ui->stackedWidget || !ui->Rmdpb) {
+        return;
     }
+
+    clearPasswordResetState();
+
+    if (ui->lineEdit_6b) ui->lineEdit_6b->clear();   // nom
+    if (ui->lineEdit_8b) ui->lineEdit_8b->clear();   // email
+    if (ui->lineEdit_9b) ui->lineEdit_9b->clear();   // code
+    if (ui->lineEdit_10b) ui->lineEdit_10b->clear(); // new pass
+    if (ui->lineEdit_11b) ui->lineEdit_11b->clear(); // confirm
+
+    ui->stackedWidget->setCurrentWidget(ui->Rmdpb);
 }
 
 void MainWindow::on_pushButton_13b_clicked()
 {
-    // Envoyer (r├⌐cup├⌐ration) -> page code email
-    if (ui->stackedWidget && ui->Remailb) {
-        ui->stackedWidget->setCurrentWidget(ui->Remailb);
+    // Envoyer (r├⌐cup├⌐ration): si Nom=admin et Email=klai.nourhene1@gmail.com
+    // on envoie un code a 6 chiffres et on ouvre la page de verification.
+    if (!ui || !ui->stackedWidget || !ui->Remailb) {
+        return;
     }
+
+    const QString name = ui->lineEdit_6b ? ui->lineEdit_6b->text().trimmed() : QString();
+    const QString email = ui->lineEdit_8b ? ui->lineEdit_8b->text().trimmed() : QString();
+
+    if (name.isEmpty() || email.isEmpty()) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Recuperation"),
+                             QStringLiteral("Veuillez saisir le nom et l'email."));
+        return;
+    }
+
+    const QString expectedName = QStringLiteral("admin");
+    const QString expectedEmail = QStringLiteral("klai.nourhene1@gmail.com");
+    if (name.compare(expectedName, Qt::CaseInsensitive) != 0
+        || email.compare(expectedEmail, Qt::CaseInsensitive) != 0) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Recuperation"),
+                             QStringLiteral("Nom ou email incorrect."));
+        return;
+    }
+
+    m_passwordResetEmail = expectedEmail;
+    m_passwordResetCode = generateCode();
+    m_passwordResetVerified = false;
+
+    QString error;
+    if (!sendEmail(m_passwordResetEmail, m_passwordResetCode, &error)) {
+        QMessageBox::critical(this,
+                              QStringLiteral("Email"),
+                              QStringLiteral("Envoi d'email echoue: %1").arg(error));
+        return;
+    }
+
+    if (ui->lineEdit_9b) ui->lineEdit_9b->clear();
+
+    QMessageBox::information(this,
+                             QStringLiteral("Email"),
+                             QStringLiteral("Un code a 6 chiffres a ete envoye sur votre email."));
+
+    ui->stackedWidget->setCurrentWidget(ui->Remailb);
 }
 
 void MainWindow::on_pushButton_14b_clicked()
 {
     // Annuler -> retour login
-    if (ui->stackedWidget && ui->loginb) {
-        ui->stackedWidget->setCurrentWidget(ui->loginb);
+    if (!ui || !ui->stackedWidget || !ui->loginb) {
+        return;
     }
+
+    clearPasswordResetState();
+    if (ui->lineEdit_6b) ui->lineEdit_6b->clear();
+    if (ui->lineEdit_8b) ui->lineEdit_8b->clear();
+    if (ui->lineEdit_9b) ui->lineEdit_9b->clear();
+    if (ui->lineEdit_10b) ui->lineEdit_10b->clear();
+    if (ui->lineEdit_11b) ui->lineEdit_11b->clear();
+
+    ui->stackedWidget->setCurrentWidget(ui->loginb);
+    applyRememberedLogin(ui);
 }
 
 void MainWindow::on_pushButton_15b_clicked()
 {
     // Verifier code -> nouveau mot de passe
-    if (ui->stackedWidget && ui->Nmdpb) {
-        ui->stackedWidget->setCurrentWidget(ui->Nmdpb);
+    if (!ui || !ui->stackedWidget || !ui->Nmdpb) {
+        return;
     }
+
+    const QString entered = ui->lineEdit_9b ? ui->lineEdit_9b->text().trimmed() : QString();
+    if (entered.isEmpty()) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Verification"),
+                             QStringLiteral("Veuillez saisir le code recu par email."));
+        return;
+    }
+
+    if (m_passwordResetCode.isEmpty()) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Verification"),
+                             QStringLiteral("Veuillez d'abord demander un code."));
+        return;
+    }
+
+    if (entered != m_passwordResetCode) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Verification"),
+                             QStringLiteral("Code incorrect."));
+        return;
+    }
+
+    m_passwordResetVerified = true;
+    if (ui->lineEdit_10b) ui->lineEdit_10b->clear();
+    if (ui->lineEdit_11b) ui->lineEdit_11b->clear();
+    ui->stackedWidget->setCurrentWidget(ui->Nmdpb);
 }
 
 void MainWindow::on_pushButton_16b_clicked()
 {
     // Valider nouveau mot de passe -> retour login
-    if (ui->stackedWidget && ui->loginb) {
-        ui->stackedWidget->setCurrentWidget(ui->loginb);
+    if (!ui || !ui->stackedWidget || !ui->loginb) {
+        return;
     }
+
+    if (!m_passwordResetVerified) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Recuperation"),
+                             QStringLiteral("Veuillez d'abord verifier le code."));
+        return;
+    }
+
+    const QString pass1 = ui->lineEdit_10b ? ui->lineEdit_10b->text() : QString();
+    const QString pass2 = ui->lineEdit_11b ? ui->lineEdit_11b->text() : QString();
+
+    if (pass1.trimmed().isEmpty() || pass2.trimmed().isEmpty()) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Recuperation"),
+                             QStringLiteral("Veuillez saisir et confirmer le nouveau mot de passe."));
+        return;
+    }
+
+    if (pass1 != pass2) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Recuperation"),
+                             QStringLiteral("Les mots de passe ne correspondent pas."));
+        return;
+    }
+
+    QString error;
+    if (!resetAdminPassword(m_passwordResetEmail, pass1, &error)) {
+        QMessageBox::critical(this,
+                              QStringLiteral("Recuperation"),
+                              QStringLiteral("Impossible de mettre a jour le mot de passe: %1").arg(error));
+        return;
+    }
+
+    // Si l'utilisateur a activ├⌐ "se souvenir de moi", mettre ├á jour le mot de passe enregistr├⌐.
+    {
+        QSettings settings(QStringLiteral("AquaTech"), QStringLiteral("AquaTech"));
+        const bool remember = settings.value(QStringLiteral("auth/rememberMe"), false).toBool();
+        const QString savedUser = settings.value(QStringLiteral("auth/rememberedUsername")).toString();
+        if (remember && savedUser.compare(QStringLiteral("admin"), Qt::CaseInsensitive) == 0) {
+            settings.setValue(QStringLiteral("auth/rememberedPassword"), pass1);
+            settings.sync();
+        }
+    }
+
+    QMessageBox::information(this,
+                             QStringLiteral("Recuperation"),
+                             QStringLiteral("Mot de passe mis a jour. Vous pouvez vous connecter."));
+
+    clearPasswordResetState();
+    if (ui->lineEdit_6b) ui->lineEdit_6b->clear();
+    if (ui->lineEdit_8b) ui->lineEdit_8b->clear();
+    if (ui->lineEdit_9b) ui->lineEdit_9b->clear();
+    if (ui->lineEdit_10b) ui->lineEdit_10b->clear();
+    if (ui->lineEdit_11b) ui->lineEdit_11b->clear();
+
+    ui->stackedWidget->setCurrentWidget(ui->loginb);
+    applyRememberedLogin(ui);
 }
 
 void MainWindow::on_pushButton_17b_clicked()
 {
     // Retour -> login
-    if (ui->stackedWidget && ui->loginb) {
-        ui->stackedWidget->setCurrentWidget(ui->loginb);
+    if (!ui || !ui->stackedWidget || !ui->loginb) {
+        return;
     }
+
+    clearPasswordResetState();
+    ui->stackedWidget->setCurrentWidget(ui->loginb);
+    applyRememberedLogin(ui);
 }
 
 void MainWindow::on_pushButton_18b_clicked()
 {
     // Retour (GBateau) -> Rmdpb
-    if (ui->stackedWidget && ui->Rmdpb) {
-        ui->stackedWidget->setCurrentWidget(ui->Rmdpb);
+    if (!ui || !ui->stackedWidget || !ui->Rmdpb) {
+        return;
     }
+
+    m_passwordResetVerified = false;
+    ui->stackedWidget->setCurrentWidget(ui->Rmdpb);
 }
 
 void MainWindow::on_pushButton_19b_clicked()
 {
     // Retour (GBateau) -> Remailb
-    if (ui->stackedWidget && ui->Remailb) {
-        ui->stackedWidget->setCurrentWidget(ui->Remailb);
+    if (!ui || !ui->stackedWidget || !ui->Remailb) {
+        return;
     }
+
+    m_passwordResetVerified = false;
+    ui->stackedWidget->setCurrentWidget(ui->Remailb);
 }
 
 void MainWindow::on_p1_2b_clicked()
@@ -4421,6 +4023,9 @@ void MainWindow::on_pushButton_9b_clicked()
     // D├⌐connexion : revenir ├á la page login
     if (ui && ui->stackedWidget && ui->loginb) {
         ui->stackedWidget->setCurrentWidget(ui->loginb);
+    }
+    if (ui) {
+        applyRememberedLogin(ui);
     }
     if (ui && ui->frame_10b) {
         ui->frame_10b->hide();
@@ -4469,300 +4074,793 @@ void MainWindow::legacy_pushButton_7b_clicked()
 
 MainWindow::~MainWindow()
 {
-    m_arduino.close_arduino();
     delete ui;
 }
 
-void MainWindow::initializeArduinoLink()
+void MainWindow::setupArduinoIntegration()
 {
-    QSerialPort* existingSerial = m_arduino.serial();
-    if (existingSerial && existingSerial->isOpen()) {
-        if (m_arduinoReconnectTimer && m_arduinoReconnectTimer->isActive()) {
-            m_arduinoReconnectTimer->stop();
+    if (m_arduino) return;
+
+    m_arduino = new ArduinoSerial(this);
+
+    m_arduinoStatusLabel = new QLabel(QStringLiteral("Arduino: disconnected"), this);
+    m_arduinoPortCombo = new QComboBox(this);
+    m_arduinoConnectButton = new QPushButton(QStringLiteral("Connect"), this);
+    m_arduinoTxEdit = new QLineEdit(this);
+    m_arduinoSendButton = new QPushButton(QStringLiteral("Send"), this);
+
+    m_arduinoPortCombo->setToolTip(QStringLiteral("Serial port"));
+    m_arduinoPortCombo->setMinimumWidth(90);
+
+    m_arduinoConnectButton->setToolTip(QStringLiteral("Connect / Disconnect"));
+    m_arduinoConnectButton->setMinimumWidth(95);
+
+    m_arduinoTxEdit->setPlaceholderText(QStringLiteral("TX line"));
+    m_arduinoTxEdit->setClearButtonEnabled(true);
+    m_arduinoTxEdit->setMaximumWidth(220);
+
+    m_arduinoSendButton->setToolTip(QStringLiteral("Send a line (LF)"));
+    m_arduinoSendButton->setMinimumWidth(70);
+
+    if (auto* sb = statusBar()) {
+        sb->addWidget(m_arduinoStatusLabel, 1);
+        sb->addPermanentWidget(m_arduinoPortCombo);
+        sb->addPermanentWidget(m_arduinoConnectButton);
+        sb->addPermanentWidget(m_arduinoTxEdit);
+        sb->addPermanentWidget(m_arduinoSendButton);
+    }
+
+    setupArduinoTemperatureButton();
+
+    // Remember last selected port.
+    QSettings settings(QStringLiteral("AquaTech"), QStringLiteral("AquaTech"));
+    const QString savedPort = settings.value(QStringLiteral("arduino/portName")).toString().trimmed();
+
+    refreshArduinoPortList();
+    if (!savedPort.isEmpty() && m_arduinoPortCombo) {
+        const int idx = m_arduinoPortCombo->findText(savedPort);
+        if (idx >= 0) m_arduinoPortCombo->setCurrentIndex(idx);
+    }
+
+    connect(m_arduinoPortCombo, &QComboBox::currentTextChanged, this, [](const QString& port) {
+        QSettings s(QStringLiteral("AquaTech"), QStringLiteral("AquaTech"));
+        s.setValue(QStringLiteral("arduino/portName"), port.trimmed());
+        s.sync();
+    });
+
+    connect(m_arduinoConnectButton, &QPushButton::clicked, this, [this]() {
+        if (!m_arduino) return;
+
+        if (m_arduino->isConnected()) {
+            m_arduino->disconnectFromPort();
+            return;
         }
-        return;
-    }
 
-    qInfo() << "initializeArduinoLink: Tentative de connexion Arduino";
-    
-    const int arduinoState = m_arduino.connect_arduino();
-    if (arduinoState != arduino::ARDUINO_AVAILABLE) {
-        qWarning() << "initializeArduinoLink: Arduino non détecté. Liaison série inactive.";
+        refreshArduinoPortList();
 
-        if (m_arduinoReconnectTimer && !m_arduinoReconnectTimer->isActive()) {
-            qInfo() << "initializeArduinoLink: Reconnexion auto activée (2s).";
-            m_arduinoReconnectTimer->start();
+        const QString portName = m_arduinoPortCombo ? m_arduinoPortCombo->currentText().trimmed() : QString();
+        if (portName.isEmpty() || portName == QStringLiteral("(no ports)")) {
+            if (statusBar()) statusBar()->showMessage(QStringLiteral("Arduino: no serial ports found"), 4000);
+            updateArduinoUiState();
+            return;
         }
-        return;
-    }
 
-    QSerialPort* serial = m_arduino.serial();
-    if (!serial) {
-        qWarning() << "initializeArduinoLink: Port série Arduino invalide.";
-
-        if (m_arduinoReconnectTimer && !m_arduinoReconnectTimer->isActive()) {
-            m_arduinoReconnectTimer->start();
+        QString error;
+        if (!m_arduino->connectToPort(portName, 9600, &error)) {
+            if (statusBar()) statusBar()->showMessage(QStringLiteral("Arduino connect failed: %1").arg(error), 6000);
+            updateArduinoUiState();
+            return;
         }
-        return;
-    }
+    });
 
-    connect(serial, &QSerialPort::readyRead, this, &MainWindow::onArduinoDataReceived, Qt::UniqueConnection);
+    const auto sendLine = [this]() {
+        if (!m_arduino || !m_arduinoTxEdit) return;
 
-    if (m_arduinoReconnectTimer && m_arduinoReconnectTimer->isActive()) {
-        m_arduinoReconnectTimer->stop();
-    }
+        const QString line = m_arduinoTxEdit->text().trimmed();
+        if (line.isEmpty()) return;
 
-    qInfo() << "initializeArduinoLink: Arduino connecté sur" << m_arduino.getarduino_port_name();
+        QString error;
+        if (!m_arduino->writeLine(line, &error)) {
+            if (statusBar()) statusBar()->showMessage(QStringLiteral("Arduino send failed: %1").arg(error), 6000);
+            return;
+        }
+
+        m_arduinoTxEdit->clear();
+    };
+
+    connect(m_arduinoSendButton, &QPushButton::clicked, this, sendLine);
+    connect(m_arduinoTxEdit, &QLineEdit::returnPressed, this, sendLine);
+
+    connect(m_arduino, &ArduinoSerial::connected, this, [this](const QString& portName) {
+        if (m_arduinoStatusLabel) m_arduinoStatusLabel->setText(QStringLiteral("Arduino: %1").arg(portName));
+        updateArduinoUiState();
+        updateArduinoTemperatureDialogConnectionState();
+    });
+
+    connect(m_arduino, &ArduinoSerial::disconnected, this, [this]() {
+        if (m_arduinoStatusLabel) m_arduinoStatusLabel->setText(QStringLiteral("Arduino: disconnected"));
+        updateArduinoUiState();
+        updateArduinoTemperatureDialogConnectionState();
+    });
+
+    connect(m_arduino, &ArduinoSerial::lineReceived, this, [this](const QString& line) {
+        handleArduinoTemperatureLine(line);
+    });
+
+    connect(m_arduino, &ArduinoSerial::errorOccurred, this, [this](const QString& message) {
+        if (statusBar()) statusBar()->showMessage(QStringLiteral("Arduino error: %1").arg(message), 8000);
+        updateArduinoUiState();
+        updateArduinoTemperatureDialogConnectionState();
+    });
+
+    updateArduinoUiState();
 }
 
-void MainWindow::onArduinoDataReceived()
+void MainWindow::setupArduinoTemperatureButton()
 {
-    m_arduinoBuffer += m_arduino.read_from_arduino();
-    qInfo() << "onArduinoDataReceived: Buffer contient" << m_arduinoBuffer.size() << "bytes";
+    if (!ui || !ui->cap_pagecaptures) return;
+    if (m_capArduinoTempButton) return;
 
-    int newlineIndex = m_arduinoBuffer.indexOf('\n');
-    while (newlineIndex >= 0) {
-        const QByteArray rawLine = m_arduinoBuffer.left(newlineIndex);
-        m_arduinoBuffer.remove(0, newlineIndex + 1);
+    m_capArduinoTempButton = new QPushButton(QStringLiteral("Temperature normale"), ui->cap_pagecaptures);
+    m_capArduinoTempButton->setObjectName(QStringLiteral("cap_btnArduinoTemp"));
 
-        const QString message = QString::fromUtf8(rawLine).trimmed();
-        if (!message.isEmpty()) {
-            qInfo() << "onArduinoDataReceived: Message complet reçu:" << message;
-            processArduinoMessage(message);
+    // Status-style button (green/yellow/red) driven by temperature.
+    m_capArduinoTempButton->setStyleSheet(QStringLiteral(
+        "QPushButton {"
+        "  background-color: #27ae60;"
+        "  border: 2px solid #229954;"
+        "  border-radius: 8px;"
+        "  color: white;"
+        "  font-weight: 700;"
+        "  padding: 8px 16px;"
+        "}"
+    ));
+
+    const QRect ref = ui->cap_btnExporter ? ui->cap_btnExporter->geometry() : QRect(1360, 130, 151, 41);
+    const int w = qMax(190, ref.width() + 20);
+    const int h = ref.height();
+    const int x = 20;      // top-left
+    const int y = 20;
+    m_capArduinoTempButton->setGeometry(x, y, w, h);
+    m_capArduinoTempButton->show();
+    m_capArduinoTempButton->raise();
+
+    if (m_hasArduinoTemperature) {
+        // Apply the last known status immediately.
+        const double t = m_lastArduinoTemperatureC;
+        if (t < 29.0) {
+            m_capArduinoTempButton->setText(QStringLiteral("Temperature normale"));
+            m_capArduinoTempButton->setStyleSheet(QStringLiteral(
+                "QPushButton { background-color: #27ae60; border: 2px solid #229954; border-radius: 8px; color: white; font-weight: 700; padding: 8px 16px; }"
+            ));
+        } else if (t <= 32.0) {
+            m_capArduinoTempButton->setText(QStringLiteral("Temp danger"));
+            m_capArduinoTempButton->setStyleSheet(QStringLiteral(
+                "QPushButton { background-color: #f39c12; border: 2px solid #d68910; border-radius: 8px; color: white; font-weight: 700; padding: 8px 16px; }"
+            ));
+        } else {
+            m_capArduinoTempButton->setText(QStringLiteral("Temp critique"));
+            m_capArduinoTempButton->setStyleSheet(QStringLiteral(
+                "QPushButton { background-color: #e74c3c; border: 2px solid #c0392b; border-radius: 8px; color: white; font-weight: 700; padding: 8px 16px; }"
+            ));
         }
+    }
 
-        newlineIndex = m_arduinoBuffer.indexOf('\n');
+    connect(m_capArduinoTempButton, &QPushButton::clicked, this, &MainWindow::toggleCapturesArduinoTemperatureView);
+}
+
+// Forward declarations (used before definitions below)
+static QString tempStatusCss(double temperatureC);
+
+void MainWindow::toggleCapturesArduinoTemperatureView()
+{
+    if (!ui || !ui->cap_pagecaptures) return;
+    ensureCapturesArduinoTemperatureView();
+    if (!m_capArduinoTempFrame) return;
+
+    const bool shouldShow = !m_capArduinoTempFrame->isVisible();
+    setCapturesArduinoTemperatureViewVisible(shouldShow);
+    if (!shouldShow) return;
+
+    ensureArduinoTemperatureConnected();
+    updateArduinoTemperatureDialogConnectionState();
+    if (m_hasArduinoTemperature) {
+        updateArduinoTemperatureDialog(m_lastArduinoTemperatureC, false);
     }
 }
 
-void MainWindow::processArduinoMessage(const QString& message)
+void MainWindow::setCapturesArduinoTemperatureViewVisible(bool visible)
 {
-    const QString key = normalizeKey(message);
-    qInfo() << "processArduinoMessage: Message reçu:" << message << "Key:" << key;
+    if (!ui) return;
+    if (ui->cap_tableWidget) ui->cap_tableWidget->setVisible(!visible);
+    if (ui->frame_zonesb_2) ui->frame_zonesb_2->setVisible(!visible);
+    if (m_capArduinoTempFrame) {
+        m_capArduinoTempFrame->setVisible(visible);
+        if (visible) {
+            m_capArduinoTempFrame->raise();
+        }
+    }
+}
 
-    if (key.startsWith(QStringLiteral("quaireceived:"))) {
-        bool ok = false;
-        const int quaiId = key.section(QLatin1Char(':'), 1, 1).toInt(&ok);
-        if (ok && quaiId > 0) {
-            qInfo() << "processArduinoMessage: ACK quai reçu:" << quaiId;
-            confirmQuaiAssignmentFromArduino(quaiId);
+void MainWindow::ensureCapturesArduinoTemperatureView()
+{
+    if (!ui || !ui->cap_pagecaptures) return;
+    if (m_capArduinoTempFrame) return;
+
+    auto* frame = new QFrame(ui->cap_pagecaptures);
+    frame->setObjectName(QStringLiteral("cap_tempView"));
+    frame->setFrameShape(QFrame::NoFrame);
+
+    QRect area(510, 180, 881, 551);
+    if (ui->cap_tableWidget) {
+        area = ui->cap_tableWidget->geometry();
+    }
+    if (ui->frame_zonesb_2) {
+        area = area.united(ui->frame_zonesb_2->geometry());
+    }
+    frame->setGeometry(area);
+    frame->hide();
+
+    auto* root = new QVBoxLayout(frame);
+    root->setContentsMargins(18, 18, 18, 18);
+    root->setSpacing(14);
+
+    auto* topRow = new QHBoxLayout();
+    auto* title = new QLabel(QStringLiteral("Surveillance temp\u00E9rature"), frame);
+    {
+        QFont f = title->font();
+        f.setBold(true);
+        f.setPointSize(qMax(12, f.pointSize() + 4));
+        title->setFont(f);
+    }
+
+    m_arduinoTempBadgeLabel = new QLabel(QStringLiteral("-"), frame);
+    m_arduinoTempBadgeLabel->setAlignment(Qt::AlignCenter);
+    m_arduinoTempBadgeLabel->setStyleSheet(tempStatusCss(0.0));
+
+    topRow->addWidget(title, 1);
+    topRow->addWidget(m_arduinoTempBadgeLabel, 0);
+    root->addLayout(topRow);
+
+    m_arduinoTempConnLabel = new QLabel(QStringLiteral("Port: disconnected"), frame);
+    {
+        QFont f = m_arduinoTempConnLabel->font();
+        f.setPointSize(qMax(9, f.pointSize() - 1));
+        m_arduinoTempConnLabel->setFont(f);
+    }
+    root->addWidget(m_arduinoTempConnLabel);
+
+    auto* cardsRow = new QHBoxLayout();
+    cardsRow->setSpacing(12);
+
+    auto makeCard = [frame](const QString& cardTitle, const QString& initialValue, const QString& valueCss, QLabel** valueOut) {
+        auto* card = new QFrame(frame);
+        card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        card->setMinimumHeight(104);
+
+        auto* layout = new QVBoxLayout(card);
+        layout->setContentsMargins(14, 12, 14, 12);
+        layout->setSpacing(6);
+
+        auto* t = new QLabel(cardTitle, card);
+        QFont tf = t->font();
+        tf.setBold(true);
+        tf.setPointSize(qMax(9, tf.pointSize() - 1));
+        t->setFont(tf);
+        layout->addWidget(t);
+
+        auto* v = new QLabel(initialValue, card);
+        QFont vf = v->font();
+        vf.setBold(true);
+        vf.setPointSize(qMax(14, vf.pointSize() + 10));
+        v->setFont(vf);
+        v->setStyleSheet(valueCss);
+        layout->addWidget(v);
+
+        if (valueOut) *valueOut = v;
+        return card;
+    };
+
+    QLabel* currentValueLabel = nullptr;
+    cardsRow->addWidget(makeCard(QStringLiteral("Temp\u00E9rature actuelle"), QStringLiteral("-- \u00B0C"), QString(), &currentValueLabel));
+    cardsRow->addWidget(makeCard(QStringLiteral("Seuil danger"), QStringLiteral("29.0 \u00B0C"), QStringLiteral("color: #f39c12;"), nullptr));
+    cardsRow->addWidget(makeCard(QStringLiteral("Seuil critique"), QStringLiteral("32.0 \u00B0C"), QStringLiteral("color: #e74c3c;"), nullptr));
+    root->addLayout(cardsRow);
+
+    m_arduinoTempValueLabel = currentValueLabel;
+
+    auto* histFrame = new QFrame(frame);
+    auto* histLayout = new QVBoxLayout(histFrame);
+    histLayout->setContentsMargins(14, 12, 14, 12);
+    histLayout->setSpacing(8);
+
+    auto* histTitle = new QLabel(QStringLiteral("Historique"), histFrame);
+    {
+        QFont f = histTitle->font();
+        f.setBold(true);
+        histTitle->setFont(f);
+    }
+    histLayout->addWidget(histTitle);
+
+    m_arduinoTempHistory = new QPlainTextEdit(histFrame);
+    m_arduinoTempHistory->setReadOnly(true);
+    m_arduinoTempHistory->document()->setMaximumBlockCount(250);
+    m_arduinoTempHistory->setStyleSheet(QStringLiteral(
+        "background-color: rgb(224, 238, 255);"
+        "border: 2PX solid rgb(0, 0, 115);"
+        "border-radius: 10px;"
+        "color: rgb(0, 0, 112);"
+        "padding: 8px;"
+    ));
+    histLayout->addWidget(m_arduinoTempHistory, 1);
+
+    root->addWidget(histFrame, 1);
+
+    // Refresh connection state every 2 seconds while the view exists.
+    auto* refreshTimer = new QTimer(frame);
+    refreshTimer->setInterval(2000);
+    connect(refreshTimer, &QTimer::timeout, this, [this, lastAttemptMs = qint64(0)]() mutable {
+        if (!m_capArduinoTempFrame || !m_capArduinoTempFrame->isVisible()) return;
+
+        updateArduinoTemperatureDialogConnectionState();
+        if (!m_arduino || m_arduino->isConnected()) return;
+        if (!m_arduino->serialPortAvailable()) return;
+
+        const QStringList ports = m_arduino->availablePortNames();
+        if (ports.isEmpty()) return;
+
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        if (lastAttemptMs != 0 && (now - lastAttemptMs) < 8000) return;
+        lastAttemptMs = now;
+
+        ensureArduinoTemperatureConnected();
+        updateArduinoTemperatureDialogConnectionState();
+    });
+    refreshTimer->start();
+
+    m_capArduinoTempFrame = frame;
+}
+
+static bool tryParseTemperatureC(const QString& line, double* outC)
+{
+    if (!outC) return false;
+
+    QString t = line.trimmed();
+    if (t.isEmpty()) return false;
+
+    // Accept both decimal separators and optional units (e.g. "25.5", "25,5", "25.5 °C", "T=25.5").
+    t.replace(QLatin1Char(','), QLatin1Char('.'));
+
+    static QRegularExpression rx(QStringLiteral("(-?\\d+(?:\\.\\d+)?)"));
+    const QRegularExpressionMatch m = rx.match(t);
+    if (!m.hasMatch()) return false;
+
+    bool ok = false;
+    const double v = m.captured(1).toDouble(&ok);
+    if (!ok) return false;
+
+    *outC = v;
+    return true;
+}
+
+static QString tempStatusText(double temperatureC)
+{
+    if (temperatureC < 29.0) return QStringLiteral("Normal");
+    if (temperatureC <= 32.0) return QStringLiteral("Danger");
+    return QStringLiteral("Critique");
+}
+
+static QString tempStatusButtonText(double temperatureC)
+{
+    if (temperatureC < 29.0) return QStringLiteral("Temperature normale");
+    if (temperatureC <= 32.0) return QStringLiteral("Temp danger");
+    return QStringLiteral("Temp critique");
+}
+
+static QString tempStatusButtonCss(double temperatureC)
+{
+    const QString common = QStringLiteral(
+        "color: white;"
+        "font-weight: 700;"
+        "border-radius: 8px;"
+        "padding: 8px 16px;"
+    );
+
+    if (temperatureC < 29.0) {
+        return QStringLiteral("QPushButton { background-color: #27ae60; border: 2px solid #229954;") + common + QStringLiteral(" }");
+    }
+    if (temperatureC <= 32.0) {
+        return QStringLiteral("QPushButton { background-color: #f39c12; border: 2px solid #d68910;") + common + QStringLiteral(" }");
+    }
+    return QStringLiteral("QPushButton { background-color: #e74c3c; border: 2px solid #c0392b;") + common + QStringLiteral(" }");
+}
+
+static QString tempStatusCss(double temperatureC)
+{
+    // Reuse palette already present in mainwindow.ui.
+    const QString common = QStringLiteral(
+        "color: white;"
+        "font-weight: bold;"
+        "padding: 6px 12px;"
+        "border-radius: 999px;"
+        "min-width: 90px;"
+        "text-align: center;"
+    );
+
+    if (temperatureC < 29.0) {
+        return QStringLiteral("background-color: #27ae60; border: 2px solid #229954;") + common;
+    }
+    if (temperatureC <= 32.0) {
+        return QStringLiteral("background-color: #f39c12; border: 2px solid #d68910;") + common;
+    }
+    return QStringLiteral("background-color: #e74c3c; border: 2px solid #c0392b;") + common;
+}
+
+void MainWindow::showArduinoTemperatureWindow()
+{
+    if (m_arduinoTempDialog) {
+        m_arduinoTempDialog->show();
+        m_arduinoTempDialog->raise();
+        m_arduinoTempDialog->activateWindow();
+        ensureArduinoTemperatureConnected();
+        updateArduinoTemperatureDialogConnectionState();
+        return;
+    }
+
+    auto* dlg = new QDialog(this);
+    dlg->setWindowTitle(QStringLiteral("Captures \u2014 Surveillance temp\u00E9rature"));
+    dlg->setAttribute(Qt::WA_DeleteOnClose, true);
+    dlg->resize(820, 560);
+    dlg->setStyleSheet(QStringLiteral(
+        "QDialog { background-color: rgba(0, 0, 127,0.9); }"
+        "QLabel { color: white; }"
+        "QPlainTextEdit { background: transparent; border: none; color: white; }"
+    ));
+
+    m_arduinoTempDialog = dlg;
+
+    auto* root = new QVBoxLayout(dlg);
+    root->setContentsMargins(18, 18, 18, 18);
+    root->setSpacing(14);
+
+    auto* topRow = new QHBoxLayout();
+    auto* title = new QLabel(QStringLiteral("Captures \u2014 Surveillance temp\u00E9rature"), dlg);
+    {
+        QFont f = title->font();
+        f.setBold(true);
+        f.setPointSize(qMax(12, f.pointSize() + 4));
+        title->setFont(f);
+    }
+    m_arduinoTempBadgeLabel = new QLabel(QStringLiteral("-"), dlg);
+    m_arduinoTempBadgeLabel->setAlignment(Qt::AlignCenter);
+    m_arduinoTempBadgeLabel->setStyleSheet(tempStatusCss(0.0));
+    topRow->addWidget(title, 1);
+    topRow->addWidget(m_arduinoTempBadgeLabel, 0);
+    root->addLayout(topRow);
+
+    m_arduinoTempConnLabel = new QLabel(QStringLiteral("Port: disconnected"), dlg);
+    {
+        QFont f = m_arduinoTempConnLabel->font();
+        f.setPointSize(qMax(9, f.pointSize() - 1));
+        m_arduinoTempConnLabel->setFont(f);
+        m_arduinoTempConnLabel->setStyleSheet(QStringLiteral("color: rgba(255, 255, 255, 210);"));
+    }
+    root->addWidget(m_arduinoTempConnLabel);
+
+    // Cards row (current / danger / critical)
+    auto* cardsRow = new QHBoxLayout();
+    cardsRow->setSpacing(12);
+
+    auto makeCard = [dlg](const QString& cardTitle, const QString& initialValue, const QString& valueCss, QLabel** valueOut) {
+        auto* frame = new QFrame(dlg);
+        frame->setStyleSheet(QStringLiteral(
+            "QFrame { background-color: rgba(255, 255, 255, 18); border-radius: 14px; }"
+            "QLabel { border: none; }"
+        ));
+        frame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        frame->setMinimumHeight(104);
+
+        auto* layout = new QVBoxLayout(frame);
+        layout->setContentsMargins(14, 12, 14, 12);
+        layout->setSpacing(6);
+
+        auto* t = new QLabel(cardTitle, frame);
+        QFont tf = t->font();
+        tf.setBold(true);
+        tf.setPointSize(qMax(9, tf.pointSize() - 1));
+        t->setFont(tf);
+        t->setStyleSheet(QStringLiteral("color: rgba(255, 255, 255, 210);"));
+        layout->addWidget(t);
+
+        auto* v = new QLabel(initialValue, frame);
+        QFont vf = v->font();
+        vf.setBold(true);
+        vf.setPointSize(qMax(14, vf.pointSize() + 10));
+        v->setFont(vf);
+        v->setStyleSheet(valueCss);
+        layout->addWidget(v);
+
+        if (valueOut) *valueOut = v;
+        return frame;
+    };
+
+    QLabel* currentValueLabel = nullptr;
+    cardsRow->addWidget(makeCard(QStringLiteral("Temp\u00E9rature actuelle"), QStringLiteral("-- \u00B0C"), QString(), &currentValueLabel));
+    cardsRow->addWidget(makeCard(QStringLiteral("Seuil danger"), QStringLiteral("29.0 \u00B0C"), QStringLiteral("color: #f39c12;"), nullptr));
+    cardsRow->addWidget(makeCard(QStringLiteral("Seuil critique"), QStringLiteral("32.0 \u00B0C"), QStringLiteral("color: #e74c3c;"), nullptr));
+    root->addLayout(cardsRow);
+
+    m_arduinoTempValueLabel = currentValueLabel;
+
+    // History panel
+    auto* histFrame = new QFrame(dlg);
+    histFrame->setStyleSheet(QStringLiteral(
+        "QFrame { background-color: rgba(255, 255, 255, 18); border-radius: 14px; }"
+        "QLabel { border: none; }"
+    ));
+    auto* histLayout = new QVBoxLayout(histFrame);
+    histLayout->setContentsMargins(14, 12, 14, 12);
+    histLayout->setSpacing(8);
+
+    auto* histTitle = new QLabel(QStringLiteral("Historique"), histFrame);
+    {
+        QFont f = histTitle->font();
+        f.setBold(true);
+        histTitle->setFont(f);
+        histTitle->setStyleSheet(QStringLiteral("color: rgba(255, 255, 255, 210);"));
+    }
+    histLayout->addWidget(histTitle);
+
+    m_arduinoTempHistory = new QPlainTextEdit(histFrame);
+    m_arduinoTempHistory->setReadOnly(true);
+    m_arduinoTempHistory->document()->setMaximumBlockCount(250);
+    histLayout->addWidget(m_arduinoTempHistory, 1);
+
+    root->addWidget(histFrame, 1);
+
+    connect(dlg, &QObject::destroyed, this, [this]() {
+        m_arduinoTempDialog = nullptr;
+        m_arduinoTempValueLabel = nullptr;
+        m_arduinoTempBadgeLabel = nullptr;
+        m_arduinoTempConnLabel = nullptr;
+        m_arduinoTempHistory = nullptr;
+    });
+
+    // Keep the connection state fresh while the dialog is open.
+    auto* refreshTimer = new QTimer(dlg);
+    refreshTimer->setInterval(2000);
+    connect(refreshTimer, &QTimer::timeout, this, [this, lastAttemptMs = qint64(0)]() mutable {
+        updateArduinoTemperatureDialogConnectionState();
+
+        if (!m_arduino || m_arduino->isConnected()) return;
+        if (!m_arduino->serialPortAvailable()) return;
+
+        // Avoid spamming: only try auto-connect when ports exist,
+        // and don't retry too often.
+        const QStringList ports = m_arduino->availablePortNames();
+        if (ports.isEmpty()) return;
+
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        if (lastAttemptMs != 0 && (now - lastAttemptMs) < 8000) return;
+        lastAttemptMs = now;
+
+        ensureArduinoTemperatureConnected();
+        updateArduinoTemperatureDialogConnectionState();
+    });
+    refreshTimer->start();
+
+    ensureArduinoTemperatureConnected();
+    updateArduinoTemperatureDialogConnectionState();
+    if (m_hasArduinoTemperature) {
+        updateArduinoTemperatureDialog(m_lastArduinoTemperatureC, false);
+    }
+
+    dlg->show();
+}
+
+void MainWindow::ensureArduinoTemperatureConnected()
+{
+    if (!m_arduino) return;
+    if (m_arduino->isConnected()) return;
+
+    if (!m_arduino->serialPortAvailable()) {
+        if (m_arduinoTempConnLabel) {
+            m_arduinoTempConnLabel->setText(QStringLiteral("Qt SerialPort indisponible (installez le module SerialPort de Qt)."));
+        }
+        if (statusBar()) {
+            statusBar()->showMessage(QStringLiteral("Qt SerialPort module missing: install 'Qt Serial Port' then rebuild"), 8000);
+        }
+        return;
+    }
+
+    const QStringList ports = m_arduino->availablePortNames();
+    if (ports.isEmpty()) {
+        if (m_arduinoTempConnLabel) {
+            m_arduinoTempConnLabel->setText(QStringLiteral("Port: aucun port detecte (branchez l'Arduino / driver)."));
+        }
+        if (statusBar()) statusBar()->showMessage(QStringLiteral("Arduino: no serial ports detected"), 6000);
+        return;
+    }
+
+    const QString selectedPort = (m_arduinoPortCombo ? m_arduinoPortCombo->currentText().trimmed() : QString());
+
+    QSettings settings(QStringLiteral("AquaTech"), QStringLiteral("AquaTech"));
+    const QString savedPort = settings.value(QStringLiteral("arduino/portName")).toString().trimmed();
+
+    QString chosen;
+    if (!selectedPort.isEmpty() && selectedPort != QStringLiteral("(no ports)") && ports.contains(selectedPort)) {
+        chosen = selectedPort;
+    } else if (!savedPort.isEmpty() && ports.contains(savedPort)) {
+        chosen = savedPort;
+    } else if (ports.contains(QStringLiteral("COM3"))) {
+        chosen = QStringLiteral("COM3");
+    } else {
+        chosen = ports.first();
+    }
+
+    QString error;
+    if (!m_arduino->connectToPort(chosen, 9600, &error)) {
+        if (m_arduinoTempConnLabel) {
+            m_arduinoTempConnLabel->setText(QStringLiteral("Port: %1 (erreur: %2)").arg(chosen, error));
+        }
+    }
+}
+
+void MainWindow::handleArduinoTemperatureLine(const QString& line)
+{
+    double temperatureC = 0.0;
+    if (!tryParseTemperatureC(line, &temperatureC)) return;
+
+    m_hasArduinoTemperature = true;
+    m_lastArduinoTemperatureC = temperatureC;
+
+    if (m_capArduinoTempButton) {
+        m_capArduinoTempButton->setText(tempStatusButtonText(temperatureC));
+        m_capArduinoTempButton->setStyleSheet(tempStatusButtonCss(temperatureC));
+    }
+
+    updateArduinoTemperatureDialog(temperatureC);
+
+    // Live sync into the captures list.
+    updateCapturesTableLiveTemperature(temperatureC);
+}
+
+void MainWindow::updateCapturesTableLiveTemperature(double temperatureC)
+{
+    if (!ui || !ui->cap_tableWidget) return;
+    QTableWidget* table = ui->cap_tableWidget;
+    if (table->rowCount() <= 0) return;
+
+    // Only update when we are on the captures page (avoid surprising changes).
+    if (ui->stackedWidget && ui->cap_pagecaptures) {
+        if (ui->stackedWidget->currentWidget() != ui->cap_pagecaptures) {
             return;
         }
     }
 
-    if (key == QStringLiteral("arrivee")) {
-        qInfo() << "processArduinoMessage: Signal ARRIVEE reçu";
-        assignFreeQuaiAndNotifyArduino();
-        return;
-    }
+    constexpr int kIdCol = 0;
+    constexpr int kTempCol = 5;
 
-    if (key == QStringLiteral("depart")) {
-        qInfo() << "processArduinoMessage: Signal DEPART reçu";
-        releaseAssignedQuai();
-        return;
-    }
+    int targetRow = -1;
 
-    qInfo() << "processArduinoMessage: Message ignoré:" << message;
-}
-
-void MainWindow::confirmQuaiAssignmentFromArduino(int quaiId)
-{
-    if (quaiId <= 0) {
-        return;
-    }
-
-    if (m_lastAssignedQuaiId == quaiId) {
-        qInfo() << "confirmQuaiAssignmentFromArduino: Quai déjà confirmé" << quaiId;
-        return;
-    }
-
-    if (m_pendingQuaiId > 0 && m_pendingQuaiId != quaiId) {
-        qWarning() << "confirmQuaiAssignmentFromArduino: ACK inattendu. pending=" << m_pendingQuaiId
-                   << "ack=" << quaiId;
-    }
-
-    if (!updateQuaiStatus(quaiId, QStringLiteral("Occupe"))) {
-        qWarning() << "confirmQuaiAssignmentFromArduino: Echec mise à jour Occupe pour" << quaiId;
-        m_pendingQuaiId = quaiId;
-        return;
-    }
-
-    m_lastAssignedQuaiId = quaiId;
-    m_pendingQuaiId = -1;
-    refreshQuaiTable();
-    qInfo() << "confirmQuaiAssignmentFromArduino: Quai" << quaiId << "confirmé et occupé";
-}
-
-int MainWindow::findFreeQuaiId() const
-{
-    Connection* conn = Connection::getInstance();
-    if (!conn->ensureOpen()) {
-        qWarning() << "findFreeQuaiId: Connection DB failed";
-        return -1;
-    }
-
-    QSqlDatabase db = conn->getDatabase();
-    QSqlQuery query(db);
-    if (!query.exec(QStringLiteral("SELECT ID_QUAI, STATUT FROM QUAIS ORDER BY ID_QUAI"))) {
-        qWarning() << "findFreeQuaiId: Query failed:" << query.lastError().text();
-        return -1;
-    }
-
-    while (query.next()) {
-        const int quaiId = query.value(0).toInt();
-        const QString status = query.value(1).toString().trimmed();
-        const QString statusKey = normalizeKey(status);
-        qInfo() << "findFreeQuaiId: Quai" << quaiId << "Status:" << status << "Key:" << statusKey;
-        
-        // Considère comme libre si le statut commence par "libre" ou est vide/NULL
-        if (statusKey.isEmpty() || statusKey.startsWith(QStringLiteral("libre"))) {
-            qInfo() << "findFreeQuaiId: Quai" << quaiId << "est LIBRE";
-            return quaiId;
+    // If a capture is being edited, update that row specifically.
+    if (!m_editingCaptureId.isEmpty()) {
+        for (int r = 0; r < table->rowCount(); ++r) {
+            const QTableWidgetItem* idItem = table->item(r, kIdCol);
+            if (!idItem) continue;
+            if (idItem->text().trimmed() == m_editingCaptureId) {
+                targetRow = r;
+                break;
+            }
         }
+
+        // Keep the edit buffer synced too.
+        m_editingCaptureHasTemperature = true;
+        m_editingCaptureTemperatureC = temperatureC;
     }
 
-    qWarning() << "findFreeQuaiId: Aucun quai libre trouvé";
-    return -1;
+    // Otherwise, update the most recent row (row 0, sorted DESC by date).
+    if (targetRow < 0) {
+        const int current = table->currentRow();
+        targetRow = (current >= 0) ? current : 0;
+    }
+
+    QTableWidgetItem* tempItem = table->item(targetRow, kTempCol);
+    if (!tempItem) {
+        tempItem = new QTableWidgetItem();
+        table->setItem(targetRow, kTempCol, tempItem);
+    }
+
+    tempItem->setText(QString::number(temperatureC, 'f', 1));
 }
 
-int MainWindow::findAnyOccupiedQuaiId() const
+void MainWindow::updateArduinoTemperatureDialogConnectionState()
 {
-    Connection* conn = Connection::getInstance();
-    if (!conn->ensureOpen()) {
-        return -1;
+    if (!m_arduinoTempConnLabel) return;
+    if (!m_arduino) {
+        m_arduinoTempConnLabel->setText(QStringLiteral("Port: disconnected"));
+        return;
     }
 
-    QSqlDatabase db = conn->getDatabase();
-    QSqlQuery query(db);
-    if (!query.exec(QStringLiteral("SELECT ID_QUAI, STATUT FROM QUAIS ORDER BY ID_QUAI"))) {
-        return -1;
-    }
-
-    while (query.next()) {
-        const int quaiId = query.value(0).toInt();
-        const QString status = query.value(1).toString().trimmed();
-        const QString statusKey = normalizeKey(status);
-        if (statusKey.startsWith(QStringLiteral("occu"))) {
-            return quaiId;
-        }
-    }
-
-    return -1;
-}
-
-bool MainWindow::updateQuaiStatus(int quaiId, const QString& status)
-{
-    if (quaiId <= 0) {
-        qWarning() << "updateQuaiStatus: ID quai invalide:" << quaiId;
-        return false;
-    }
-
-    Connection* conn = Connection::getInstance();
-    if (!conn->ensureOpen()) {
-        qWarning() << "updateQuaiStatus: DB connection failed";
-        return false;
-    }
-
-    QSqlDatabase db = conn->getDatabase();
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral("UPDATE QUAIS SET STATUT = ? WHERE ID_QUAI = ?"));
-
-    QString dbStatus = status.trimmed();
-    const QString statusKey = normalizeKey(dbStatus);
-    
-    if (statusKey.startsWith(QStringLiteral("occu"))) {
-        dbStatus = QStringLiteral("Occupe");
-    } else if (statusKey.startsWith(QStringLiteral("libre"))) {
-        dbStatus = QStringLiteral("Libre");
+    const QString port = m_arduino->connectedPortName();
+    if (port.isEmpty()) {
+        m_arduinoTempConnLabel->setText(QStringLiteral("Port: disconnected"));
     } else {
-        // Si le statut ne correspond pas, on le met tel quel
-        qInfo() << "updateQuaiStatus: Statut non reconnu, valeur brute utilisée:" << status;
+        m_arduinoTempConnLabel->setText(QStringLiteral("Port: %1 (connecte)").arg(port));
     }
-
-    query.addBindValue(dbStatus);
-    query.addBindValue(quaiId);
-
-    if (!query.exec()) {
-        qWarning() << "updateQuaiStatus: UPDATE failed for quai" << quaiId 
-                   << "Error:" << query.lastError().text();
-        return false;
-    }
-
-    // Vérifier que la mise à jour a bien eu lieu
-    int rowsAffected = query.numRowsAffected();
-    qInfo() << "updateQuaiStatus: Quai" << quaiId << "mis à jour à" << dbStatus 
-            << "Rows affected:" << rowsAffected;
-
-    return rowsAffected > 0;
 }
 
-bool MainWindow::assignFreeQuaiAndNotifyArduino()
+void MainWindow::updateArduinoTemperatureDialog(double temperatureC, bool appendHistory)
 {
-    qInfo() << "assignFreeQuaiAndNotifyArduino: Début";
+    if (!m_arduinoTempValueLabel && !m_arduinoTempBadgeLabel && !m_arduinoTempHistory) return;
 
-    // Si un quai est déjà attribué à ce bateau, renvoyer le même ID
-    // au lieu d'occuper un nouveau quai lors des retries ARRIVEE.
-    if (m_lastAssignedQuaiId > 0) {
-        const QByteArray existingMsg = QStringLiteral("QUAI:%1\n").arg(m_lastAssignedQuaiId).toUtf8();
-        qInfo() << "assignFreeQuaiAndNotifyArduino: Quai déjà attribué, renvoi" << existingMsg;
-        m_arduino.write_to_arduino(existingMsg);
-        return true;
+    const QString valueText = QStringLiteral("%1 \u00B0C").arg(temperatureC, 0, 'f', 1);
+    if (m_arduinoTempValueLabel) {
+        m_arduinoTempValueLabel->setText(valueText);
+
+        const QString valueColor = (temperatureC < 29.0)
+            ? QStringLiteral("color: #27ae60;")
+            : (temperatureC <= 32.0)
+                ? QStringLiteral("color: #f39c12;")
+                : QStringLiteral("color: #e74c3c;");
+        m_arduinoTempValueLabel->setStyleSheet(valueColor);
     }
 
-    // Si un quai est en attente de confirmation Arduino, on le renvoie.
-    if (m_pendingQuaiId > 0) {
-        const QByteArray pendingMsg = QStringLiteral("QUAI:%1\n").arg(m_pendingQuaiId).toUtf8();
-        qInfo() << "assignFreeQuaiAndNotifyArduino: Quai en attente ACK, renvoi" << pendingMsg;
-        m_arduino.write_to_arduino(pendingMsg);
-        return true;
-    }
-    
-    const int freeQuaiId = findFreeQuaiId();
-    if (freeQuaiId <= 0) {
-        qWarning() << "assignFreeQuaiAndNotifyArduino: Aucun quai libre trouvé!";
-        m_arduino.write_to_arduino(QByteArray("COMPLET\n"));
-        m_pendingQuaiId = -1;
-        return false;
+    if (m_arduinoTempBadgeLabel) {
+        m_arduinoTempBadgeLabel->setText(tempStatusText(temperatureC));
+        m_arduinoTempBadgeLabel->setStyleSheet(tempStatusCss(temperatureC));
     }
 
-    qInfo() << "assignFreeQuaiAndNotifyArduino: Quai" << freeQuaiId << "trouvé et libre";
-
-    m_pendingQuaiId = freeQuaiId;
-    const QByteArray msg = QStringLiteral("QUAI:%1\n").arg(freeQuaiId).toUtf8();
-    qInfo() << "assignFreeQuaiAndNotifyArduino: Envoi message Arduino:" << msg;
-    if (!m_arduino.write_to_arduino(msg)) {
-        qWarning() << "assignFreeQuaiAndNotifyArduino: Echec envoi vers Arduino";
-        m_pendingQuaiId = -1;
-        return false;
+    if (appendHistory && m_arduinoTempHistory) {
+        const QString timeText = QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"));
+        m_arduinoTempHistory->appendPlainText(QStringLiteral("%1 \u2014 %2").arg(timeText, valueText));
     }
-
-    return true;
 }
 
-void MainWindow::releaseAssignedQuai()
+void MainWindow::refreshArduinoPortList()
 {
-    qInfo() << "releaseAssignedQuai: Début";
+    if (!m_arduinoPortCombo || !m_arduino) return;
 
-    const int quaiToRelease = m_lastAssignedQuaiId;
+    const QString previous = m_arduinoPortCombo->currentText().trimmed();
+    const QStringList ports = m_arduino->availablePortNames();
 
-    if (quaiToRelease <= 0) {
-        if (m_pendingQuaiId > 0) {
-            qInfo() << "releaseAssignedQuai: Annulation du quai pending" << m_pendingQuaiId;
-            m_pendingQuaiId = -1;
-        }
-        qInfo() << "releaseAssignedQuai: Aucun quai assigné à libérer.";
-        return;
-    }
+    m_arduinoPortCombo->blockSignals(true);
+    m_arduinoPortCombo->clear();
 
-    qInfo() << "releaseAssignedQuai: Libération du quai" << quaiToRelease;
-
-    if (updateQuaiStatus(quaiToRelease, QStringLiteral("Libre"))) {
-        m_lastAssignedQuaiId = -1;
-        m_pendingQuaiId = -1;
-        refreshQuaiTable();
-        qInfo() << "releaseAssignedQuai: Quai" << quaiToRelease << "libéré avec succès";
+    if (ports.isEmpty()) {
+        m_arduinoPortCombo->addItem(QStringLiteral("(no ports)"));
+        m_arduinoPortCombo->setEnabled(false);
     } else {
-        qWarning() << "releaseAssignedQuai: Échec mise à jour statut du quai" << quaiToRelease;
+        m_arduinoPortCombo->addItems(ports);
+
+        int idx = m_arduinoPortCombo->findText(previous);
+        if (idx >= 0) m_arduinoPortCombo->setCurrentIndex(idx);
+
+        // Enabled/disabled is handled by updateArduinoUiState.
+    }
+
+    m_arduinoPortCombo->blockSignals(false);
+}
+
+void MainWindow::updateArduinoUiState()
+{
+    const bool connected = m_arduino && m_arduino->isConnected();
+
+    if (m_arduinoConnectButton) {
+        m_arduinoConnectButton->setText(connected ? QStringLiteral("Disconnect") : QStringLiteral("Connect"));
+    }
+
+    if (m_arduinoPortCombo) {
+        const bool hasPorts = (m_arduinoPortCombo->count() > 0)
+            && (m_arduinoPortCombo->itemText(0) != QStringLiteral("(no ports)"));
+        m_arduinoPortCombo->setEnabled(!connected && hasPorts);
+    }
+
+    if (m_arduinoTxEdit) m_arduinoTxEdit->setEnabled(connected);
+    if (m_arduinoSendButton) m_arduinoSendButton->setEnabled(connected);
+
+    if (m_arduinoStatusLabel && !connected) {
+        m_arduinoStatusLabel->setText(QStringLiteral("Arduino: disconnected"));
     }
 }
 
@@ -4805,6 +4903,52 @@ void MainWindow::on_pushButton_2c_clicked()
     values.insert(QStringLiteral("profil"), ui->comboBox_2c ? ui->comboBox_2c->currentText().trimmed() : QString());
     values.insert(QStringLiteral("telephone"), ui->lineEdit_14c ? ui->lineEdit_14c->text().trimmed() : QString());
     values.insert(QStringLiteral("date"), ui->dateEdit_c ? ui->dateEdit_c->date() : QDate());
+
+    // Contrôles de saisie (Clients)
+    QString nom = values.value(QStringLiteral("nom")).toString().simplified();
+    QString prenom = values.value(QStringLiteral("prenom")).toString().simplified();
+    const QString telephone = values.value(QStringLiteral("telephone")).toString().trimmed();
+    const QDate dateInscription = values.value(QStringLiteral("date")).toDate();
+
+    // Lettres uniquement (Unicode), avec séparateurs usuels: espace, tiret, apostrophe.
+    static const QRegularExpression namePattern(
+        QStringLiteral("^[\\p{L}\\p{M}]+(?:[\\s'-][\\p{L}\\p{M}]+)*$"),
+        QRegularExpression::UseUnicodePropertiesOption);
+    static const QRegularExpression telPattern(QStringLiteral("^\\d{8}$"));
+
+    if (!namePattern.match(nom).hasMatch()) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Saisie client"),
+                             QStringLiteral("Nom invalide (lettres uniquement)."));
+        if (ui->lineEdit_4c) ui->lineEdit_4c->setFocus();
+        return;
+    }
+    if (!namePattern.match(prenom).hasMatch()) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Saisie client"),
+                             QStringLiteral("Pr\u00E9nom invalide (lettres uniquement)."));
+        if (ui->lineEdit_12c) ui->lineEdit_12c->setFocus();
+        return;
+    }
+    if (!telPattern.match(telephone).hasMatch()) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Saisie client"),
+                             QStringLiteral("T\u00E9l\u00E9phone invalide (exactement 8 chiffres)."));
+        if (ui->lineEdit_14c) ui->lineEdit_14c->setFocus();
+        return;
+    }
+    if (dateInscription.isValid() && dateInscription > QDate::currentDate()) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Saisie client"),
+                             QStringLiteral("La date ne peut pas \u00EAtre dans le futur."));
+        if (ui->dateEdit_c) ui->dateEdit_c->setFocus();
+        return;
+    }
+
+    // Écrire les versions normalisées dans le payload
+    values.insert(QStringLiteral("nom"), nom);
+    values.insert(QStringLiteral("prenom"), prenom);
+    values.insert(QStringLiteral("telephone"), telephone);
 
     const QString targetId = values.value(QStringLiteral("id")).toString().trimmed();
 
@@ -5194,9 +5338,7 @@ Pecheurs MainWindow::pecheurFromForm() const
 
     const int heures = (editingPecheur && ui->dateTimeEdit) ? ui->dateTimeEdit->time().hour() : now.time().hour();
     const QDate dateInscription = (editingPecheur && ui->dateTimeEdit) ? ui->dateTimeEdit->date() : now.date();
-    const QDate dateAffectation = (ui->dateTimeEdit_2 && !isPecheurAffectationNull(ui->dateTimeEdit_2->dateTime()))
-        ? ui->dateTimeEdit_2->date()
-        : QDate();
+    const QDate dateAffectation = ui->dateTimeEdit_2 ? ui->dateTimeEdit_2->date() : QDate();
 
     if (!editingPecheur && ui->dateTimeEdit) {
         ui->dateTimeEdit->setDateTime(now);
@@ -5215,7 +5357,7 @@ Pecheurs MainWindow::pecheurFromForm() const
         idBateau = bateauIdFromText(bateauEdit->text());
     }
 
-    return Pecheurs(id, nom, prenom, sexe, role, dispo, email, heures, dateInscription, dateAffectation, idBateau, m_pendingPecheurPhotoBytes);
+    return Pecheurs(id, nom, prenom, sexe, role, dispo, email, heures, dateInscription, dateAffectation, idBateau);
 }
 
 void MainWindow::loadPecheurs()
@@ -5281,26 +5423,7 @@ void MainWindow::loadPecheurs()
         table->setItem(row, 7, new QTableWidgetItem(dIns.isValid() ? dIns.toString("dd/MM/yyyy") + heureTexte : QString()));
         table->setItem(row, 8, new QTableWidgetItem(dAff.isValid() ? dAff.toString("dd/MM/yyyy") + heureTexte : QString()));
         table->setItem(row, 9, new QTableWidgetItem(QString::number(heures)));
-
-        const QByteArray photoBytes = record.photo;
-        if (!photoBytes.isEmpty()) {
-            QPixmap avatar;
-            if (avatar.loadFromData(photoBytes)) {
-                auto *photoLabel = new QLabel();
-                photoLabel->setAlignment(Qt::AlignCenter);
-                photoLabel->setStyleSheet(QStringLiteral("background: transparent;"));
-                photoLabel->setPixmap(avatar.scaled(48, 48, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-                photoLabel->setToolTip(QStringLiteral("Photo enregistrée (cliquez pour agrandir)"));
-                photoLabel->setCursor(Qt::PointingHandCursor);
-                photoLabel->setProperty("pecheurPhotoPreview", avatar);
-                photoLabel->installEventFilter(this);
-                table->setCellWidget(row, 10, photoLabel);
-            } else {
-                table->setItem(row, 10, new QTableWidgetItem(QStringLiteral("Image invalide")));
-            }
-        } else {
-            table->setItem(row, 10, new QTableWidgetItem(QStringLiteral("Aucune")));
-        }
+        table->setItem(row, 10, new QTableWidgetItem(QString()));
 
         auto* actionWidget = new QWidget();
         actionWidget->setStyleSheet("background-color: transparent;");
@@ -5380,9 +5503,9 @@ void MainWindow::loadPecheurs()
     table->setColumnWidth(7, 130);
     table->setColumnWidth(8, 130);
     table->setColumnWidth(9, 70);
-    table->setColumnWidth(10, 90);
+    table->setColumnWidth(10, 60);
     table->setColumnWidth(11, 114);
-    table->verticalHeader()->setDefaultSectionSize(56);
+    table->verticalHeader()->setDefaultSectionSize(42);
 
     updateDisponibiliteStats(ui, recherche, roleSelection, dispoSelection);
 }
@@ -5447,18 +5570,6 @@ void MainWindow::on_bap_clicked()
         return;
     }
 
-    if (!isLettersOnlyName(nom)) {
-        QMessageBox::warning(this, "Champs", "Nom invalide: lettres uniquement");
-        if (ui && ui->lineEdit_2p) ui->lineEdit_2p->setFocus();
-        return;
-    }
-
-    if (!isLettersOnlyName(prenom)) {
-        QMessageBox::warning(this, "Champs", "Prenom invalide: lettres uniquement");
-        if (ui && ui->lineEdit_3p) ui->lineEdit_3p->setFocus();
-        return;
-    }
-
     if (email.isEmpty()) {
         QMessageBox::warning(this, "Champs", "Veuillez saisir Email");
         if (ui && ui->lineEditp_2) ui->lineEditp_2->setFocus();
@@ -5512,8 +5623,6 @@ void MainWindow::loadPecheurFromTable()
 {
     if (!ui || !ui->tableWidgetp) return;
 
-    m_pendingPecheurPhotoBytes.clear();
-
     const int currentRow = ui->tableWidgetp->currentRow();
     if (currentRow < 0) {
         QMessageBox::warning(this, QStringLiteral("S\u00E9lection"), QStringLiteral("Veuillez s\u00E9lectionner une ligne"));
@@ -5548,15 +5657,6 @@ void MainWindow::loadPecheurFromTable()
     }
     if (ui->lineEdit_2p) ui->lineEdit_2p->setText(nom);
     if (ui->lineEdit_3p) ui->lineEdit_3p->setText(prenom);
-
-    if (ui->dateTimeEdit_2) {
-        const QDate dateAff = dateAffStr.isEmpty() ? QDate() : QDate::fromString(dateAffStr, QStringLiteral("yyyy-MM-dd"));
-        if (dateAff.isValid()) {
-            ui->dateTimeEdit_2->setDate(dateAff);
-        } else {
-            ui->dateTimeEdit_2->setDateTime(nullPecheurAffectationDateTime());
-        }
-    }
 
     if (ui->comboBoxp) {
         const int roleIndex = ui->comboBoxp->findText(role);
@@ -5623,8 +5723,9 @@ void MainWindow::loadPecheurFromTable()
         ui->dateTimeEdit->setReadOnly(true);
     }
     if (ui->dateTimeEdit_2) {
-        if (ui->dateTimeEdit_2->dateTime() <= nullPecheurAffectationDateTime()) {
-            ui->dateTimeEdit_2->setDateTime(nullPecheurAffectationDateTime());
+        ui->dateTimeEdit_2->setMinimumDate(now.date());
+        if (ui->dateTimeEdit_2->date() < now.date()) {
+            ui->dateTimeEdit_2->setDate(now.date());
         }
     }
 
@@ -5640,8 +5741,6 @@ void MainWindow::loadPecheurFromTable()
 
 void MainWindow::resetAjouterButton()
 {
-    m_pendingPecheurPhotoBytes.clear();
-
     if (ui && ui->bap) {
         ui->bap->setText("Ajouter");
     }
@@ -5653,10 +5752,6 @@ void MainWindow::resetAjouterButton()
 
     if (ui && ui->comboBoxp) ui->comboBoxp->setCurrentIndex(0);
     if (ui && ui->comboBox_2) ui->comboBox_2->setCurrentIndex(0);
-
-    if (ui && ui->dateTimeEdit_2) {
-        ui->dateTimeEdit_2->setDateTime(nullPecheurAffectationDateTime());
-    }
 
     if (QLineEdit* bateauEdit = pecheurBateauLineEdit(ui)) {
         bateauEdit->setText(QStringLiteral("0"));
@@ -5685,7 +5780,9 @@ void MainWindow::resetAjouterButton()
         ui->dateTimeEdit->setDateTime(QDateTime::currentDateTime());
     }
     if (ui && ui->dateTimeEdit_2) {
-        ui->dateTimeEdit_2->setDateTime(nullPecheurAffectationDateTime());
+        const QDate today = QDate::currentDate();
+        ui->dateTimeEdit_2->setMinimumDate(today);
+        ui->dateTimeEdit_2->setDate(today);
     }
     m_editingPecheurId.clear();
 }
@@ -5694,21 +5791,31 @@ void MainWindow::on_pushButton_6p_clicked()
 {
     if (!handleCrudDisabled(this)) return;
 
-    if (!ui || !ui->tableWidgetp || ui->tableWidgetp->currentRow() < 0) {
-        QMessageBox::warning(this,
-                             QStringLiteral("\u00C9dition"),
-                             QStringLiteral("Veuillez s\u00E9lectionner un p\u00EAcheur \u00E0 modifier."));
-        return;
+    if (m_editingPecheurId.isEmpty() && ui && ui->tableWidgetp && ui->tableWidgetp->currentRow() >= 0) {
+        loadPecheurFromTable();
+        if (ui->lineEditp) {
+            ui->lineEditp->setReadOnly(false);
+            ui->lineEditp->setEnabled(true);
+        }
+        QMessageBox::information(this,
+                                 QStringLiteral("\u00C9dition"),
+                                 QStringLiteral("Formulaire rempli - modifiez les champs et cliquez sur Modifier pour sauvegarder"));
     }
-
-    loadPecheurFromTable();
-    if (ui->lineEditp) {
-        ui->lineEditp->setReadOnly(false);
-        ui->lineEditp->setEnabled(true);
+    else {
+        const Pecheurs p = pecheurFromForm();
+        if (p.modifierAvecAncienId(m_editingPecheurId)) {
+            loadPecheurs();
+            resetAjouterButton();
+            QMessageBox::information(this, "OK", "Modification reussie");
+        } else {
+            const QString err = Pecheurs::lastError();
+            if (isSaisieConstraintError(err)) {
+                QMessageBox::warning(this, "Champs", "Modification echouee: " + err);
+            } else {
+                QMessageBox::critical(this, "Erreur", "Modification echouee: " + err);
+            }
+        }
     }
-    QMessageBox::information(this,
-                             QStringLiteral("\u00C9dition"),
-                             QStringLiteral("Formulaire rempli. Modifiez les champs puis cliquez sur Ajouter/Modifier pour enregistrer."));
 }
 
 void MainWindow::on_pushButton_5p_clicked()
@@ -6551,6 +6658,7 @@ void MainWindow::ajouterBateauFromForm()
         // Remettre le bouton sur "Ajouter"
         if (ui->pushButton_2b) ui->pushButton_2b->setText("Ajouter");
         loadBateaux();
+        refreshBateauMaintenanceAlerts(true);
     }
 }
 
@@ -6602,7 +6710,7 @@ void MainWindow::loadBateaux()
         "}");
 
     // Build SQL with optional WHERE clauses from search filters
-    QString sql = "SELECT ID_BATEAU, NOM, PROPRIETAIRE, LARGEUR, TYPE, STATUT, CAPACITE, DATE_ENTREE, DATE_DERNIERE_MAINTENANCE, FREQUENCE_MAINTENANCE FROM BATEAUX";
+    QString sql = "SELECT ID_BATEAU, NOM, PROPRIETAIRE, LARGEUR, TYPE, STATUT, CAPACITE, DATE_ENTREE, DATE_DERNIERE_MAINTENANCE, PROCHAINE_MAINTENANCE FROM BATEAUX";
 
     QStringList conditions;
     QString searchText = ui->lineEdit_4p_2 ? ui->lineEdit_4p_2->text().trimmed() : QString();
@@ -6612,11 +6720,8 @@ void MainWindow::loadBateaux()
     if (!searchText.isEmpty()) {
         QString escaped = searchText;
         escaped.replace("'", "''");
-        conditions << QString("(UPPER(NOM) LIKE UPPER('%%1%') OR "
-                              "UPPER(PROPRIETAIRE) LIKE UPPER('%%1%') OR "
-                              "UPPER(TYPE) LIKE UPPER('%%1%') OR "
-                              "UPPER(STATUT) LIKE UPPER('%%1%') OR "
-                              "UPPER(TO_CHAR(ID_BATEAU)) LIKE UPPER('%%1%'))").arg(escaped);
+        conditions << QString("(UPPER(TO_CHAR(ID_BATEAU)) LIKE UPPER('%%1%') OR "
+                              "UPPER(NOM) LIKE UPPER('%%1%'))").arg(escaped);
     }
     if (filterLargeur > 0.001) {
         conditions << QString("LARGEUR = %1").arg(filterLargeur);
@@ -6631,7 +6736,19 @@ void MainWindow::loadBateaux()
 
     QSqlQuery query(sql);
     // Synchronise le nombre de colonnes avec les donn├⌐es SQL + Actions
-    ui->tableWidgetb->setColumnCount(11); // 10 attributs + Actions
+    // 10 attributs + 1 actions
+    ui->tableWidgetb->setColumnCount(11);
+    auto ensureHeader = [this](int col, const QString& text) {
+        if (!ui || !ui->tableWidgetb) return;
+        QTableWidgetItem* item = ui->tableWidgetb->horizontalHeaderItem(col);
+        if (!item) {
+            item = new QTableWidgetItem(text);
+            ui->tableWidgetb->setHorizontalHeaderItem(col, item);
+        } else {
+            item->setText(text);
+        }
+    };
+    ensureHeader(10, QStringLiteral("Actions"));
     ui->tableWidgetb->setRowCount(0);
 
     int row = 0;
@@ -6654,7 +6771,7 @@ void MainWindow::loadBateaux()
             }
             ui->tableWidgetb->setItem(row, col, new QTableWidgetItem(cellText));
         }
-        // Colonne Actions
+        // Colonne Actions (d├⌐cal├⌐e en derni├¿re colonne)
         QWidget *actionWidget = new QWidget();
         actionWidget->setStyleSheet("background: transparent; border: none;");
         QHBoxLayout *layout = new QHBoxLayout(actionWidget);
@@ -6712,20 +6829,45 @@ void MainWindow::loadBateaux()
     // Afficher la colonne Actions
     ui->tableWidgetb->setColumnHidden(10, false);
 
+    // Affichage sans "..." + colonnes lisibles (dates, etc.).
+    // On laisse l'utilisateur redimensionner et on force des largeurs minimales.
+    ui->tableWidgetb->setTextElideMode(Qt::ElideNone);
+    ui->tableWidgetb->setWordWrap(false);
+    if (ui->tableWidgetb->horizontalHeader()) {
+        ui->tableWidgetb->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+        ui->tableWidgetb->horizontalHeader()->setStretchLastSection(false);
+    }
     ui->tableWidgetb->resizeColumnsToContents();
-    ui->tableWidgetb->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    ui->tableWidgetb->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
-    ui->tableWidgetb->setColumnWidth(2, 110);
-    ui->tableWidgetb->horizontalHeader()->setSectionResizeMode(8, QHeaderView::Fixed);
-    ui->tableWidgetb->setColumnWidth(8, 105);
-    ui->tableWidgetb->horizontalHeader()->setSectionResizeMode(9, QHeaderView::Fixed);
-    ui->tableWidgetb->setColumnWidth(9, 100);
-    ui->tableWidgetb->horizontalHeader()->setSectionResizeMode(10, QHeaderView::Fixed);
-    ui->tableWidgetb->setColumnWidth(10, 114);
+
+    auto ensureMinWidth = [this](int col, int minW) {
+        if (!ui || !ui->tableWidgetb) return;
+        if (col < 0 || col >= ui->tableWidgetb->columnCount()) return;
+        ui->tableWidgetb->setColumnWidth(col, qMax(ui->tableWidgetb->columnWidth(col), minW));
+    };
+
+    // Largeurs minimales pour éviter les dates tronquées.
+    ensureMinWidth(0, 95);   // ID
+    ensureMinWidth(1, 140);  // Nom
+    ensureMinWidth(2, 140);  // Propriétaire
+    ensureMinWidth(3, 80);   // Largeur
+    ensureMinWidth(4, 120);  // Type
+    ensureMinWidth(5, 110);  // Statut
+    ensureMinWidth(6, 90);   // Capacité
+    ensureMinWidth(7, 110);  // Date entrée
+    ensureMinWidth(8, 110);  // Dernière maintenance
+    ensureMinWidth(9, 95);   // Fréquence maintenance
+    ensureMinWidth(10, 114); // Actions
+
+    if (ui->tableWidgetb->horizontalHeader()) {
+        ui->tableWidgetb->horizontalHeader()->setSectionResizeMode(10, QHeaderView::Fixed);
+    }
     ui->tableWidgetb->verticalHeader()->setDefaultSectionSize(42);
 
     loadPecheurBateauChoices(ui);
     updateStatsBateaux();
+
+    // Mettre ├á jour les alertes de maintenance sur la table affich├⌐e.
+    refreshBateauMaintenanceAlerts(false);
 }
 
 // ΓöÇΓöÇ Modifier : remplir le formulaire avec les donn├⌐es de la ligne ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
@@ -6811,11 +6953,8 @@ void MainWindow::updateStatsBateaux()
     if (!searchText.isEmpty()) {
         QString escaped = searchText;
         escaped.replace("'", "''");
-        conditions << QString("(UPPER(NOM) LIKE UPPER('%%1%') OR "
-                              "UPPER(PROPRIETAIRE) LIKE UPPER('%%1%') OR "
-                              "UPPER(TYPE) LIKE UPPER('%%1%') OR "
-                              "UPPER(STATUT) LIKE UPPER('%%1%') OR "
-                              "UPPER(TO_CHAR(ID_BATEAU)) LIKE UPPER('%%1%'))").arg(escaped);
+        conditions << QString("(UPPER(TO_CHAR(ID_BATEAU)) LIKE UPPER('%%1%') OR "
+                              "UPPER(NOM) LIKE UPPER('%%1%'))").arg(escaped);
     }
     if (filterLargeur > 0.001) {
         conditions << QString("LARGEUR = %1").arg(filterLargeur);
@@ -6943,6 +7082,767 @@ void MainWindow::updateStatsBateaux()
         painter.end();
         ui->progressTypeCircleb->setPixmap(pix);
         ui->progressTypeCircleb->setAlignment(Qt::AlignCenter);
+    }
+}
+
+// ----------------------
+// Alertes automatiques de maintenance préventive (Bateaux)
+// ----------------------
+
+namespace {
+
+enum class MaintenanceSeverity {
+    None = 0,
+    Warning = 1,
+    Urgent = 2,
+    Critical = 3,
+};
+
+static MaintenanceSeverity severityFromString(const QString& text)
+{
+    const QString t = text.trimmed();
+    if (t.compare(QStringLiteral("Critique"), Qt::CaseInsensitive) == 0) return MaintenanceSeverity::Critical;
+    if (t.compare(QStringLiteral("Urgent"), Qt::CaseInsensitive) == 0) return MaintenanceSeverity::Urgent;
+    if (t.compare(QStringLiteral("Avertissement"), Qt::CaseInsensitive) == 0) return MaintenanceSeverity::Warning;
+    return MaintenanceSeverity::None;
+}
+
+static QString severityLabel(MaintenanceSeverity s)
+{
+    switch (s) {
+    case MaintenanceSeverity::Warning:  return QStringLiteral("Avertissement");
+    case MaintenanceSeverity::Urgent:   return QStringLiteral("Urgent");
+    case MaintenanceSeverity::Critical: return QStringLiteral("Critique");
+    default:                            return QString();
+    }
+}
+
+static QColor severityColor(MaintenanceSeverity s)
+{
+    switch (s) {
+    case MaintenanceSeverity::Warning:
+        return QColor(QStringLiteral("#f39c12"));
+    case MaintenanceSeverity::Urgent:
+        return QColor(QStringLiteral("#e67e22"));
+    case MaintenanceSeverity::Critical:
+        return QColor(QStringLiteral("#e74c3c"));
+    case MaintenanceSeverity::None:
+    default:
+        return QColor(QStringLiteral("#4CAF50"));
+    }
+}
+
+static QColor severityRowBackground(MaintenanceSeverity s)
+{
+    // Fonds clairs pour garder la lisibilit├® (ligne color├®e)
+    switch (s) {
+    case MaintenanceSeverity::Warning:
+        return QColor(QStringLiteral("#fff9c4")); // jaune clair
+    case MaintenanceSeverity::Urgent:
+        return QColor(QStringLiteral("#ffe0b2")); // orange clair
+    case MaintenanceSeverity::Critical:
+        return QColor(QStringLiteral("#ffebee")); // rouge clair
+    case MaintenanceSeverity::None:
+    default:
+        return QColor();
+    }
+}
+
+static bool isStatutEnMer(const QString& statut)
+{
+    return statut.trimmed().toLower().contains(QStringLiteral("mer"));
+}
+
+static QDate variantToDate(const QVariant& v)
+{
+    if (!v.isValid() || v.isNull()) return QDate();
+
+    if (v.userType() == QMetaType::QDate) {
+        return v.toDate();
+    }
+    if (v.userType() == QMetaType::QDateTime) {
+        return v.toDateTime().date();
+    }
+
+    const QString s = v.toString().trimmed();
+    if (s.isEmpty()) return QDate();
+
+    QDate d = QDate::fromString(s, Qt::ISODate);
+    if (!d.isValid()) d = QDate::fromString(s, QStringLiteral("yyyy-MM-dd"));
+    if (!d.isValid()) d = QDate::fromString(s, QStringLiteral("dd/MM/yyyy"));
+    return d;
+}
+
+static MaintenanceSeverity computeSeverity(bool enMer, int daysRemaining)
+{
+    Q_UNUSED(enMer);
+    // R├¿gles demand├®es:
+    // - Rouge   = Critique : maintenance d├®pass├®e
+    // - Orange  = Urgent   : moins de 7 jours
+    // - Jaune   = Avert.   : moins de 30 jours
+    // - Normal  = OK
+    constexpr int kWarnDays = 30;
+    constexpr int kUrgentDays = 7;
+
+    if (daysRemaining < 0) return MaintenanceSeverity::Critical;
+    if (daysRemaining <= kUrgentDays) return MaintenanceSeverity::Urgent;
+    if (daysRemaining <= kWarnDays) return MaintenanceSeverity::Warning;
+    return MaintenanceSeverity::None;
+}
+
+static QString maintenanceHistoryFilePath()
+{
+    QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    if (dir.trimmed().isEmpty()) {
+        dir = QDir::homePath();
+    }
+    QDir().mkpath(dir);
+    return QDir(dir).filePath(QStringLiteral("bateau_maintenance_alert_history.json"));
+}
+
+static QJsonArray readMaintenanceHistoryArray()
+{
+    const QString path = maintenanceHistoryFilePath();
+    QFile f(path);
+    if (!f.exists()) return QJsonArray();
+    if (!f.open(QIODevice::ReadOnly)) return QJsonArray();
+
+    const QByteArray raw = f.readAll();
+    f.close();
+
+    QJsonParseError err;
+    const QJsonDocument doc = QJsonDocument::fromJson(raw, &err);
+    if (err.error != QJsonParseError::NoError || !doc.isArray()) return QJsonArray();
+    return doc.array();
+}
+
+static bool writeMaintenanceHistoryArray(const QJsonArray& arr)
+{
+    const QString path = maintenanceHistoryFilePath();
+    QFileInfo fi(path);
+    QDir().mkpath(fi.dir().absolutePath());
+
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+    f.write(QJsonDocument(arr).toJson(QJsonDocument::Compact));
+    f.close();
+    return true;
+}
+
+static QString makeAlertKey(const QString& boatId, const QDate& nextDue, MaintenanceSeverity severity)
+{
+    return QStringLiteral("%1|%2|%3")
+        .arg(boatId.trimmed(), nextDue.toString(Qt::ISODate), severityLabel(severity));
+}
+
+struct AlertInfo {
+    MaintenanceSeverity severity = MaintenanceSeverity::None;
+    QString displayText;
+    QString message;
+    QDate nextDue;
+    int daysRemaining = 0;
+};
+
+} // namespace
+
+void MainWindow::setupBateauMaintenanceAlertSystem()
+{
+    if (!ui) return;
+
+    loadBateauAlertHistorySeenKeys();
+    ensureBateauAlertHistoryPanel();
+
+    if (ui->pushButton_alertb) {
+        if (!ui->pushButton_alertb->property("baseText").isValid()) {
+            ui->pushButton_alertb->setProperty("baseText", ui->pushButton_alertb->text());
+        }
+
+        connect(ui->pushButton_alertb, &QPushButton::clicked, this, &MainWindow::toggleBateauAlertHistoryPanel);
+
+        if (!m_bateauAlertBadge) {
+            // Badge rouge (chiffre) en haut ├á droite du bouton
+            m_bateauAlertBadge = new QLabel(ui->pushButton_alertb);
+            m_bateauAlertBadge->setObjectName(QStringLiteral("label_bateauAlertBadge"));
+            m_bateauAlertBadge->setAlignment(Qt::AlignCenter);
+            m_bateauAlertBadge->setFixedSize(22, 22);
+            m_bateauAlertBadge->move(ui->pushButton_alertb->width() - 24, 2);
+            m_bateauAlertBadge->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+            m_bateauAlertBadge->setStyleSheet(QStringLiteral(
+                "background-color: #e74c3c;"
+                "color: white;"
+                "border-radius: 11px;"
+                "font-weight: bold;"
+                "font-size: 12px;"));
+            m_bateauAlertBadge->hide();
+        }
+    }
+
+    if (!m_bateauMaintenanceAlertTimer) {
+        m_bateauMaintenanceAlertTimer = new QTimer(this);
+        m_bateauMaintenanceAlertTimer->setInterval(60 * 1000); // 1 minute
+        connect(m_bateauMaintenanceAlertTimer, &QTimer::timeout, this, [this]() {
+            refreshBateauMaintenanceAlerts(true);
+        });
+        m_bateauMaintenanceAlertTimer->start();
+    }
+
+    // Rafraichissement initial (sans ajouter dans l'historique)
+    refreshBateauMaintenanceAlerts(false);
+
+    // Quand la page bateaux s'affiche, on rafraichit l'affichage.
+    if (ui->stackedWidget && ui->gestionbateaub) {
+        connect(ui->stackedWidget, &QStackedWidget::currentChanged, this, [this](int) {
+            if (!ui || !ui->stackedWidget || !ui->gestionbateaub) return;
+            if (ui->stackedWidget->currentWidget() == ui->gestionbateaub) {
+                refreshBateauMaintenanceAlerts(false);
+                notifyBateauMaintenanceAlertsIfAny();
+            }
+        });
+    }
+}
+
+void MainWindow::notifyBateauMaintenanceAlertsIfAny()
+{
+    // Ne notifie que lorsqu'il y a au moins une alerte.
+    const int total = m_bateauAlertsWarning + m_bateauAlertsUrgent + m_bateauAlertsCritical;
+    if (total <= 0) return;
+
+    // Rate limit: ├®vite le spam si l'utilisateur clique plusieurs fois.
+    const QDateTime now = QDateTime::currentDateTime();
+    if (m_lastBateauAlertNotificationAt.isValid() && m_lastBateauAlertNotificationAt.secsTo(now) < 15) {
+        return;
+    }
+    m_lastBateauAlertNotificationAt = now;
+
+    QString level;
+    QSystemTrayIcon::MessageIcon icon = QSystemTrayIcon::Information;
+    if (m_bateauAlertsHighestLevel >= 3) {
+        level = QStringLiteral("Critique");
+        icon = QSystemTrayIcon::Critical;
+    } else if (m_bateauAlertsHighestLevel == 2) {
+        level = QStringLiteral("Urgent");
+        icon = QSystemTrayIcon::Warning;
+    } else {
+        level = QStringLiteral("Avertissement");
+        icon = QSystemTrayIcon::Information;
+    }
+
+    const QString title = QStringLiteral("Alerte maintenance (%1)").arg(level);
+    const QString msg = QStringLiteral("Critique: %1 | Urgent: %2 | Avertissement: %3\nClique sur 'Historique des alertes' pour d├®tails.")
+                            .arg(m_bateauAlertsCritical)
+                            .arg(m_bateauAlertsUrgent)
+                            .arg(m_bateauAlertsWarning);
+
+    if (QSystemTrayIcon::isSystemTrayAvailable()) {
+        if (!m_bateauTrayIcon) {
+            m_bateauTrayIcon = new QSystemTrayIcon(this);
+            QIcon ico = this->windowIcon();
+            if (ico.isNull()) {
+                ico = QIcon::fromTheme(QStringLiteral("dialog-information"));
+            }
+            m_bateauTrayIcon->setIcon(ico);
+            m_bateauTrayIcon->setToolTip(QStringLiteral("AquaTech"));
+            m_bateauTrayIcon->setVisible(true);
+        }
+        m_bateauTrayIcon->showMessage(title, msg, icon, 7000);
+        return;
+    }
+
+    // Fallback si le system tray n'est pas disponible.
+    if (m_bateauAlertsHighestLevel >= 3) {
+        QMessageBox::critical(this, QStringLiteral("Maintenance pr├®ventive"), msg);
+    } else if (m_bateauAlertsHighestLevel == 2) {
+        QMessageBox::warning(this, QStringLiteral("Maintenance pr├®ventive"), msg);
+    } else {
+        QMessageBox::information(this, QStringLiteral("Maintenance pr├®ventive"), msg);
+    }
+}
+
+void MainWindow::loadBateauAlertHistorySeenKeys()
+{
+    m_bateauAlertSeenKeys.clear();
+
+    const QJsonArray arr = readMaintenanceHistoryArray();
+    for (const QJsonValue& v : arr) {
+        if (!v.isObject()) continue;
+        const QJsonObject o = v.toObject();
+        QString key = o.value(QStringLiteral("key")).toString().trimmed();
+        if (key.isEmpty()) {
+            const QString boatId = o.value(QStringLiteral("boatId")).toString();
+            const QDate nextDue = QDate::fromString(o.value(QStringLiteral("nextDue")).toString(), Qt::ISODate);
+            const MaintenanceSeverity sev = severityFromString(o.value(QStringLiteral("severity")).toString());
+            if (!boatId.trimmed().isEmpty() && nextDue.isValid() && sev != MaintenanceSeverity::None) {
+                key = makeAlertKey(boatId, nextDue, sev);
+            }
+        }
+        if (!key.isEmpty()) {
+            m_bateauAlertSeenKeys.insert(key);
+        }
+    }
+}
+
+void MainWindow::ensureBateauAlertHistoryPanel()
+{
+    if (m_bateauAlertHistoryFrame || !ui) return;
+
+    QWidget* parent = ui->gestionbateaub ? ui->gestionbateaub : this;
+    m_bateauAlertHistoryFrame = new QFrame(parent);
+    m_bateauAlertHistoryFrame->setObjectName(QStringLiteral("framealertb"));
+    m_bateauAlertHistoryFrame->setGeometry(QRect(510, 110, 1001, 651));
+    m_bateauAlertHistoryFrame->setStyleSheet(QStringLiteral(
+        "background-color: rgb(224, 238, 255);"
+        "border:1PX solid  rgb(0, 0, 115);"
+        "border-radius: 15px;"));
+    m_bateauAlertHistoryFrame->setFrameShape(QFrame::StyledPanel);
+    m_bateauAlertHistoryFrame->setFrameShadow(QFrame::Raised);
+
+    auto* rootLayout = new QVBoxLayout(m_bateauAlertHistoryFrame);
+    rootLayout->setContentsMargins(12, 12, 12, 12);
+    rootLayout->setSpacing(8);
+
+    auto* headerLayout = new QHBoxLayout();
+    headerLayout->setContentsMargins(0, 0, 0, 0);
+
+    auto* title = new QLabel(QStringLiteral("Historique des alertes de maintenance"), m_bateauAlertHistoryFrame);
+    title->setStyleSheet(QStringLiteral("font-weight: bold; font-size: 17px; padding: 6px;"));
+
+    auto* btnClose = new QPushButton(QStringLiteral("Fermer"), m_bateauAlertHistoryFrame);
+    btnClose->setFixedSize(110, 32);
+    btnClose->setStyleSheet(QStringLiteral(
+        "QPushButton {"
+        " border: 2px solid rgb(0, 0, 112);"
+        " border-radius: 7px;"
+        " background-color: rgb(224, 238, 255);"
+        " color: rgb(0, 0, 112);"
+        " font-weight: bold;"
+        " }"
+        "QPushButton:hover { background-color: rgb(224, 238, 255); }"
+        "QPushButton:pressed { background-color: rgb(224, 238, 255); }"));
+
+    headerLayout->addWidget(title);
+    headerLayout->addStretch();
+    headerLayout->addWidget(btnClose);
+    rootLayout->addLayout(headerLayout);
+
+    m_bateauAlertHistoryTable = new QTableWidget(m_bateauAlertHistoryFrame);
+    m_bateauAlertHistoryTable->setColumnCount(5);
+    m_bateauAlertHistoryTable->setHorizontalHeaderItem(0, new QTableWidgetItem(QStringLiteral("ID Bateau")));
+    m_bateauAlertHistoryTable->setHorizontalHeaderItem(1, new QTableWidgetItem(QStringLiteral("Nom")));
+    m_bateauAlertHistoryTable->setHorizontalHeaderItem(2, new QTableWidgetItem(QStringLiteral("Niveau")));
+    m_bateauAlertHistoryTable->setHorizontalHeaderItem(3, new QTableWidgetItem(QStringLiteral("Message")));
+    m_bateauAlertHistoryTable->setHorizontalHeaderItem(4, new QTableWidgetItem(QStringLiteral("Date")));
+
+    m_bateauAlertHistoryTable->setAlternatingRowColors(false);
+    m_bateauAlertHistoryTable->setShowGrid(false);
+    m_bateauAlertHistoryTable->setWordWrap(true);
+    m_bateauAlertHistoryTable->verticalHeader()->setDefaultSectionSize(36);
+    m_bateauAlertHistoryTable->setStyleSheet(
+        "QTableWidget {"
+        "background-color: rgb(224, 238, 255);"
+        "alternate-background-color: rgb(224, 238, 255);"
+        "border: none;"
+        "}"
+        "QTableWidget::item {"
+        "padding: 4px;"
+        "border: none;"
+        "}"
+        "QTableWidget::item:selected {"
+        "background-color: rgba(0, 85, 127, 0.20);"
+        "color: #0b2d4a;"
+        "}");
+
+    if (m_bateauAlertHistoryTable->horizontalHeader()) {
+        m_bateauAlertHistoryTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+        m_bateauAlertHistoryTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
+        m_bateauAlertHistoryTable->setColumnWidth(0, 95);
+        m_bateauAlertHistoryTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
+        m_bateauAlertHistoryTable->setColumnWidth(2, 120);
+        m_bateauAlertHistoryTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed);
+        m_bateauAlertHistoryTable->setColumnWidth(4, 120);
+    }
+
+    rootLayout->addWidget(m_bateauAlertHistoryTable);
+
+    connect(btnClose, &QPushButton::clicked, this, [this]() {
+        if (m_bateauAlertHistoryFrame) {
+            m_bateauAlertHistoryFrame->hide();
+        }
+    });
+
+    m_bateauAlertHistoryFrame->hide();
+}
+
+void MainWindow::toggleBateauAlertHistoryPanel()
+{
+    ensureBateauAlertHistoryPanel();
+    if (!m_bateauAlertHistoryFrame) return;
+
+    if (m_bateauAlertHistoryFrame->isVisible()) {
+        m_bateauAlertHistoryFrame->hide();
+        return;
+    }
+
+    populateBateauAlertHistoryTable();
+    m_bateauAlertHistoryFrame->show();
+    m_bateauAlertHistoryFrame->raise();
+}
+
+void MainWindow::populateBateauAlertHistoryTable()
+{
+    if (!m_bateauAlertHistoryTable) return;
+
+    const QJsonArray arr = readMaintenanceHistoryArray();
+
+    m_bateauAlertHistoryTable->setRowCount(0);
+
+    const int limit = 300;
+    int added = 0;
+    for (int i = arr.size() - 1; i >= 0 && added < limit; --i) {
+        const QJsonValue v = arr.at(i);
+        if (!v.isObject()) continue;
+        const QJsonObject o = v.toObject();
+
+        const QString ts = o.value(QStringLiteral("ts")).toString();
+        const QString boatId = o.value(QStringLiteral("boatId")).toString();
+        const QString boatName = o.value(QStringLiteral("boatName")).toString();
+        const QString severity = o.value(QStringLiteral("severity")).toString();
+        const QString message = o.value(QStringLiteral("message")).toString();
+
+        QString dateText = ts;
+        const QDateTime dt = QDateTime::fromString(ts, Qt::ISODate);
+        if (dt.isValid()) {
+            dateText = dt.date().toString(QStringLiteral("dd/MM/yyyy"));
+        }
+
+        const int row = m_bateauAlertHistoryTable->rowCount();
+        m_bateauAlertHistoryTable->insertRow(row);
+
+        const MaintenanceSeverity sev = severityFromString(severity);
+        const QColor bg = severityRowBackground(sev);
+        const QBrush bgBrush = bg.isValid() ? QBrush(bg) : QBrush();
+
+        auto* idItem = new QTableWidgetItem(boatId);
+        auto* nameItem = new QTableWidgetItem(boatName);
+        auto* sevItem = new QTableWidgetItem(severity);
+        auto* msgItem = new QTableWidgetItem(message);
+        auto* dateItem = new QTableWidgetItem(dateText);
+
+        // Niveau: couleur texte + gras
+        sevItem->setForeground(QBrush(severityColor(sev)));
+        {
+            QFont f = sevItem->font();
+            f.setBold(true);
+            sevItem->setFont(f);
+        }
+
+        // Message: tooltip complet
+        msgItem->setToolTip(message);
+        msgItem->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+
+        // Appliquer la couleur de fond ├á toute la ligne
+        for (QTableWidgetItem* it : {idItem, nameItem, sevItem, msgItem, dateItem}) {
+            if (!it) continue;
+            it->setFlags(it->flags() & ~Qt::ItemIsEditable);
+            it->setBackground(bgBrush);
+        }
+
+        m_bateauAlertHistoryTable->setItem(row, 0, idItem);
+        m_bateauAlertHistoryTable->setItem(row, 1, nameItem);
+        m_bateauAlertHistoryTable->setItem(row, 2, sevItem);
+        m_bateauAlertHistoryTable->setItem(row, 3, msgItem);
+        m_bateauAlertHistoryTable->setItem(row, 4, dateItem);
+
+        ++added;
+    }
+
+    // Ajuster la hauteur des lignes pour afficher le message complet (jusqu'aux ~300 entr├®es affich├®es)
+    m_bateauAlertHistoryTable->resizeRowsToContents();
+}
+
+void MainWindow::refreshBateauMaintenanceAlerts(bool persistNewAlerts)
+{
+    if (!ui) return;
+
+    Connection* conn = Connection::getInstance();
+    if (!conn || !conn->ensureOpen()) {
+        if (ui->label_alert_statusb) {
+            ui->label_alert_statusb->setText(QStringLiteral("Syst\u00e8me inactif"));
+            ui->label_alert_statusb->setStyleSheet(QStringLiteral(
+                "color: #e74c3c; font-weight: bold; font-size: 14px; padding: 5px;"));
+            const int x = 10;
+            const int y = 10;
+            const int h = 40;
+            int w = ui->label_alert_statusb->sizeHint().width() + 20;
+            ui->label_alert_statusb->setGeometry(QRect(x, y, w, h));
+            ui->label_alert_statusb->raise();
+        }
+        return;
+    }
+
+    QSqlDatabase db = conn->getDatabase();
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "SELECT ID_BATEAU, NOM, STATUT, DATE_ENTREE, DATE_DERNIERE_MAINTENANCE, PROCHAINE_MAINTENANCE FROM BATEAUX"));
+    if (!q.exec()) {
+        if (ui->label_alert_statusb) {
+            ui->label_alert_statusb->setText(QStringLiteral("Syst\u00e8me actif (erreur lecture)"));
+            ui->label_alert_statusb->setStyleSheet(QStringLiteral(
+                "color: #e67e22; font-weight: bold; font-size: 14px; padding: 5px;"));
+            const int x = 10;
+            const int y = 10;
+            const int h = 40;
+            int w = ui->label_alert_statusb->sizeHint().width() + 20;
+            ui->label_alert_statusb->setGeometry(QRect(x, y, w, h));
+            ui->label_alert_statusb->raise();
+        }
+        return;
+    }
+
+    const QDate today = QDate::currentDate();
+    QHash<QString, AlertInfo> activeByBoatId;
+
+    int nWarn = 0;
+    int nUrgent = 0;
+    int nCrit = 0;
+    MaintenanceSeverity highest = MaintenanceSeverity::None;
+
+    QStringList warnBoatIds;
+    QStringList urgentBoatIds;
+    QStringList criticalBoatIds;
+
+    QJsonArray history;
+    bool historyLoaded = false;
+    bool historyDirty = false;
+    if (persistNewAlerts) {
+        history = readMaintenanceHistoryArray();
+        historyLoaded = true;
+    }
+
+    while (q.next()) {
+        const QString boatId = q.value(0).toString().trimmed();
+        const QString boatName = q.value(1).toString().trimmed();
+        const QString status = q.value(2).toString().trimmed();
+        const QDate dateEntree = variantToDate(q.value(3));
+        const QDate lastMaint = variantToDate(q.value(4));
+        const int freq = q.value(5).toInt();
+
+        if (boatId.isEmpty() || freq <= 0) {
+            continue;
+        }
+
+        const QDate base = lastMaint.isValid() ? lastMaint : dateEntree;
+        if (!base.isValid()) {
+            continue;
+        }
+
+        const QDate nextDue = base.addDays(freq);
+        if (!nextDue.isValid()) {
+            continue;
+        }
+
+        const int daysRemaining = today.daysTo(nextDue);
+        const bool enMer = isStatutEnMer(status);
+        const MaintenanceSeverity severity = computeSeverity(enMer, daysRemaining);
+        if (severity == MaintenanceSeverity::None) {
+            continue;
+        }
+
+        if (severity > highest) highest = severity;
+        if (severity == MaintenanceSeverity::Warning) { ++nWarn; warnBoatIds << boatId; }
+        else if (severity == MaintenanceSeverity::Urgent) { ++nUrgent; urgentBoatIds << boatId; }
+        else if (severity == MaintenanceSeverity::Critical) { ++nCrit; criticalBoatIds << boatId; }
+
+        const QString deltaText = (daysRemaining >= 0)
+            ? QStringLiteral("dans %1 j").arg(daysRemaining)
+            : QStringLiteral("retard %1 j").arg(-daysRemaining);
+
+        AlertInfo info;
+        info.severity = severity;
+        info.nextDue = nextDue;
+        info.daysRemaining = daysRemaining;
+        info.displayText = QStringLiteral("%1 (%2)").arg(severityLabel(severity), deltaText);
+
+        if (daysRemaining >= 0) {
+            info.message = QStringLiteral("Maintenance pr\u00e9vue le %1 (%2).")
+                               .arg(nextDue.toString(QStringLiteral("dd/MM/yyyy")), deltaText);
+        } else if (enMer) {
+            info.message = QStringLiteral("Bateau en mer avec maintenance en retard de %1 jours (pr\u00e9vue le %2).")
+                               .arg(-daysRemaining)
+                               .arg(nextDue.toString(QStringLiteral("dd/MM/yyyy")));
+        } else {
+            info.message = QStringLiteral("Maintenance en retard de %1 jours (pr\u00e9vue le %2).")
+                               .arg(-daysRemaining)
+                               .arg(nextDue.toString(QStringLiteral("dd/MM/yyyy")));
+        }
+
+        activeByBoatId.insert(boatId, info);
+
+        if (persistNewAlerts) {
+            const QString key = makeAlertKey(boatId, nextDue, severity);
+            if (!m_bateauAlertSeenKeys.contains(key)) {
+                m_bateauAlertSeenKeys.insert(key);
+
+                if (!historyLoaded) {
+                    history = readMaintenanceHistoryArray();
+                    historyLoaded = true;
+                }
+
+                QJsonObject o;
+                o.insert(QStringLiteral("key"), key);
+                o.insert(QStringLiteral("ts"), QDateTime::currentDateTime().toString(Qt::ISODate));
+                o.insert(QStringLiteral("boatId"), boatId);
+                o.insert(QStringLiteral("boatName"), boatName);
+                o.insert(QStringLiteral("status"), status);
+                o.insert(QStringLiteral("lastMaintenance"), lastMaint.isValid() ? lastMaint.toString(Qt::ISODate) : QString());
+                o.insert(QStringLiteral("frequencyDays"), freq);
+                o.insert(QStringLiteral("nextDue"), nextDue.toString(Qt::ISODate));
+                o.insert(QStringLiteral("daysRemaining"), daysRemaining);
+                o.insert(QStringLiteral("severity"), severityLabel(severity));
+                o.insert(QStringLiteral("message"), info.message);
+
+                history.append(o);
+                historyDirty = true;
+            }
+        }
+    }
+
+    if (persistNewAlerts && historyDirty) {
+        // Garder une taille raisonnable (dernieres 2000 entr├®es)
+        const int maxEntries = 2000;
+        if (history.size() > maxEntries) {
+            QJsonArray trimmed;
+            const int start = qMax(0, history.size() - maxEntries);
+            for (int i = start; i < history.size(); ++i) {
+                trimmed.append(history.at(i));
+            }
+            history = trimmed;
+        }
+        writeMaintenanceHistoryArray(history);
+    }
+
+    // M├®moriser le r├®sum├® pour les notifications
+    m_bateauAlertsWarning = nWarn;
+    m_bateauAlertsUrgent = nUrgent;
+    m_bateauAlertsCritical = nCrit;
+    m_bateauAlertsHighestLevel = static_cast<int>(highest);
+
+    // Label status (en haut de la page bateaux)
+    if (ui->label_alert_statusb) {
+        auto plural = [](int n, const QString& singular, const QString& plural) {
+            return (n == 1) ? singular : plural;
+        };
+
+        const QString critLbl = plural(nCrit, QStringLiteral("Critique"), QStringLiteral("Critiques"));
+        const QString urgLbl  = plural(nUrgent, QStringLiteral("Urgent"), QStringLiteral("Urgents"));
+        const QString warnLbl = plural(nWarn, QStringLiteral("Avertissement"), QStringLiteral("Avertissements"));
+
+        ui->label_alert_statusb->setText(
+            QStringLiteral("🔴 %1 %2  |  🟠 %3 %4  |  🟡 %5 %6")
+                .arg(nCrit)
+                .arg(critLbl)
+                .arg(nUrgent)
+                .arg(urgLbl)
+                .arg(nWarn)
+                .arg(warnLbl));
+        ui->label_alert_statusb->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        ui->label_alert_statusb->setStyleSheet(QStringLiteral(
+            "color: rgb(0, 0, 90);"
+            "font-weight: bold;"
+            "font-size: 16px;"
+            "padding: 6px 10px;"
+            "background-color: rgba(224, 238, 255, 0.90);"
+            "border: 1px solid rgb(0, 0, 115);"
+            "border-radius: 10px;"));
+
+        // Taille: ajust├®e au texte (evite un bandeau trop long).
+        const int x = 10;
+        const int y = 10;
+        const int h = 40;
+        int w = ui->label_alert_statusb->sizeHint().width() + 20;
+        if (w < 220) w = 220; // garde un minimum lisible
+        ui->label_alert_statusb->setGeometry(QRect(x, y, w, h));
+        ui->label_alert_statusb->raise();
+
+        // Tooltip: lister les IDs des bateaux par niveau au survol.
+        const int totalAlerts = nWarn + nUrgent + nCrit;
+        if (totalAlerts > 0) {
+            warnBoatIds.sort();
+            urgentBoatIds.sort();
+            criticalBoatIds.sort();
+
+            auto listOrNone = [](const QStringList& ids) {
+                return ids.isEmpty() ? QStringLiteral("(aucun)") : ids.join(QStringLiteral(", "));
+            };
+
+            ui->label_alert_statusb->setToolTip(
+                QStringLiteral("IDs bateaux en alerte:\n🔴 Critique: %1\n🟠 Urgent: %2\n🟡 Avertissement: %3")
+                    .arg(listOrNone(criticalBoatIds), listOrNone(urgentBoatIds), listOrNone(warnBoatIds)));
+        } else {
+            ui->label_alert_statusb->setToolTip(QString());
+        }
+    }
+
+    // Badge + bouton "Historique des alertes"
+    const int totalAlerts = nWarn + nUrgent + nCrit;
+    if (ui->pushButton_alertb) {
+        const QString baseText = ui->pushButton_alertb->property("baseText").toString().trimmed();
+        if (!baseText.isEmpty()) {
+            ui->pushButton_alertb->setText(baseText);
+        }
+        if (totalAlerts > 0) {
+            ui->pushButton_alertb->setToolTip(QStringLiteral("Alertes actives: %1").arg(totalAlerts));
+        } else {
+            ui->pushButton_alertb->setToolTip(QString());
+        }
+    }
+    if (m_bateauAlertBadge) {
+        if (totalAlerts > 0) {
+            m_bateauAlertBadge->setText(QString::number(totalAlerts));
+            // Badge color├® selon le niveau le plus ├®lev├®
+            QString bg = QStringLiteral("#e74c3c");
+            QString fg = QStringLiteral("white");
+            if (highest == MaintenanceSeverity::Urgent) {
+                bg = QStringLiteral("#e67e22");
+            } else if (highest == MaintenanceSeverity::Warning) {
+                bg = QStringLiteral("#f39c12");
+                fg = QStringLiteral("black");
+            }
+            m_bateauAlertBadge->setStyleSheet(QStringLiteral(
+                "background-color: %1;"
+                "color: %2;"
+                "border-radius: 11px;"
+                "font-weight: bold;"
+                "font-size: 12px;")
+                .arg(bg, fg));
+            m_bateauAlertBadge->show();
+            m_bateauAlertBadge->raise();
+        } else {
+            m_bateauAlertBadge->hide();
+        }
+    }
+
+    // Mise ├á jour de la table des bateaux: on enl├¿ve la coloration des lignes.
+    // Les d├®tails des alertes sont visibles dans l'historique + via le compteur/badge.
+    if (ui->tableWidgetb) {
+        const int cols = ui->tableWidgetb->columnCount();
+        for (int r = 0; r < ui->tableWidgetb->rowCount(); ++r) {
+            for (int c = 0; c < cols; ++c) {
+                if (QTableWidgetItem* item = ui->tableWidgetb->item(r, c)) {
+                    item->setBackground(QBrush());
+                }
+            }
+
+            const int actionsCol = 10;
+            if (actionsCol >= 0 && actionsCol < cols) {
+                if (QWidget* w = ui->tableWidgetb->cellWidget(r, actionsCol)) {
+                    w->setStyleSheet(QStringLiteral("background: transparent; border: none;"));
+                }
+            }
+        }
+    }
+
+    if (m_bateauAlertHistoryFrame && m_bateauAlertHistoryFrame->isVisible()) {
+        populateBateauAlertHistoryTable();
     }
 }
 
@@ -7699,11 +8599,8 @@ void MainWindow::on_pushButton_pdfb_clicked()
 
     if (!sText.isEmpty()) {
         QString escaped = sText; escaped.replace("'", "''");
-        statConditions << QString("(UPPER(NOM) LIKE UPPER('%%1%') OR "
-                              "UPPER(PROPRIETAIRE) LIKE UPPER('%%1%') OR "
-                              "UPPER(TYPE) LIKE UPPER('%%1%') OR "
-                              "UPPER(STATUT) LIKE UPPER('%%1%') OR "
-                              "UPPER(TO_CHAR(ID_BATEAU)) LIKE UPPER('%%1%'))").arg(escaped);
+        statConditions << QString("(UPPER(TO_CHAR(ID_BATEAU)) LIKE UPPER('%%1%') OR "
+                                  "UPPER(NOM) LIKE UPPER('%%1%'))").arg(escaped);
     }
     if (sLarg > 0.001) statConditions << QString("LARGEUR = %1").arg(sLarg);
     if (sCap  > 0)     statConditions << QString("CAPACITE = %1").arg(sCap);
@@ -9049,7 +9946,7 @@ static void exportCapturesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
         return;
     }
 
-    const int actionColumn = 6; // Column 6 contains actions
+    const int actionColumn = 7; // Column 7 contains actions
     const bool actionColumnWasHidden = ui->cap_tableWidget->isColumnHidden(actionColumn);
     if (!actionColumnWasHidden) {
         ui->cap_tableWidget->setColumnHidden(actionColumn, true);

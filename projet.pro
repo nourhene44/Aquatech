@@ -1,4 +1,12 @@
-QT       += core gui sql network multimedia serialport
+QT       += core gui sql network
+
+# Arduino/MCU integration over USB serial
+qtHaveModule(serialport) {
+    QT += serialport
+    DEFINES += HAVE_SERIALPORT
+} else {
+    message("WARNING: Qt SerialPort module not found. Install the 'Qt Serial Port' component to enable Arduino integration.")
+}
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -9,7 +17,6 @@ CONFIG += c++17
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
-    arduino.cpp \
     captures.cpp \
     client.cpp \
     connection.cpp \
@@ -18,10 +25,10 @@ SOURCES += \
     mainwindow.cpp \
     quai.cpp \
     bateaauuu.cpp \
-    pecheurs.cpp
+    pecheurs.cpp \
+    arduinoserial.cpp
 
 HEADERS += \
-    arduino.h \
     captures.h \
     client.h \
     connection.h \
@@ -29,7 +36,8 @@ HEADERS += \
     mainwindow.h \
     quai.h \
     bateaauuu.h \
-    pecheurs.h
+    pecheurs.h \
+    arduinoserial.h
 
 FORMS += \
     mainwindow.ui

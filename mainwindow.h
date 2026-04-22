@@ -1,23 +1,30 @@
-﻿#ifndef MAINWINDOW_H
+﻿
+#ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
 #include <QMainWindow>
 #include <QMessageBox>
 #include <QLabel>
+#include <QDateTime>
 #include <QTimer>
-#include <QCamera>
-#include <QImageCapture>
-#include <QMediaCaptureSession>
-#include <QVideoSink>
+#include <QSet>
 #include "connection.h"
 #include "quai.h"
 #include "pecheurs.h"
 #include "employe.h"
 #include "captures.h"
-#include "arduino.h"
 
-class QObject;
-class QEvent;
+class QFrame;
+class QTableWidget;
+class QSystemTrayIcon;
+class QComboBox;
+class QDialog;
+class QLineEdit;
+class QPlainTextEdit;
+class QPushButton;
+
+class ArduinoSerial;
+
 class QNetworkAccessManager;
 
 QT_BEGIN_NAMESPACE
@@ -99,9 +106,7 @@ private slots:
     void on_pushButton_12b_clicked();
     void on_pushButton_9b_clicked();
     void on_btnFaceIDp_clicked();
-    void on_bmip_clicked();
     void on_bmi_6p_clicked();
-    void on_pushButton_10p_clicked();
     void on_pushButton_11p_clicked();
     void on_brmp_clicked();
     void on_p4b_clicked();
@@ -167,7 +172,6 @@ public:
 
 protected:
     Quai m_quai;
-    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     Ui::MainWindow *ui;
@@ -177,24 +181,43 @@ private:
     QString m_editingCaptureId;
     int m_captureQuantiteFiltre = 0;
     QDate m_captureDateFiltre;
-    QByteArray m_pendingPecheurPhotoBytes;
-    QString m_faceCaptureTempFile;
-    QCamera* m_faceCamera = nullptr;
-    QMediaCaptureSession* m_faceCaptureSession = nullptr;
-    QImageCapture* m_faceImageCapture = nullptr;
-    QLabel* m_facePreviewLabel = nullptr;
-    QVideoSink* m_faceVideoSink = nullptr;
-    bool m_faceHasRecentFrame = false;
-    qint64 m_faceLastFrameAtMs = 0;
-    qint64 m_faceOpenStatusUntilMs = 0;
-    bool m_faceCapturePending = false;
-    int m_faceCaptureRetryRemaining = 0;
+        bool m_editingCaptureHasTemperature = false;
+        double m_editingCaptureTemperatureC = 0.0;
     QLabel* m_curveLineLabelQuaiStats = nullptr;
     QTimer* m_statsTimer = nullptr;
     QTimer* m_weatherTimer = nullptr;
-    QTimer* m_arduinoReconnectTimer = nullptr;
     QNetworkAccessManager* m_weatherNetwork = nullptr;
     QString m_selectedCity = QStringLiteral("Bizerte");
+
+    // --- Arduino / Serial integration (Qt SerialPort) ---
+    ArduinoSerial* m_arduino = nullptr;
+    QComboBox* m_arduinoPortCombo = nullptr;
+    QPushButton* m_arduinoConnectButton = nullptr;
+    QLineEdit* m_arduinoTxEdit = nullptr;
+    QPushButton* m_arduinoSendButton = nullptr;
+    QLabel* m_arduinoStatusLabel = nullptr;
+     QPushButton* m_capArduinoTempButton = nullptr;
+    QFrame* m_capArduinoTempFrame = nullptr;
+     QDialog* m_arduinoTempDialog = nullptr;
+     QLabel* m_arduinoTempValueLabel = nullptr;
+     QLabel* m_arduinoTempBadgeLabel = nullptr;
+     QLabel* m_arduinoTempConnLabel = nullptr;
+     QPlainTextEdit* m_arduinoTempHistory = nullptr;
+     bool m_hasArduinoTemperature = false;
+     double m_lastArduinoTemperatureC = 0.0;
+
+    // --- Mot de passe oublie (OTP email) ---
+    QString m_passwordResetCode;
+    QString m_passwordResetEmail;
+    bool m_passwordResetVerified = false;
+
+    QString generateCode();
+    QString fallbackAdminPassword() const;
+    void setFallbackAdminPassword(const QString& newPassword);
+    void clearPasswordResetState();
+
+    bool sendEmail(const QString& to, const QString& code, QString* errorOut = nullptr);
+    bool resetAdminPassword(const QString& adminEmail, const QString& newPassword, QString* errorOut = nullptr);
 
     // --- Bateau CRUD ---
     QString currentEditingId;
@@ -219,14 +242,6 @@ private:
     void supprimerCaptureFromRow(int row);
     void resetCaptureForm();
 
-    // --- Face capture pêcheur ---
-    void setupPecheurFaceCapture();
-    void stopPecheurFaceCapture();
-    void attemptPecheurFaceCapture();
-    void syncPecheurFaceCaptureFields();
-    bool persistCapturedPecheurPhoto();
-    void updatePecheurFacePreviewGeometry();
-
     // --- Quotas (page Captures) ---
     void loadQuotas(bool showErrors = false);
     bool saveQuotas(QString* errorOut = nullptr);
@@ -241,6 +256,19 @@ private:
     void showFrame(QWidget* frameToShow);
     void setupFrames();
     void normalizeUiTexts();
+    void setupArduinoIntegration();
+    void refreshArduinoPortList();
+    void updateArduinoUiState();
+    void setupArduinoTemperatureButton();
+    void toggleCapturesArduinoTemperatureView();
+    void ensureCapturesArduinoTemperatureView();
+    void setCapturesArduinoTemperatureViewVisible(bool visible);
+    void showArduinoTemperatureWindow();
+    void ensureArduinoTemperatureConnected();
+    void handleArduinoTemperatureLine(const QString& line);
+    void updateArduinoTemperatureDialogConnectionState();
+     void updateArduinoTemperatureDialog(double temperatureC, bool appendHistory = true);
+    void updateCapturesTableLiveTemperature(double temperatureC);
     void applyQuaiFilters();
     void refreshWeatherForPage3();
     void updateWeatherLabels(const QString& icon,
@@ -251,15 +279,6 @@ private:
     bool exportWidgetToPdf(QWidget *widget,
                            const QString &defaultFileName,
                            const QString &dialogTitle);
-    void initializeArduinoLink();
-    void onArduinoDataReceived();
-    void processArduinoMessage(const QString& message);
-    void confirmQuaiAssignmentFromArduino(int quaiId);
-    int findFreeQuaiId() const;
-    int findAnyOccupiedQuaiId() const;
-    bool updateQuaiStatus(int quaiId, const QString& status);
-    bool assignFreeQuaiAndNotifyArduino();
-    void releaseAssignedQuai();
 
     // Mise en forme tableaux
     void adjustClientTableColumns();
@@ -268,10 +287,28 @@ private:
     // Gestion des clients (recherche + statistiques)
     void refreshClientsPage();
 
-    arduino m_arduino;
-    QByteArray m_arduinoBuffer;
-    int m_pendingQuaiId = -1;
-    int m_lastAssignedQuaiId = -1;
-};
+    // --- Alertes automatiques de maintenance préventive (Bateaux) ---
+    void setupBateauMaintenanceAlertSystem();
+    void refreshBateauMaintenanceAlerts(bool persistNewAlerts);
+    void notifyBateauMaintenanceAlertsIfAny();
+    void loadBateauAlertHistorySeenKeys();
+    void ensureBateauAlertHistoryPanel();
+    void toggleBateauAlertHistoryPanel();
+    void populateBateauAlertHistoryTable();
 
+    QTimer* m_bateauMaintenanceAlertTimer = nullptr;
+    QSystemTrayIcon* m_bateauTrayIcon = nullptr;
+    QDateTime m_lastBateauAlertNotificationAt;
+
+    QLabel* m_bateauAlertBadge = nullptr;
+
+    QFrame* m_bateauAlertHistoryFrame = nullptr;
+    QTableWidget* m_bateauAlertHistoryTable = nullptr;
+    QSet<QString> m_bateauAlertSeenKeys;
+
+    int m_bateauAlertsWarning = 0;
+    int m_bateauAlertsUrgent = 0;
+    int m_bateauAlertsCritical = 0;
+    int m_bateauAlertsHighestLevel = 0; // 0=None,1=Warn,2=Urgent,3=Critical
+};
 #endif // MAINWINDOW_H

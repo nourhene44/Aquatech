@@ -133,7 +133,7 @@ border-radius:50PX}
 </string>
     </property>
     <property name="currentIndex">
-     <number>4</number>
+     <number>10</number>
     </property>
     <widget class="QWidget" name="loginb">
      <widget class="QLabel" name="label_b">
@@ -155,7 +155,7 @@ border-radius:50PX}
         <x>550</x>
         <y>340</y>
         <width>441</width>
-        <height>251</height>
+        <height>271</height>
        </rect>
       </property>
       <property name="frameShape">
@@ -170,7 +170,7 @@ border-radius:50PX}
          <x>50</x>
          <y>40</y>
          <width>341</width>
-         <height>28</height>
+         <height>40</height>
         </rect>
        </property>
        <property name="placeholderText">
@@ -183,7 +183,7 @@ border-radius:50PX}
          <x>50</x>
          <y>90</y>
          <width>341</width>
-         <height>28</height>
+         <height>40</height>
         </rect>
        </property>
        <property name="placeholderText">
@@ -194,7 +194,7 @@ border-radius:50PX}
        <property name="geometry">
         <rect>
          <x>160</x>
-         <y>190</y>
+         <y>215</y>
          <width>121</width>
          <height>41</height>
         </rect>
@@ -207,7 +207,7 @@ border-radius:50PX}
        <property name="geometry">
         <rect>
          <x>230</x>
-         <y>130</y>
+         <y>145</y>
          <width>191</width>
          <height>41</height>
         </rect>
@@ -220,7 +220,7 @@ border-radius:50PX}
        <property name="geometry">
         <rect>
          <x>30</x>
-         <y>130</y>
+         <y>145</y>
          <width>191</width>
          <height>41</height>
         </rect>
@@ -479,7 +479,7 @@ background-color:transparent;}</string>
           <x>10</x>
           <y>130</y>
           <width>191</width>
-          <height>31</height>
+          <height>40</height>
          </rect>
         </property>
         <property name="placeholderText">
@@ -490,9 +490,9 @@ background-color:transparent;}</string>
         <property name="geometry">
          <rect>
           <x>10</x>
-          <y>170</y>
+          <y>175</y>
           <width>191</width>
-          <height>28</height>
+          <height>40</height>
          </rect>
         </property>
         <property name="placeholderText">
@@ -2689,7 +2689,7 @@ border:1.5px solid  rgb(0, 0, 115);            border-radius: 15px;</string>
            <item>
             <widget class="QLabel" name="label_legend_chalutierp">
              <property name="styleSheet">
-                            <string notr="true">color: #27ae60;
+              <string notr="true">color: #27ae60;
                                         font-weight: bold;
                                         font-size: 14px;
                                         padding: 3px;</string>
@@ -2702,7 +2702,7 @@ border:1.5px solid  rgb(0, 0, 115);            border-radius: 15px;</string>
            <item>
             <widget class="QLabel" name="label_legend_palangrierp">
              <property name="styleSheet">
-                            <string notr="true">color: #3498db;
+              <string notr="true">color: #3498db;
                                         font-weight: bold;
                                         font-size: 14px;
                                         padding: 3px;</string>
@@ -2715,7 +2715,7 @@ border:1.5px solid  rgb(0, 0, 115);            border-radius: 15px;</string>
            <item>
             <widget class="QLabel" name="label_legend_caseyeurp">
              <property name="styleSheet">
-                            <string notr="true">color: #e74c3c;
+              <string notr="true">color: #e74c3c;
                                         font-weight: bold;
                                         font-size: 14px;
                                         padding: 3px;</string>
@@ -2861,7 +2861,7 @@ background-color:transparent;
      <widget class="QFrame" name="framefaceidp">
       <property name="geometry">
        <rect>
-        <x>540</x>
+        <x>550</x>
         <y>160</y>
         <width>881</width>
         <height>531</height>
@@ -3084,9 +3084,9 @@ border-radius: 15px;</string>
       <widget class="QLabel" name="label_8p">
        <property name="geometry">
         <rect>
-         <x>70</x>
+         <x>110</x>
          <y>390</y>
-         <width>241</width>
+         <width>181</width>
          <height>61</height>
         </rect>
        </property>
@@ -3098,7 +3098,7 @@ border-radius: 15px;</string>
     padding: 10px 20px;</string>
        </property>
        <property name="text">
-        <string>                 ✅ Visage détecté</string>
+        <string>✅ Visage détecté</string>
        </property>
       </widget>
       <widget class="QLabel" name="labelfp_2">
@@ -4436,7 +4436,7 @@ background-color:transparent;</string>
 background-color:transparent;</string>
        </property>
        <property name="text">
-        <string>Frequence de  maintenance:</string>
+        <string>Prochaine maintenance:</string>
        </property>
       </widget>
       <widget class="QSpinBox" name="spinBox">
@@ -4522,7 +4522,7 @@ background-color:transparent;</string>
       </column>
       <column>
        <property name="text">
-        <string>Fréquence maintenance</string>
+        <string>Prochaine maintenance</string>
        </property>
       </column>
       <column>
@@ -4573,7 +4573,7 @@ background-color:transparent;</string>
        </rect>
       </property>
       <property name="text">
-       <string>Historique des alerts</string>
+       <string>Historique des alertes</string>
       </property>
      </widget>
      <widget class="QLabel" name="label_18b_2">
@@ -7320,7 +7320,7 @@ border:none;
          <x>50</x>
          <y>50</y>
          <width>341</width>
-         <height>28</height>
+         <height>40</height>
         </rect>
        </property>
        <property name="placeholderText">
@@ -7331,7 +7331,7 @@ border:none;
        <property name="geometry">
         <rect>
          <x>160</x>
-         <y>150</y>
+         <y>170</y>
          <width>141</width>
          <height>41</height>
         </rect>
@@ -7346,7 +7346,7 @@ border:none;
          <x>50</x>
          <y>100</y>
          <width>341</width>
-         <height>28</height>
+         <height>40</height>
         </rect>
        </property>
        <property name="placeholderText">
@@ -7370,7 +7370,7 @@ border:none;
      <widget class="QPushButton" name="pushButton_19b">
       <property name="geometry">
        <rect>
-        <x>0</x>
+        <x>10</x>
         <y>740</y>
         <width>81</width>
         <height>51</height>

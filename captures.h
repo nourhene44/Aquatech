@@ -17,12 +17,22 @@ public:
              double poids,
              const QDate& dateCapture);
 
+    captures(const QString& idCapture,
+             int idBateau,
+             const QString& typePoisson,
+             int quantite,
+             double poids,
+             const QDate& dateCapture,
+             double temperatureC);
+
     struct TableRowData {
         QString idCapture;
         int idBateau = 0;
         QString typePoisson;
         int quantite = 0;
         double poids = 0.0;
+        double temperatureC = 0.0;
+        bool hasTemperature = false;
         QDate dateCapture;
     };
 
@@ -56,6 +66,8 @@ private:
     QString typePoisson_;
     int quantite_ = 0;
     double poids_ = 0.0;
+    double temperatureC_ = 0.0;
+    bool hasTemperature_ = false;
     QDate dateCapture_;
 };
 

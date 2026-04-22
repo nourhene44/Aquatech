@@ -68,6 +68,32 @@ QString matchColumnBySynonyms(const QStringList& dbCols, const QStringList& syns
 	return QString();
 }
 
+bool canSelectColumn(QSqlDatabase db, const QString& tableName, const QString& columnName)
+{
+	if (!db.isValid() || !db.isOpen()) return false;
+	if (tableName.trimmed().isEmpty() || columnName.trimmed().isEmpty()) return false;
+
+	QSqlQuery q(db);
+	q.prepare(QStringLiteral("SELECT %1 FROM %2 WHERE 1=0").arg(columnName, tableName));
+	return q.exec();
+}
+
+QString probeTemperatureColumn(QSqlDatabase db, const QString& tableName)
+{
+	static const QStringList candidates = {
+		QStringLiteral("TEMPERATURE"),
+		QStringLiteral("TEMP"),
+		QStringLiteral("TEMP_C"),
+		QStringLiteral("TEMPERATURE_C")
+	};
+	for (const QString& c : candidates) {
+		if (canSelectColumn(db, tableName, c)) {
+			return c;
+		}
+	}
+	return QString();
+}
+
 QString findCapturesTable(QSqlDatabase db)
 {
 	const QStringList tables = db.tables(QSql::Tables) + db.tables(QSql::Views);
@@ -157,7 +183,8 @@ bool resolveColumns(QSqlDatabase db,
 					QString* typeCol,
 					QString* quantiteCol,
 					QString* poidsCol,
-					QString* dateCol)
+					QString* dateCol,
+					QString* temperatureCol)
 {
 	if (!db.isValid() || !db.isOpen()) {
 		s_lastError = QStringLiteral("Connexion base de donnees indisponible.");
@@ -194,6 +221,9 @@ bool resolveColumns(QSqlDatabase db,
 	const QString cDate = matchColumnBySynonyms(cols, {
 		QStringLiteral("date_capture"), QStringLiteral("datecapture"), QStringLiteral("date")
 	});
+	const QString cTemperature = matchColumnBySynonyms(cols, {
+		QStringLiteral("temperature"), QStringLiteral("temp"), QStringLiteral("temp_c"), QStringLiteral("temperature_c")
+	});
 
 	if (cId.isEmpty() || cIdBateau.isEmpty() || cType.isEmpty() || cQuantite.isEmpty() || cPoids.isEmpty() || cDate.isEmpty()) {
 		s_lastError = QStringLiteral("Colonnes CAPTURES manquantes (ID/ID_BATEAU/TYPE/QUANTITE/POIDS/DATE).");
@@ -207,7 +237,26 @@ bool resolveColumns(QSqlDatabase db,
 	*quantiteCol = cQuantite;
 	*poidsCol = cPoids;
 	*dateCol = cDate;
+	if (temperatureCol) {
+		*temperatureCol = cTemperature;
+		if (temperatureCol->isEmpty()) {
+			*temperatureCol = probeTemperatureColumn(db, table);
+		}
+	}
 	return true;
+}
+
+bool resolveColumns(QSqlDatabase db,
+					QString* tableName,
+					QString* idCol,
+					QString* idBateauCol,
+					QString* typeCol,
+					QString* quantiteCol,
+					QString* poidsCol,
+					QString* dateCol)
+{
+	QString tempCol;
+	return resolveColumns(db, tableName, idCol, idBateauCol, typeCol, quantiteCol, poidsCol, dateCol, &tempCol);
 }
 
 } // namespace
@@ -225,6 +274,24 @@ captures::captures(const QString& idCapture,
 	, typePoisson_(typePoisson)
 	, quantite_(quantite)
 	, poids_(poids)
+	, dateCapture_(dateCapture)
+{
+}
+
+captures::captures(const QString& idCapture,
+				   int idBateau,
+				   const QString& typePoisson,
+				   int quantite,
+				   double poids,
+				   const QDate& dateCapture,
+				   double temperatureC)
+	: idCapture_(idCapture)
+	, idBateau_(idBateau)
+	, typePoisson_(typePoisson)
+	, quantite_(quantite)
+	, poids_(poids)
+	, temperatureC_(temperatureC)
+	, hasTemperature_(true)
 	, dateCapture_(dateCapture)
 {
 }
@@ -265,7 +332,13 @@ bool captures::ajouter() const
 	QString quantiteCol;
 	QString poidsCol;
 	QString dateCol;
-	if (!resolveColumns(db, &tableName, &idCol, &idBateauCol, &typeCol, &quantiteCol, &poidsCol, &dateCol)) {
+	QString temperatureCol;
+	if (!resolveColumns(db, &tableName, &idCol, &idBateauCol, &typeCol, &quantiteCol, &poidsCol, &dateCol, &temperatureCol)) {
+		return false;
+	}
+	if (hasTemperature_ && temperatureCol.isEmpty()) {
+		s_lastError = QStringLiteral("Colonne TEMPERATURE introuvable dans %1. Ajoutez-la (ALTER TABLE %1 ADD TEMPERATURE NUMBER).")
+					  .arg(tableName);
 		return false;
 	}
 	if (!bateauExiste(db, idBateau_)) {
@@ -275,15 +348,28 @@ bool captures::ajouter() const
 		return false;
 	}
 
+	QStringList cols = { idCol, idBateauCol, typeCol, quantiteCol, poidsCol, dateCol };
+	QStringList placeholders = { QStringLiteral("?"), QStringLiteral("?"), QStringLiteral("?"), QStringLiteral("?"), QStringLiteral("?"), QStringLiteral("?") };
+	QList<QVariant> binds;
+	binds << idCaptureNum
+		  << idBateau_
+		  << typePoisson_.trimmed()
+		  << quantite_
+		  << poids_
+		  << (dateCapture_.isValid() ? QVariant(dateCapture_) : QVariant(QDate::currentDate()));
+
+	if (!temperatureCol.isEmpty() && hasTemperature_) {
+		cols.insert(cols.size() - 1, temperatureCol);
+		placeholders.insert(placeholders.size() - 1, QStringLiteral("?"));
+		binds.insert(binds.size() - 1, temperatureC_);
+	}
+
 	QSqlQuery query(db);
-	query.prepare(QStringLiteral("INSERT INTO %1 (%2, %3, %4, %5, %6, %7) VALUES (?, ?, ?, ?, ?, ?)")
-				  .arg(tableName, idCol, idBateauCol, typeCol, quantiteCol, poidsCol, dateCol));
-	query.addBindValue(idCaptureNum);
-	query.addBindValue(idBateau_);
-	query.addBindValue(typePoisson_.trimmed());
-	query.addBindValue(quantite_);
-	query.addBindValue(poids_);
-	query.addBindValue(dateCapture_.isValid() ? QVariant(dateCapture_) : QVariant(QDate::currentDate()));
+	query.prepare(QStringLiteral("INSERT INTO %1 (%2) VALUES (%3)")
+				  .arg(tableName, cols.join(QStringLiteral(", ")), placeholders.join(QStringLiteral(", "))));
+	for (const QVariant& v : binds) {
+		query.addBindValue(v);
+	}
 
 	if (!query.exec()) {
 		s_lastError = friendlyOracleError(query.lastError().text());
@@ -332,7 +418,13 @@ bool captures::modifierAvecAncienId(const QString& ancienId) const
 	QString quantiteCol;
 	QString poidsCol;
 	QString dateCol;
-	if (!resolveColumns(db, &tableName, &idCol, &idBateauCol, &typeCol, &quantiteCol, &poidsCol, &dateCol)) {
+	QString temperatureCol;
+	if (!resolveColumns(db, &tableName, &idCol, &idBateauCol, &typeCol, &quantiteCol, &poidsCol, &dateCol, &temperatureCol)) {
+		return false;
+	}
+	if (hasTemperature_ && temperatureCol.isEmpty()) {
+		s_lastError = QStringLiteral("Colonne TEMPERATURE introuvable dans %1. Ajoutez-la (ALTER TABLE %1 ADD TEMPERATURE NUMBER).")
+					  .arg(tableName);
 		return false;
 	}
 	if (!bateauExiste(db, idBateau_)) {
@@ -342,15 +434,31 @@ bool captures::modifierAvecAncienId(const QString& ancienId) const
 		return false;
 	}
 
+	QStringList sets;
+	QList<QVariant> binds;
+	sets << QStringLiteral("%1 = ?").arg(idCol);
+	binds << newIdNum;
+	sets << QStringLiteral("%1 = ?").arg(idBateauCol);
+	binds << idBateau_;
+	sets << QStringLiteral("%1 = ?").arg(typeCol);
+	binds << typePoisson_.trimmed();
+	sets << QStringLiteral("%1 = ?").arg(quantiteCol);
+	binds << quantite_;
+	sets << QStringLiteral("%1 = ?").arg(poidsCol);
+	binds << poids_;
+	if (!temperatureCol.isEmpty() && hasTemperature_) {
+		sets << QStringLiteral("%1 = ?").arg(temperatureCol);
+		binds << temperatureC_;
+	}
+	sets << QStringLiteral("%1 = ?").arg(dateCol);
+	binds << (dateCapture_.isValid() ? QVariant(dateCapture_) : QVariant(QDate::currentDate()));
+
 	QSqlQuery query(db);
-	query.prepare(QStringLiteral("UPDATE %1 SET %2 = ?, %3 = ?, %4 = ?, %5 = ?, %6 = ?, %7 = ? WHERE %2 = ?")
-				  .arg(tableName, idCol, idBateauCol, typeCol, quantiteCol, poidsCol, dateCol));
-	query.addBindValue(newIdNum);
-	query.addBindValue(idBateau_);
-	query.addBindValue(typePoisson_.trimmed());
-	query.addBindValue(quantite_);
-	query.addBindValue(poids_);
-	query.addBindValue(dateCapture_.isValid() ? QVariant(dateCapture_) : QVariant(QDate::currentDate()));
+	query.prepare(QStringLiteral("UPDATE %1 SET %2 WHERE %3 = ?")
+				  .arg(tableName, sets.join(QStringLiteral(", ")), idCol));
+	for (const QVariant& v : binds) {
+		query.addBindValue(v);
+	}
 	query.addBindValue(oldIdNum);
 
 	if (!query.exec()) {
@@ -500,12 +608,20 @@ bool captures::chargerTable(const QString& rechercheId,
 	QString quantiteCol;
 	QString poidsCol;
 	QString dateCol;
-	if (!resolveColumns(db, &tableName, &idCol, &idBateauCol, &typeCol, &quantiteCol, &poidsCol, &dateCol)) {
+	QString temperatureCol;
+	if (!resolveColumns(db, &tableName, &idCol, &idBateauCol, &typeCol, &quantiteCol, &poidsCol, &dateCol, &temperatureCol)) {
 		return false;
 	}
 
-	QString sql = QStringLiteral("SELECT %1, %2, %3, %4, %5, %6 FROM %7")
-					  .arg(idCol, idBateauCol, typeCol, quantiteCol, poidsCol, dateCol, tableName);
+	const bool hasTempCol = !temperatureCol.isEmpty();
+	QStringList selectCols = { idCol, idBateauCol, typeCol, quantiteCol, poidsCol };
+	if (hasTempCol) {
+		selectCols << temperatureCol;
+	}
+	selectCols << dateCol;
+
+	QString sql = QStringLiteral("SELECT %1 FROM %2")
+				  .arg(selectCols.join(QStringLiteral(", ")), tableName);
 
 	QStringList where;
 	QList<QVariant> binds;
@@ -543,7 +659,15 @@ bool captures::chargerTable(const QString& rechercheId,
 		row.typePoisson = query.value(2).toString();
 		row.quantite = query.value(3).toInt();
 		row.poids = query.value(4).toDouble();
-		row.dateCapture = query.value(5).toDate();
+		const int dateIndex = hasTempCol ? 6 : 5;
+		if (hasTempCol) {
+			const QVariant tempV = query.value(5);
+			if (!tempV.isNull()) {
+				row.temperatureC = tempV.toDouble();
+				row.hasTemperature = true;
+			}
+		}
+		row.dateCapture = query.value(dateIndex).toDate();
 		rows.push_back(row);
 	}
 
@@ -566,12 +690,20 @@ bool captures::chargerTableAvancee(const QString& rechercheId,
 	QString quantiteCol;
 	QString poidsCol;
 	QString dateCol;
-	if (!resolveColumns(db, &tableName, &idCol, &idBateauCol, &typeCol, &quantiteCol, &poidsCol, &dateCol)) {
+	QString temperatureCol;
+	if (!resolveColumns(db, &tableName, &idCol, &idBateauCol, &typeCol, &quantiteCol, &poidsCol, &dateCol, &temperatureCol)) {
 		return false;
 	}
 
-	QString sql = QStringLiteral("SELECT %1, %2, %3, %4, %5, %6 FROM %7")
-					  .arg(idCol, idBateauCol, typeCol, quantiteCol, poidsCol, dateCol, tableName);
+	const bool hasTempCol = !temperatureCol.isEmpty();
+	QStringList selectCols = { idCol, idBateauCol, typeCol, quantiteCol, poidsCol };
+	if (hasTempCol) {
+		selectCols << temperatureCol;
+	}
+	selectCols << dateCol;
+
+	QString sql = QStringLiteral("SELECT %1 FROM %2")
+				  .arg(selectCols.join(QStringLiteral(", ")), tableName);
 
 	QStringList where;
 	QList<QVariant> binds;
@@ -617,7 +749,15 @@ bool captures::chargerTableAvancee(const QString& rechercheId,
 		row.typePoisson = query.value(2).toString();
 		row.quantite = query.value(3).toInt();
 		row.poids = query.value(4).toDouble();
-		row.dateCapture = query.value(5).toDate();
+		const int dateIndex = hasTempCol ? 6 : 5;
+		if (hasTempCol) {
+			const QVariant tempV = query.value(5);
+			if (!tempV.isNull()) {
+				row.temperatureC = tempV.toDouble();
+				row.hasTemperature = true;
+			}
+		}
+		row.dateCapture = query.value(dateIndex).toDate();
 		rows.push_back(row);
 	}
 
