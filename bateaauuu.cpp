@@ -103,7 +103,7 @@ static bool ensureZeroBoatExists(QSqlDatabase& db)
         "INSERT INTO BATEAUX "
         "(ID_BATEAU, NOM, TYPE, CAPACITE, PROPRIETAIRE, STATUT, LARGEUR, PROCHAINE_MAINTENANCE, DATE_ENTREE, DATE_DERNIERE_MAINTENANCE) "
         "VALUES (0, :nom, :type, 0, :prop, :statut, 0, 0, NULL, NULL)");
-    ins.bindValue(":nom", QStringLiteral("AUCUN BATEAU"));
+    ins.bindValue(":nom", QStringLiteral("aucun bateau"));
     ins.bindValue(":type", defaultType);
     ins.bindValue(":prop", QStringLiteral("SYSTEME"));
     ins.bindValue(":statut", defaultStatut);

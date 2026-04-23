@@ -27,6 +27,12 @@ class ArduinoSerial;
 
 class QNetworkAccessManager;
 
+#include <QMediaCaptureSession>
+#include <QCamera>
+#include <QImageCapture>
+#include <QVideoSink>
+#include <QVideoFrame>
+
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
@@ -106,8 +112,13 @@ private slots:
     void on_pushButton_12b_clicked();
     void on_pushButton_9b_clicked();
     void on_btnFaceIDp_clicked();
+    void on_btnCapturep_clicked();
+    void on_btnVerifyp_clicked();
+    void on_btnCancelFacep_clicked();
+    void on_bmip_clicked();
     void on_bmi_6p_clicked();
     void on_pushButton_11p_clicked();
+    void on_pushButton_10p_clicked();
     void on_brmp_clicked();
     void on_p4b_clicked();
     void on_pushButton_clicked();
@@ -172,6 +183,7 @@ public:
 
 protected:
     Quai m_quai;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     Ui::MainWindow *ui;
@@ -216,7 +228,7 @@ private:
     void setFallbackAdminPassword(const QString& newPassword);
     void clearPasswordResetState();
 
-    bool sendEmail(const QString& to, const QString& code, QString* errorOut = nullptr);
+    bool sendEmail(const QString& to, const QString& content, QString* errorOut = nullptr, const QString& subject = "AquaTech Notification");
     bool resetAdminPassword(const QString& adminEmail, const QString& newPassword, QString* errorOut = nullptr);
 
     // --- Bateau CRUD ---
@@ -310,5 +322,28 @@ private:
     int m_bateauAlertsUrgent = 0;
     int m_bateauAlertsCritical = 0;
     int m_bateauAlertsHighestLevel = 0; // 0=None,1=Warn,2=Urgent,3=Critical
+
+    // --- FaceID / Camera (from mainwindow1) ---
+    QByteArray m_pendingPecheurPhotoBytes;
+    QString m_faceCaptureTempFile;
+    QCamera* m_faceCamera = nullptr;
+    QMediaCaptureSession* m_faceCaptureSession = nullptr;
+    QImageCapture* m_faceImageCapture = nullptr;
+    QLabel* m_facePreviewLabel = nullptr;
+    QVideoSink* m_faceVideoSink = nullptr;
+    bool m_faceHasRecentFrame = false;
+    qint64 m_faceLastFrameAtMs = 0;
+    qint64 m_faceOpenStatusUntilMs = 0;
+    bool m_faceCapturePending = false;
+    int m_faceCapturePendingWaitMs = 0;
+    int m_faceCaptureRetryRemaining = 0;
+
+    // --- Face capture pêcheur methods ---
+    void setupPecheurFaceCapture();
+    void stopPecheurFaceCapture();
+    void attemptPecheurFaceCapture();
+    void syncPecheurFaceCaptureFields();
+    bool persistCapturedPecheurPhoto();
+    void updatePecheurFacePreviewGeometry();
 };
 #endif // MAINWINDOW_H

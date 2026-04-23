@@ -1,4 +1,4 @@
-QT       += core gui sql network
+QT       += core gui sql network multimedia multimediawidgets
 
 # Arduino/MCU integration over USB serial
 qtHaveModule(serialport) {
