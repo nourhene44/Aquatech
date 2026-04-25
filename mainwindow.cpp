@@ -48,6 +48,8 @@
 #include <QFrame>
 #include <QSystemTrayIcon>
 #include <QEvent>
+#include <QGraphicsDropShadowEffect>
+#include <QLocale>
 #include <QStyle>
 #include <QStringList>
 #include "bateaauuu.h"
@@ -62,9 +64,11 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QJsonParseError>
+#include <cmath>
 #include <algorithm>
 #include <functional>
 #include <initializer_list>
+#include <limits>
 #include <QRandomGenerator>
 #include <QSslSocket>
 #include <QSettings>
@@ -77,6 +81,7 @@
 
 static QString weatherDescriptionFr(int weatherCode);
 static QString weatherIconEmoji(int weatherCode);
+static QString weatherIconEmojiDayNight(int weatherCode, bool isDay);
 static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui);
 static void updateCapturesStats(MainWindow* parent, Ui::MainWindow* ui);
 
@@ -112,6 +117,54 @@ static QDateTime nullPecheurAffectationDateTime()
 static bool isPecheurAffectationNull(const QDateTime& dateTime)
 {
     return !dateTime.isValid() || dateTime <= nullPecheurAffectationDateTime();
+}
+
+static QString resolveBateauMaintenanceFrequencyColumn()
+{
+    Connection* conn = Connection::getInstance();
+    if (!conn || !conn->ensureOpen()) {
+        return QString();
+    }
+
+    const QSqlDatabase db = conn->getDatabase();
+    if (!db.isValid() || !db.isOpen()) {
+        return QString();
+    }
+
+    QSqlQuery query(db);
+    query.prepare(QStringLiteral(
+        "SELECT COLUMN_NAME "
+        "FROM USER_TAB_COLUMNS "
+        "WHERE UPPER(TABLE_NAME) = 'BATEAUX'"));
+
+    if (!query.exec()) {
+        return QString();
+    }
+
+    QSet<QString> availableColumns;
+    while (query.next()) {
+        availableColumns.insert(query.value(0).toString().trimmed().toUpper());
+    }
+
+    static const QStringList candidates = {
+        QStringLiteral("PROCHAINE_MAINTENANCE"),
+        QStringLiteral("FREQUENCE_MAINTENANCE"),
+        QStringLiteral("FREQUENCE")
+    };
+
+    for (const QString& candidate : candidates) {
+        if (availableColumns.contains(candidate)) {
+            return candidate;
+        }
+    }
+
+    return QString();
+}
+
+static QString bateauMaintenanceFrequencySelectExpr()
+{
+    const QString column = resolveBateauMaintenanceFrequencyColumn();
+    return column.isEmpty() ? QStringLiteral("0") : column;
 }
 
 static QString pecheurFaceDisplayName(Ui::MainWindow* ui)
@@ -539,6 +592,47 @@ static void loadPecheurBateauChoices(Ui::MainWindow* ui)
     combo->blockSignals(false);
 }
 
+static QComboBox* quaiBateauCombo(Ui::MainWindow* ui)
+{
+    if (!ui) return nullptr;
+    return ui->comboBoxQuaiBateau;
+}
+
+static void loadQuaiBateauChoices(Ui::MainWindow* ui)
+{
+    QComboBox* combo = quaiBateauCombo(ui);
+    if (!combo) return;
+
+    const QVariant previousData = combo->currentData();
+    const QString previousText = combo->currentText().trimmed();
+
+    combo->blockSignals(true);
+    combo->clear();
+    combo->addItem(QStringLiteral("0 - Aucun bateau"), 0);
+
+    QSqlQuery query;
+    if (query.exec(QStringLiteral("SELECT ID_BATEAU, NOM FROM BATEAUX ORDER BY ID_BATEAU"))) {
+        while (query.next()) {
+            const int id = query.value(0).toInt();
+            const QString nom = query.value(1).toString().trimmed();
+            const QString label = nom.isEmpty()
+                ? QString::number(id)
+                : QStringLiteral("%1 - %2").arg(QString::number(id), nom);
+            combo->addItem(label, id);
+        }
+    }
+
+    int idx = -1;
+    if (previousData.isValid()) {
+        idx = combo->findData(previousData);
+    }
+    if (idx < 0 && !previousText.isEmpty()) {
+        idx = combo->findText(previousText, Qt::MatchStartsWith);
+    }
+    combo->setCurrentIndex(idx >= 0 ? idx : 0);
+    combo->blockSignals(false);
+}
+
 static QString pecheurSexeCode(Ui::MainWindow* ui)
 {
     if (!ui) return QString();
@@ -563,13 +657,6 @@ static bool pecheurEmailExistsInDb(const QString& email, QString* errorOut = nul
         return false;
     }
     return q.next();
-}
-
-static bool isLettersOnlyName(const QString& text)
-{
-    // Autorise les lettres (Unicode), les espaces et les traits d'union
-    static const QRegularExpression rx(QStringLiteral("^[\\p{L}\\s-]+$"));
-    return rx.match(text.trimmed()).hasMatch();
 }
 
 static int toIntOrZero(const QString& text)
@@ -1044,16 +1131,6 @@ static QString canonicalEmployeRole(const QString& raw)
     if (key.contains(QStringLiteral("ouvri"))) return QStringLiteral("Ouvrier");
     if (key.contains(QStringLiteral("pech"))) return QStringLiteral("Pecheur");
     return raw.trimmed();
-}
-
-static int employeRoleCodeForIdUi(const QString& roleRaw)
-{
-    const QString role = canonicalEmployeRole(roleRaw);
-    if (role == QStringLiteral("Gardien")) return 3;
-    if (role == QStringLiteral("Technicien")) return 4;
-    if (role == QStringLiteral("Responsable")) return 5;
-    if (role == QStringLiteral("Ouvrier")) return 6;
-    return 0;
 }
 
 static QPixmap buildEmployeRoleCirclePixmap(int gardien,
@@ -1656,6 +1733,118 @@ static void reloadTableWidgetFromDb(QTableWidget* table,
         ++row;
     }
 }
+
+namespace {
+
+constexpr int kQuaiOriginalRowRole = Qt::UserRole + 42;
+
+static double extractQuaiNumber(const QString& text, bool* ok = nullptr)
+{
+    QString normalized = text.trimmed();
+    if (normalized.isEmpty()) {
+        if (ok) *ok = false;
+        return 0.0;
+    }
+
+    normalized.replace(',', '.');
+
+    QRegularExpressionMatch match = QRegularExpression(
+        QStringLiteral("[-+]?\\d+(?:\\.\\d+)?")).match(normalized);
+    if (!match.hasMatch()) {
+        if (ok) *ok = false;
+        return 0.0;
+    }
+
+    bool localOk = false;
+    const double value = match.captured(0).toDouble(&localOk);
+    if (ok) *ok = localOk;
+    return localOk ? value : 0.0;
+}
+
+struct QuaiRowSnapshot
+{
+    QVector<QTableWidgetItem*> items;
+};
+
+static void sortQuaiTableRows(QTableWidget* table, int sortCol, Qt::SortOrder order)
+{
+    if (!table) return;
+
+    const int rowCount = table->rowCount();
+    const int colCount = table->columnCount();
+    if (rowCount <= 1 || colCount <= 0) return;
+
+    QVector<QuaiRowSnapshot> rows;
+    rows.reserve(rowCount);
+
+    for (int row = 0; row < rowCount; ++row) {
+        QuaiRowSnapshot snapshot;
+        snapshot.items.resize(colCount);
+        for (int col = 0; col < colCount; ++col) {
+            snapshot.items[col] = table->takeItem(row, col);
+        }
+        rows.push_back(std::move(snapshot));
+    }
+
+    const auto compareRows = [sortCol, order](const QuaiRowSnapshot& lhs, const QuaiRowSnapshot& rhs) {
+        const QTableWidgetItem* leftItem =
+            (sortCol >= 0 && sortCol < lhs.items.size()) ? lhs.items.at(sortCol) : nullptr;
+        const QTableWidgetItem* rightItem =
+            (sortCol >= 0 && sortCol < rhs.items.size()) ? rhs.items.at(sortCol) : nullptr;
+
+        const auto originalOrder = [](const QTableWidgetItem* item) {
+            if (!item) return std::numeric_limits<int>::max();
+            return item->data(kQuaiOriginalRowRole).toInt();
+        };
+
+        auto fallbackCompare = [&]() {
+            return originalOrder(leftItem) < originalOrder(rightItem);
+        };
+
+        if (sortCol < 0) {
+            return fallbackCompare();
+        }
+
+        const bool numericColumn = (sortCol == 0 || sortCol == 4 || sortCol == 5 || sortCol == 7);
+        if (numericColumn) {
+            bool leftOk = false;
+            bool rightOk = false;
+            const double leftValue = extractQuaiNumber(leftItem ? leftItem->text() : QString(), &leftOk);
+            const double rightValue = extractQuaiNumber(rightItem ? rightItem->text() : QString(), &rightOk);
+
+            if (leftOk && rightOk && !qFuzzyCompare(leftValue + 1.0, rightValue + 1.0)) {
+                return (order == Qt::AscendingOrder) ? (leftValue < rightValue)
+                                                     : (leftValue > rightValue);
+            }
+            if (leftOk != rightOk) {
+                return (order == Qt::AscendingOrder) ? leftOk : rightOk;
+            }
+        } else {
+            const QString leftText = leftItem ? leftItem->text().trimmed().toCaseFolded() : QString();
+            const QString rightText = rightItem ? rightItem->text().trimmed().toCaseFolded() : QString();
+            if (leftText != rightText) {
+                return (order == Qt::AscendingOrder) ? (leftText < rightText)
+                                                     : (leftText > rightText);
+            }
+        }
+
+        return fallbackCompare();
+    };
+
+    std::stable_sort(rows.begin(), rows.end(), compareRows);
+
+    table->setRowCount(0);
+    for (int row = 0; row < rows.size(); ++row) {
+        table->insertRow(row);
+        for (int col = 0; col < colCount; ++col) {
+            if (rows[row].items[col]) {
+                table->setItem(row, col, rows[row].items[col]);
+            }
+        }
+    }
+}
+
+} // namespace
 
 
 
@@ -2344,6 +2533,12 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
+    if (ui->tableWidgetQuai) {
+        ui->tableWidgetQuai->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        ui->tableWidgetQuai->setSelectionBehavior(QAbstractItemView::SelectRows);
+        ui->tableWidgetQuai->setSelectionMode(QAbstractItemView::SingleSelection);
+    }
+
     // Eye toggle (show/hide) for each password field
     installPasswordEyeToggle(ui->lineEdit_2b);   // login
     installPasswordEyeToggle(ui->lineEdit_12b);  // mot de passe actuel (param├¿tres)
@@ -2533,6 +2728,7 @@ MainWindow::MainWindow(QWidget *parent)
     loadBateaux();
     setupBateauMaintenanceAlertSystem();
     loadPecheurBateauChoices(ui);
+    loadQuaiBateauChoices(ui);
     // Chargement initial de la table des quais avec actions connect├⌐es
     refreshQuaiTable();
 
@@ -2674,6 +2870,43 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Chargement m├⌐t├⌐o initial
     refreshWeatherForPage3();
+
+    // Ajout du combo de tri pour les quais sur la page_3
+    if (ui->lineEdit_3) {
+        QWidget *parent = ui->lineEdit_3->parentWidget();
+        if (parent && !parent->findChild<QComboBox*>(QStringLiteral("comboBox_sortQuais"))) {
+            QComboBox *comboTri = new QComboBox(parent);
+            comboTri->setObjectName(QStringLiteral("comboBox_sortQuais"));
+
+            comboTri->addItem(QStringLiteral("Tri: Par défaut"), 0);
+            comboTri->addItem(QStringLiteral("Tri: ID (Croissant)"), 1);
+            comboTri->addItem(QStringLiteral("Tri: ID (Décroissant)"), 2);
+            comboTri->addItem(QStringLiteral("Tri: Capacité (Croissante)"), 3);
+            comboTri->addItem(QStringLiteral("Tri: Capacité (Décroissante)"), 4);
+            comboTri->addItem(QStringLiteral("Tri: Longueur (Croissante)"), 5);
+            comboTri->addItem(QStringLiteral("Tri: Longueur (Décroissante)"), 6);
+
+            comboTri->setStyleSheet(QStringLiteral(
+                "QComboBox {"
+                "    font-size: 16px;"
+                "    padding: 6px;"
+                "    background-color: rgb(224, 238, 255);"
+                "    border: 2px solid rgb(0, 0, 115);"
+                "    border-radius: 10px;"
+                "    color: rgb(0, 0, 90);"
+                "    font-weight: 600;"
+                "}"));
+
+            const QRect geom = ui->lineEdit_3->geometry();
+            comboTri->setGeometry(geom.right() + 20, geom.top() - 5, 180, 41);
+
+            connect(comboTri, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
+                applyQuaiFilters();
+            });
+
+            comboTri->raise();
+        }
+    }
 }
 
 // Navigation / actions : impl├⌐mentations uniques plus bas dans le fichier.
@@ -2705,12 +2938,56 @@ void MainWindow::showFrame(QWidget* frameToShow)
 // Au d├⌐marrage, cacher le frame QR
 void MainWindow::setupFrames()
 {
-    if (ui->frame_3b) ui->frame_3b->hide();        // Frame QR cach├⌐
-    ui->frameb->show(); // Frame Connexion visible si tu veux
-        
-        
-        
-        
+    if (ui->frame_3b) ui->frame_3b->hide();
+    if (ui->frameb) ui->frameb->show();
+
+    if (ui->horizontalLayoutMeteo) {
+        ui->horizontalLayoutMeteo->setStretch(0, 0);
+        ui->horizontalLayoutMeteo->setStretch(1, 1);
+        ui->horizontalLayoutMeteo->setStretch(2, 3);
+    }
+
+    if (ui->labelMeteoDaily) {
+        ui->labelMeteoDaily->setTextInteractionFlags(Qt::TextBrowserInteraction);
+        ui->labelMeteoDaily->setOpenExternalLinks(false);
+        ui->labelMeteoDaily->setCursor(Qt::PointingHandCursor);
+        connect(ui->labelMeteoDaily, &QLabel::linkActivated, this, [this](const QString &link) {
+            if (!link.startsWith(QStringLiteral("daily:"))) return;
+
+            bool ok = false;
+            const int idx = QStringView(link).mid(QStringLiteral("daily:").size()).toInt(&ok);
+            if (!ok) return;
+
+            m_selectedDailyIndex = idx;
+            if (m_hasLastWeather) {
+                updateWeatherLabels(m_lastWeatherIcon,
+                                    m_lastWeatherTemp,
+                                    m_lastWeatherDesc,
+                                    m_lastWeatherWind,
+                                    m_lastWeatherHumidity,
+                                    m_lastWeatherHourly,
+                                    m_lastWeatherDaily,
+                                    m_lastWeatherIsDay);
+            }
+            updateSelectedDayDetails();
+        });
+    }
+
+    if (ui->frameMeteo && !ui->frameMeteo->graphicsEffect()) {
+        auto *shadow = new QGraphicsDropShadowEffect(ui->frameMeteo);
+        shadow->setBlurRadius(34);
+        shadow->setOffset(0, 10);
+        shadow->setColor(QColor(15, 23, 42, 70));
+        ui->frameMeteo->setGraphicsEffect(shadow);
+    }
+
+    if (ui->labelMeteoIcon && !ui->labelMeteoIcon->graphicsEffect()) {
+        auto *shadow = new QGraphicsDropShadowEffect(ui->labelMeteoIcon);
+        shadow->setBlurRadius(18);
+        shadow->setOffset(0, 6);
+        shadow->setColor(QColor(2, 132, 199, 120));
+        ui->labelMeteoIcon->setGraphicsEffect(shadow);
+    }
 }
 
 // Bouton QR Code : afficher frame QR, cacher frame Connexion
@@ -6711,6 +6988,314 @@ static int findPecheurActionColumnIndex(const QTableWidget* table)
     return -1;
 }
 
+static QString normalizePdfCellText(QString text)
+{
+    text.replace('\n', ' ');
+    text.replace('\r', ' ');
+    return text.simplified();
+}
+
+static int pdfWrappedTextHeight(QPainter& painter,
+                                const QFont& font,
+                                const QString& text,
+                                int width,
+                                int minHeight = 0,
+                                int flags = Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap)
+{
+    painter.save();
+    painter.setFont(font);
+    const QRect bounds = painter.boundingRect(
+        QRect(0, 0, qMax(20, width), 8000),
+        flags,
+        text);
+    painter.restore();
+    return qMax(minHeight, bounds.height());
+}
+
+static QString currentQuaiSortText(Ui::MainWindow* ui)
+{
+    if (!ui || !ui->page_3) {
+        return QString();
+    }
+
+    if (QComboBox* comboTri = ui->page_3->findChild<QComboBox*>(QStringLiteral("comboBox_sortQuais"))) {
+        QString text = normalizePdfCellText(comboTri->currentText());
+        if (text.startsWith(QStringLiteral("Tri:"), Qt::CaseInsensitive)) {
+            text = text.mid(4).trimmed();
+        }
+        return text;
+    }
+
+    return QString();
+}
+
+static QStringList buildQuaiReportInfoLines(Ui::MainWindow* ui,
+                                            const QString& pageLabel,
+                                            const QString& exportStamp,
+                                            int visibleRows,
+                                            int totalRows)
+{
+    QStringList filterParts;
+
+    if (ui) {
+        const QString searchText = ui->lineEdit_3 ? normalizePdfCellText(ui->lineEdit_3->text()) : QString();
+        const QString statutText = ui->comboBox_3 ? normalizePdfCellText(ui->comboBox_3->currentText()) : QString();
+        const QString zoneText = ui->comboBox_4 ? normalizePdfCellText(ui->comboBox_4->currentText()) : QString();
+        const QString capaciteText = ui->comboBox_5 ? normalizePdfCellText(ui->comboBox_5->currentText()) : QString();
+        const QString sortText = currentQuaiSortText(ui);
+
+        if (!searchText.isEmpty()) {
+            filterParts << QStringLiteral("Recherche: %1").arg(searchText);
+        }
+        if (!statutText.isEmpty() && statutText.compare(QStringLiteral("Tous"), Qt::CaseInsensitive) != 0) {
+            filterParts << QStringLiteral("Statut: %1").arg(statutText);
+        }
+        if (!zoneText.isEmpty() && zoneText.compare(QStringLiteral("Toutes"), Qt::CaseInsensitive) != 0) {
+            filterParts << QStringLiteral("Zone: %1").arg(zoneText);
+        }
+        if (!capaciteText.isEmpty() && capaciteText.compare(QStringLiteral("Toutes"), Qt::CaseInsensitive) != 0) {
+            filterParts << QStringLiteral("Capacite: %1").arg(capaciteText);
+        }
+        const bool isDefaultSort =
+            sortText.compare(QStringLiteral("Par defaut"), Qt::CaseInsensitive) == 0
+            || sortText.compare(QStringLiteral("Par défaut"), Qt::CaseInsensitive) == 0;
+        if (!sortText.isEmpty() && !isDefaultSort) {
+            filterParts << QStringLiteral("Tri: %1").arg(sortText);
+        }
+    }
+
+    const QString filtersText = filterParts.isEmpty()
+        ? QStringLiteral("Aucun filtre actif")
+        : filterParts.join(QStringLiteral(" | "));
+
+    return {
+        QStringLiteral("Application: AquaTech"),
+        QStringLiteral("Module: %1").arg(pageLabel),
+        QStringLiteral("Date d'export: %1").arg(exportStamp),
+        QStringLiteral("Quais visibles: %1 / %2").arg(visibleRows).arg(totalRows),
+        QStringLiteral("Filtres: %1").arg(filtersText)
+    };
+}
+
+static int countActiveQuaiFilters(Ui::MainWindow* ui)
+{
+    if (!ui) {
+        return 0;
+    }
+
+    int count = 0;
+    const QString searchText = ui->lineEdit_3 ? normalizePdfCellText(ui->lineEdit_3->text()) : QString();
+    const QString statutText = ui->comboBox_3 ? normalizePdfCellText(ui->comboBox_3->currentText()) : QString();
+    const QString zoneText = ui->comboBox_4 ? normalizePdfCellText(ui->comboBox_4->currentText()) : QString();
+    const QString capaciteText = ui->comboBox_5 ? normalizePdfCellText(ui->comboBox_5->currentText()) : QString();
+    const QString sortText = currentQuaiSortText(ui);
+
+    if (!searchText.isEmpty()) ++count;
+    if (!statutText.isEmpty() && statutText.compare(QStringLiteral("Tous"), Qt::CaseInsensitive) != 0) ++count;
+    if (!zoneText.isEmpty() && zoneText.compare(QStringLiteral("Toutes"), Qt::CaseInsensitive) != 0) ++count;
+    if (!capaciteText.isEmpty() && capaciteText.compare(QStringLiteral("Toutes"), Qt::CaseInsensitive) != 0) ++count;
+
+    const bool isDefaultSort =
+        sortText.compare(QStringLiteral("Par defaut"), Qt::CaseInsensitive) == 0
+        || sortText.compare(QStringLiteral("Par défaut"), Qt::CaseInsensitive) == 0;
+    if (!sortText.isEmpty() && !isDefaultSort) ++count;
+
+    return count;
+}
+
+static int drawQuaiPdfHeader(QPainter& painter,
+                             const QRect& contentRect,
+                             const QString& reportTitle,
+                             const QStringList& infoLines)
+{
+    const QPixmap logo(QStringLiteral(":/res/LOOOG.png"));
+    const bool hasLogo = !logo.isNull();
+
+    const int outerPadding = 24;
+    const int logoBoxSize = hasLogo ? 188 : 0;
+    const int textLeft = contentRect.left() + outerPadding + (hasLogo ? logoBoxSize + 30 : 0);
+    const int textWidth = qMax(220, contentRect.width() - (textLeft - contentRect.left()) - outerPadding);
+
+    const QFont appFont(QStringLiteral("Arial"), 13, QFont::Bold);
+    const QFont titleFont(QStringLiteral("Arial"), 22, QFont::Bold);
+    const QFont infoFont(QStringLiteral("Arial"), 9);
+
+    const int appHeight = pdfWrappedTextHeight(
+        painter,
+        appFont,
+        QStringLiteral("AquaTech"),
+        textWidth,
+        20,
+        Qt::AlignLeft | Qt::AlignVCenter);
+    const int titleHeight = pdfWrappedTextHeight(
+        painter,
+        titleFont,
+        reportTitle,
+        textWidth,
+        32,
+        Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap);
+    int infoHeight = 0;
+    for (const QString& line : infoLines) {
+        infoHeight += pdfWrappedTextHeight(
+                          painter,
+                          infoFont,
+                          line,
+                          textWidth,
+                          18,
+                          Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap) + 4;
+    }
+
+    const int textBlockHeight = appHeight + 8 + titleHeight + 12 + infoHeight;
+    const int visualBlockHeight = qMax(textBlockHeight, hasLogo ? logoBoxSize : 0);
+    const int headerHeight = qMax(218, (outerPadding * 2) + visualBlockHeight);
+    const QRect headerRect(contentRect.left(), contentRect.top(), contentRect.width(), headerHeight);
+
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+
+    QLinearGradient background(headerRect.topLeft(), headerRect.bottomLeft());
+    background.setColorAt(0.0, QColor(QStringLiteral("#f8fbff")));
+    background.setColorAt(1.0, QColor(QStringLiteral("#eef4fb")));
+    painter.setPen(QPen(QColor(QStringLiteral("#d5e2ef")), 1));
+    painter.setBrush(background);
+    painter.drawRoundedRect(headerRect, 16, 16);
+
+    painter.fillRect(QRect(headerRect.left(), headerRect.top(), headerRect.width(), 10), QColor(QStringLiteral("#0b5ea8")));
+
+    if (hasLogo) {
+        const int logoTop = headerRect.top() + outerPadding + qMax(0, (visualBlockHeight - logoBoxSize) / 2);
+        const QRect logoBox(headerRect.left() + outerPadding, logoTop, logoBoxSize, logoBoxSize);
+        painter.setPen(QPen(QColor(QStringLiteral("#d8e5f1")), 1));
+        painter.setBrush(Qt::white);
+        painter.drawRoundedRect(logoBox, 18, 18);
+
+        const QPixmap scaledLogo = logo.scaled(logoBox.size() - QSize(12, 12), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        const QRect logoRect(
+            logoBox.center().x() - (scaledLogo.width() / 2),
+            logoBox.center().y() - (scaledLogo.height() / 2),
+            scaledLogo.width(),
+            scaledLogo.height());
+        painter.drawPixmap(logoRect, scaledLogo);
+    }
+
+    painter.setPen(QColor(QStringLiteral("#0b5ea8")));
+    painter.setFont(appFont);
+    int textY = headerRect.top() + outerPadding;
+    painter.drawText(QRect(textLeft, textY, textWidth, appHeight),
+                     Qt::AlignLeft | Qt::AlignVCenter,
+                     QStringLiteral("AquaTech"));
+
+    painter.setPen(QColor(QStringLiteral("#102a43")));
+    painter.setFont(titleFont);
+    textY += appHeight + 8;
+    painter.drawText(QRect(textLeft, textY, textWidth, titleHeight),
+                     Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
+                     reportTitle);
+
+    painter.setPen(QColor(QStringLiteral("#52667a")));
+    painter.setFont(infoFont);
+    int infoY = textY + titleHeight + 12;
+    for (const QString& line : infoLines) {
+        const int lineHeight = pdfWrappedTextHeight(
+            painter,
+            infoFont,
+            line,
+            textWidth,
+            18,
+            Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap);
+        painter.drawText(QRect(textLeft, infoY, textWidth, lineHeight),
+                         Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
+                         line);
+        infoY += lineHeight + 4;
+    }
+
+    painter.restore();
+    return headerRect.bottom() + 24;
+}
+
+static void drawQuaiPdfFooter(QPainter& painter,
+                              int leftMargin,
+                              int footerY,
+                              int contentWidth,
+                              const QString& exportStamp,
+                              int pageNumber)
+{
+    painter.save();
+    painter.setPen(QPen(QColor(QStringLiteral("#d5e2ef")), 1));
+    painter.drawLine(leftMargin, footerY - 8, leftMargin + contentWidth, footerY - 8);
+
+    painter.setPen(QColor(QStringLiteral("#64748b")));
+    painter.setFont(QFont(QStringLiteral("Arial"), 8));
+    painter.drawText(QRect(leftMargin, footerY, contentWidth / 2, 18),
+                     Qt::AlignLeft | Qt::AlignVCenter,
+                     QStringLiteral("AquaTech - Gestion des quais"));
+    painter.drawText(QRect(leftMargin + (contentWidth / 2), footerY, contentWidth / 2, 18),
+                     Qt::AlignRight | Qt::AlignVCenter,
+                     QStringLiteral("Genere le %1 | Page %2").arg(exportStamp).arg(pageNumber));
+    painter.restore();
+}
+
+static void drawQuaiMetricCard(QPainter& painter,
+                               const QRect& cardRect,
+                               const QString& label,
+                               const QString& value,
+                               const QString& detail,
+                               const QColor& accent)
+{
+    painter.save();
+    painter.setPen(QPen(QColor(QStringLiteral("#d6e2ee")), 1));
+    painter.setBrush(QColor(QStringLiteral("#f8fbff")));
+    painter.drawRoundedRect(cardRect, 14, 14);
+    painter.fillRect(QRect(cardRect.left(), cardRect.top(), 10, cardRect.height()), accent);
+
+    const QFont labelFont(QStringLiteral("Arial"), 8, QFont::Bold);
+    const QFont valueFont(QStringLiteral("Arial"), 18, QFont::Bold);
+    const QFont detailFont(QStringLiteral("Arial"), 8);
+
+    painter.setPen(QColor(QStringLiteral("#64748b")));
+    painter.setFont(labelFont);
+    painter.drawText(cardRect.adjusted(20, 14, -16, -82),
+                     Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
+                     label);
+
+    painter.setPen(QColor(QStringLiteral("#0f172a")));
+    painter.setFont(valueFont);
+    painter.drawText(cardRect.adjusted(20, 42, -16, -46),
+                     Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
+                     value);
+
+    painter.setPen(QColor(QStringLiteral("#475569")));
+    painter.setFont(detailFont);
+    painter.drawText(cardRect.adjusted(20, 82, -16, -14),
+                     Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
+                     detail);
+    painter.restore();
+}
+
+static int drawQuaiSectionIntro(QPainter& painter,
+                                int left,
+                                int top,
+                                int width,
+                                const QString& title,
+                                const QString& subtitle)
+{
+    painter.save();
+    painter.setPen(QColor(QStringLiteral("#0b5ea8")));
+    painter.setFont(QFont(QStringLiteral("Arial"), 14, QFont::Bold));
+    painter.drawText(QRect(left, top, width, 26),
+                     Qt::AlignLeft | Qt::AlignVCenter,
+                     title);
+
+    painter.setPen(QColor(QStringLiteral("#64748b")));
+    painter.setFont(QFont(QStringLiteral("Arial"), 8));
+    painter.drawText(QRect(left, top + 24, width, 22),
+                     Qt::AlignLeft | Qt::AlignVCenter | Qt::TextWordWrap,
+                     subtitle);
+    painter.restore();
+    return top + 50;
+}
+
 static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
 {
     if (!parent || !ui || !ui->tableWidgetee) return;
@@ -7332,7 +7917,11 @@ void MainWindow::loadBateaux()
         "}");
 
     // Build SQL with optional WHERE clauses from search filters
-    QString sql = "SELECT ID_BATEAU, NOM, PROPRIETAIRE, LARGEUR, TYPE, STATUT, CAPACITE, DATE_ENTREE, DATE_DERNIERE_MAINTENANCE, PROCHAINE_MAINTENANCE FROM BATEAUX";
+    QString sql = QStringLiteral(
+        "SELECT ID_BATEAU, NOM, PROPRIETAIRE, LARGEUR, TYPE, STATUT, CAPACITE, "
+        "DATE_ENTREE, DATE_DERNIERE_MAINTENANCE, %1 AS PROCHAINE_MAINTENANCE "
+        "FROM BATEAUX")
+                      .arg(bateauMaintenanceFrequencySelectExpr());
 
     QStringList conditions;
     conditions << QStringLiteral("ID_BATEAU <> 0");
@@ -8206,7 +8795,9 @@ void MainWindow::refreshBateauMaintenanceAlerts(bool persistNewAlerts)
     QSqlDatabase db = conn->getDatabase();
     QSqlQuery q(db);
     q.prepare(QStringLiteral(
-        "SELECT ID_BATEAU, NOM, STATUT, DATE_ENTREE, DATE_DERNIERE_MAINTENANCE, PROCHAINE_MAINTENANCE FROM BATEAUX"));
+        "SELECT ID_BATEAU, NOM, STATUT, DATE_ENTREE, DATE_DERNIERE_MAINTENANCE, %1 AS PROCHAINE_MAINTENANCE "
+        "FROM BATEAUX")
+                  .arg(bateauMaintenanceFrequencySelectExpr()));
     if (!q.exec()) {
         if (ui->label_alert_statusb) {
             ui->label_alert_statusb->setText(QStringLiteral("Syst\u00e8me actif (erreur lecture)"));
@@ -8474,7 +9065,7 @@ void MainWindow::on_pushButton_11_clicked()
 {
     if (!handleCrudDisabled(this) || !ui) return;
 
-    // ID quai est en lecture seule: en mode ajout, on le genere automatiquement si vide
+    // ID quai : en mode ajout, le generer automatiquement si vide
     if (!m_quai.isModeModification() && ui->lineEdit_4 && ui->lineEdit_4->text().trimmed().isEmpty()) {
         const int newId = m_quai.genererNouvelId();
         if (newId > 0) {
@@ -8500,22 +9091,72 @@ void MainWindow::on_pushButton_11_clicked()
         return;
     }
 
-    // R├⌐cup├⌐rer les donn├⌐es du formulaire
-    QString zonePort = ui->comboBox_6->currentText().trimmed();
-    QString zoneCouverte = ui->comboBox_8->currentText().trimmed();
-    QString statutUi = ui->comboBox_7->currentText().trimmed();
+    if (ui->lineEdit_6) {
+        const QString nomQuai = ui->lineEdit_6->text().trimmed();
+        static const QRegularExpression rxNomQuai(QStringLiteral("^[\\p{L}\\s'-]+$"));
+        if (!rxNomQuai.match(nomQuai).hasMatch()) {
+            QMessageBox::warning(this,
+                                 QStringLiteral("Nom du quai"),
+                                 QStringLiteral("Le nom du quai doit contenir uniquement des lettres."));
+            ui->lineEdit_6->setFocus();
+            ui->lineEdit_6->selectAll();
+            return;
+        }
+    }
 
-    // Adapter les valeurs aux contraintes CHECK Oracle
-    // Zone_Port: 'Nord','Sud','Est','Ouest' -> d├⌐j├á coh├⌐rent avec les valeurs de la combo
-    // Zone_Couverte: 'Oui','Non' -> d├⌐j├á coh├⌐rent
-    // Statut: 'Libre','Occupe','Maintenance' (sans accent sur Occupe)
+    QString zoneLabel = ui->comboBox_6 ? ui->comboBox_6->currentText().trimmed() : QString();
+    QString zonePort;
+    const QString zoneLower = zoneLabel.toLower();
+    if (zoneLower.contains(QStringLiteral("quai ouest"))) {
+        zonePort = QStringLiteral("Ouest");
+    } else if (zoneLower.contains(QStringLiteral("quai est"))) {
+        zonePort = QStringLiteral("Est");
+    } else if (zoneLower.contains(QStringLiteral("bassin"))) {
+        zonePort = QStringLiteral("Sud");
+    } else if (zoneLower.contains(QStringLiteral("chenal"))) {
+        zonePort = QStringLiteral("Nord");
+    } else {
+        zonePort = zoneLabel;
+    }
+
+    QString zoneCouverte = ui->comboBox_8 ? ui->comboBox_8->currentText().trimmed() : QString();
+    QString statutUi = ui->comboBox_7 ? ui->comboBox_7->currentText().trimmed() : QString();
     QString statutDb = statutUi;
-    if (statutUi.compare(QStringLiteral("Occup├⌐"), Qt::CaseInsensitive) == 0 ||
+    if (statutUi.compare(QStringLiteral("Occupé"), Qt::CaseInsensitive) == 0 ||
         statutUi.startsWith(QStringLiteral("Occu"), Qt::CaseInsensitive)) {
         statutDb = QStringLiteral("Occupe");
     }
 
+    int idBateau = 0;
+    if (ui->comboBoxQuaiBateau) {
+        bool ok = false;
+        const QVariant data = ui->comboBoxQuaiBateau->currentData();
+        if (data.isValid()) {
+            idBateau = data.toInt(&ok);
+            if (!ok) {
+                idBateau = data.toString().trimmed().toInt(&ok);
+                if (!ok) idBateau = 0;
+            }
+        }
+    }
+
+    if (statutDb.compare(QStringLiteral("Occupe"), Qt::CaseInsensitive) == 0 && idBateau <= 0) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Bateau obligatoire"),
+                             QStringLiteral("Un bateau doit etre selectionne quand le quai est occupe."));
+        return;
+    }
+
     const int savedQuaiId = ui->lineEdit_4->text().trimmed().toInt();
+
+    if (m_quaisFermeMeteo && savedQuaiId > 0) {
+        if (statutDb.compare(QStringLiteral("Occupe"), Qt::CaseInsensitive) == 0) {
+            m_quaisAutoLocked.insert(savedQuaiId, QStringLiteral("Occupe"));
+            statutDb = QStringLiteral("Ferme");
+        } else {
+            m_quaisAutoLocked.remove(savedQuaiId);
+        }
+    }
 
     QVariantMap donnees;
     donnees["ID_QUAI"] = savedQuaiId;
@@ -8525,6 +9166,7 @@ void MainWindow::on_pushButton_11_clicked()
     donnees["LONGUEUR"] = ui->doubleSpinBox_2->value();
     donnees["CAPACITE_QUAIS"] = ui->spinBox_2->value();
     donnees["STATUT"] = statutDb;
+    donnees["ID_BATEAU"] = idBateau;
 
     const bool wasModification = m_quai.isModeModification();
     bool succes = false;
@@ -8603,8 +9245,9 @@ void MainWindow::on_pushButton_11_clicked()
         ui->doubleSpinBox_2->setValue(0.0);
         ui->spinBox_2->setValue(0);
         ui->comboBox_7->setCurrentIndex(0);
+        if (ui->comboBoxQuaiBateau) ui->comboBoxQuaiBateau->setCurrentIndex(0);
 
-        // Preparer le prochain ajout: regenerer l'ID (toujours en lecture seule)
+        // Preparer le prochain ajout
         if (ui->lineEdit_4) {
             const int newId = m_quai.genererNouvelId();
             if (newId > 0) {
@@ -8647,7 +9290,8 @@ void MainWindow::refreshQuaiTable()
         {QStringLiteral("ZONE_COUVERTE"), {QStringLiteral("ZONE_COUVERTE"), QStringLiteral("zone_couverte"), QStringLiteral("zonecouverte")}},
         {QStringLiteral("LONGUEUR"), {QStringLiteral("LONGUEUR"), QStringLiteral("longueur")}},
         {QStringLiteral("CAPACITE_QUAIS"), {QStringLiteral("CAPACITE_QUAIS"), QStringLiteral("capacite_quais"), QStringLiteral("capacitemax")}},
-        {QStringLiteral("STATUT"), {QStringLiteral("STATUT"), QStringLiteral("statut")}}
+        {QStringLiteral("STATUT"), {QStringLiteral("STATUT"), QStringLiteral("statut")}},
+        {QStringLiteral("ID_BATEAU"), {QStringLiteral("ID_BATEAU"), QStringLiteral("id_bateau"), QStringLiteral("idbateau"), QStringLiteral("ID_BAT"), QStringLiteral("id_bat")}}
     };
 
     const QString tableName = QStringLiteral("QUAIS");
@@ -8655,19 +9299,68 @@ void MainWindow::refreshQuaiTable()
     reloadTableWidgetFromDb(ui->tableWidgetQuai, db, tableName,
                             {QStringLiteral("ID_QUAI"), QStringLiteral("NOM_QUAI"), QStringLiteral("ZONE_PORT"),
                              QStringLiteral("ZONE_COUVERTE"), QStringLiteral("LONGUEUR"),
-                             QStringLiteral("CAPACITE_QUAIS"), QStringLiteral("STATUT")},
+                             QStringLiteral("CAPACITE_QUAIS"), QStringLiteral("STATUT"),
+                             QStringLiteral("ID_BATEAU")},
                             syn);
 
-    // En-têtes lisibles pour l'IHM
-    if (ui->tableWidgetQuai && ui->tableWidgetQuai->columnCount() >= 8) {
+    auto zoneDbToLabel = [](const QString &zoneDb) -> QString {
+        const QString z = zoneDb.trimmed();
+        if (z.compare(QStringLiteral("Ouest"), Qt::CaseInsensitive) == 0) {
+            return QStringLiteral("Quai Ouest (Z1)");
+        }
+        if (z.compare(QStringLiteral("Est"), Qt::CaseInsensitive) == 0) {
+            return QStringLiteral("Quai Est (Z2)");
+        }
+        if (z.compare(QStringLiteral("Sud"), Qt::CaseInsensitive) == 0) {
+            return QStringLiteral("Bassin central (Z3)");
+        }
+        if (z.compare(QStringLiteral("Nord"), Qt::CaseInsensitive) == 0) {
+            return QStringLiteral("Chenal d'entree (Z4)");
+        }
+        return z;
+    };
+
+    if (ui->tableWidgetQuai && ui->tableWidgetQuai->columnCount() >= 3) {
+        QTableWidget *table = ui->tableWidgetQuai;
+        for (int row = 0; row < table->rowCount(); ++row) {
+            if (QTableWidgetItem *idItem = table->item(row, 0)) {
+                const QVariant displayValue = idItem->data(Qt::DisplayRole);
+                bool okLongLong = false;
+                const qlonglong idValue = displayValue.toLongLong(&okLongLong);
+                if (okLongLong) {
+                    idItem->setData(Qt::DisplayRole, QString::number(idValue));
+                } else {
+                    bool okDouble = false;
+                    const double asDouble = displayValue.toDouble(&okDouble);
+                    if (okDouble) {
+                        idItem->setData(Qt::DisplayRole, QString::number(static_cast<qlonglong>(std::llround(asDouble))));
+                    }
+                }
+            }
+
+            if (QTableWidgetItem *zoneItem = table->item(row, 2)) {
+                zoneItem->setText(zoneDbToLabel(zoneItem->text()));
+            }
+
+            for (int col = 0; col < table->columnCount(); ++col) {
+                if (QTableWidgetItem *item = table->item(row, col)) {
+                    item->setData(kQuaiOriginalRowRole, row);
+                }
+            }
+        }
+    }
+
+    // En-tetes lisibles
+    if (ui->tableWidgetQuai && ui->tableWidgetQuai->columnCount() >= 9) {
         ui->tableWidgetQuai->setHorizontalHeaderItem(0, new QTableWidgetItem(QStringLiteral("ID Quai")));
         ui->tableWidgetQuai->setHorizontalHeaderItem(1, new QTableWidgetItem(QStringLiteral("Nom Quai")));
         ui->tableWidgetQuai->setHorizontalHeaderItem(2, new QTableWidgetItem(QStringLiteral("Zone Port")));
         ui->tableWidgetQuai->setHorizontalHeaderItem(3, new QTableWidgetItem(QStringLiteral("Zone Couverte")));
         ui->tableWidgetQuai->setHorizontalHeaderItem(4, new QTableWidgetItem(QStringLiteral("Longueur Max")));
-        ui->tableWidgetQuai->setHorizontalHeaderItem(5, new QTableWidgetItem(QStringLiteral("Capacité Quais")));
+        ui->tableWidgetQuai->setHorizontalHeaderItem(5, new QTableWidgetItem(QStringLiteral("Capacite Quais")));
         ui->tableWidgetQuai->setHorizontalHeaderItem(6, new QTableWidgetItem(QStringLiteral("Statut")));
-        ui->tableWidgetQuai->setHorizontalHeaderItem(7, new QTableWidgetItem(QStringLiteral("Actions")));
+        ui->tableWidgetQuai->setHorizontalHeaderItem(7, new QTableWidgetItem(QStringLiteral("ID Bateau")));
+        ui->tableWidgetQuai->setHorizontalHeaderItem(8, new QTableWidgetItem(QStringLiteral("Actions")));
     }
 
     ui->tableWidgetQuai->setAlternatingRowColors(false);
@@ -8702,11 +9395,28 @@ void MainWindow::refreshQuaiTable()
         " QPushButton:hover { background-color: rgba(0, 0, 127,0.7); border-color: #59abc8; }"
         " QPushButton:pressed { background-color:rgba(0, 0, 127,0.9); }"));
 
-    // Mettre ├á jour les statistiques d'occupation quand les quais changent
-    refreshStats_2();
+    if (m_quaisFermeMeteo) {
+        QTableWidget *table = ui->tableWidgetQuai;
+        const int statutCol = 6;
+        if (table->columnCount() > statutCol) {
+            for (int row = 0; row < table->rowCount(); ++row) {
+                QTableWidgetItem *idItem = table->item(row, 0);
+                QTableWidgetItem *statusItem = table->item(row, statutCol);
+                if (!idItem || !statusItem) continue;
 
-    // R├⌐appliquer les filtres (recherche, statut, zone, capacit├⌐)
-    // apr├¿s rechargement de la table.
+                bool okId = false;
+                const int quaiId = idItem->text().trimmed().toInt(&okId);
+                if (!okId || !m_quaisAutoLocked.contains(quaiId)) continue;
+                if (statusItem->text().compare(QStringLiteral("Ferme"), Qt::CaseInsensitive) != 0) continue;
+
+                statusItem->setData(Qt::UserRole, statusItem->text());
+                statusItem->setText(QStringLiteral("Ferme (meteo)"));
+                statusItem->setToolTip(QStringLiteral("Quai ferme temporairement a cause de la meteo."));
+            }
+        }
+    }
+
+    refreshStats_2();
     applyQuaiFilters();
 }
 
@@ -8873,8 +9583,21 @@ void MainWindow::editQuaiFromTable(int row)
     if (ui->lineEdit_6) ui->lineEdit_6->setText(infos.value("NOM_QUAI").toString());
 
     if (ui->comboBox_6) {
-        const QString zonePort = infos.value("ZONE_PORT").toString();
-        int idx = ui->comboBox_6->findText(zonePort);
+        const QString zonePort = infos.value("ZONE_PORT").toString().trimmed();
+        QString zoneLabel;
+        if (zonePort.compare(QStringLiteral("Ouest"), Qt::CaseInsensitive) == 0) {
+            zoneLabel = QStringLiteral("Quai Ouest (Z1)");
+        } else if (zonePort.compare(QStringLiteral("Est"), Qt::CaseInsensitive) == 0) {
+            zoneLabel = QStringLiteral("Quai Est (Z2)");
+        } else if (zonePort.compare(QStringLiteral("Sud"), Qt::CaseInsensitive) == 0) {
+            zoneLabel = QStringLiteral("Bassin central (Z3)");
+        } else if (zonePort.compare(QStringLiteral("Nord"), Qt::CaseInsensitive) == 0) {
+            zoneLabel = QStringLiteral("Chenal d'entree (Z4)");
+        } else {
+            zoneLabel = zonePort;
+        }
+
+        int idx = ui->comboBox_6->findText(zoneLabel, Qt::MatchStartsWith);
         if (idx >= 0) ui->comboBox_6->setCurrentIndex(idx);
     }
 
@@ -8893,6 +9616,19 @@ void MainWindow::editQuaiFromTable(int row)
         if (idx >= 0) ui->comboBox_7->setCurrentIndex(idx);
     }
 
+    if (ui->comboBoxQuaiBateau) {
+        loadQuaiBateauChoices(ui);
+        const int idBateau = infos.value("ID_BATEAU").toInt();
+        int idx = ui->comboBoxQuaiBateau->findData(idBateau);
+        if (idx < 0) {
+            const QString label = (idBateau == 0)
+                ? QStringLiteral("0 - Aucun bateau")
+                : QString::number(idBateau);
+            idx = ui->comboBoxQuaiBateau->findText(label, Qt::MatchStartsWith);
+        }
+        ui->comboBoxQuaiBateau->setCurrentIndex(idx >= 0 ? idx : 0);
+    }
+
     m_quai.setModeModification(true, id);
     setAddButtonText(QStringLiteral("Modifier"));
     showQuaiFormPage();
@@ -8907,6 +9643,65 @@ void MainWindow::applyQuaiFilters()
     }
 
     QTableWidget *table = ui->tableWidgetQuai;
+
+    if (QComboBox *comboTri = ui->page_3 ? ui->page_3->findChild<QComboBox*>(QStringLiteral("comboBox_sortQuais")) : nullptr) {
+        int sortCol = -1;
+        Qt::SortOrder order = Qt::AscendingOrder;
+        const int sortMode = comboTri->currentIndex();
+
+        switch (sortMode) {
+        case 1: sortCol = 0; order = Qt::AscendingOrder; break;
+        case 2: sortCol = 0; order = Qt::DescendingOrder; break;
+        case 3: sortCol = 5; order = Qt::AscendingOrder; break;
+        case 4: sortCol = 5; order = Qt::DescendingOrder; break;
+        case 5: sortCol = 4; order = Qt::AscendingOrder; break;
+        case 6: sortCol = 4; order = Qt::DescendingOrder; break;
+        default: break;
+        }
+
+        if (sortMode == 0 || sortCol >= 0) {
+            sortQuaiTableRows(table, sortCol, order);
+            ensureQuaiActionsColumn(QStringLiteral(
+                "QPushButton {"
+                " border: 2px solid rgb(0, 0, 112);"
+                " border-radius: 7px;"
+                " background-color: rgba(0, 0, 127,0.7);"
+                " color: white;"
+                " padding: 7px 20px;"
+                " font-family: 'Segoe UI Emoji', 'Segoe UI', 'Arial', sans-serif;"
+                " font-size: 18px;"
+                " font-weight: bold;"
+                " }"
+                " QPushButton:hover { background-color: rgba(0, 0, 127,0.7); border-color: #59abc8; }"
+                " QPushButton:pressed { background-color:rgba(0, 0, 127,0.9); }"));
+        }
+    }
+
+    const auto canonicalQuaiStatus = [](const QString &text) -> QString {
+        const QString trimmed = text.trimmed();
+        if (trimmed.isEmpty()) return QString();
+
+        if (trimmed.compare(QStringLiteral("Occupé"), Qt::CaseInsensitive) == 0
+            || trimmed.compare(QStringLiteral("Occupe"), Qt::CaseInsensitive) == 0
+            || trimmed.startsWith(QStringLiteral("Occu"), Qt::CaseInsensitive)) {
+            return QStringLiteral("Occupe");
+        }
+
+        if (trimmed.compare(QStringLiteral("Ferme (meteo)"), Qt::CaseInsensitive) == 0
+            || trimmed.compare(QStringLiteral("Fermé (météo)"), Qt::CaseInsensitive) == 0
+            || trimmed.compare(QStringLiteral("Ferme"), Qt::CaseInsensitive) == 0
+            || trimmed.startsWith(QStringLiteral("Ferm"), Qt::CaseInsensitive)) {
+            return QStringLiteral("Ferme");
+        }
+
+        if (trimmed.compare(QStringLiteral("Libre"), Qt::CaseInsensitive) == 0) {
+            return QStringLiteral("Libre");
+        }
+        if (trimmed.compare(QStringLiteral("Maintenance"), Qt::CaseInsensitive) == 0) {
+            return QStringLiteral("Maintenance");
+        }
+        return trimmed;
+    };
 
     const QString searchText = ui->lineEdit_3
             ? ui->lineEdit_3->text().trimmed().toLower()
@@ -8939,17 +9734,16 @@ void MainWindow::applyQuaiFilters()
 
     const int rowCount = table->rowCount();
     const int colCount = table->columnCount();
-    const int statutCol = 6; // colonne "Statut" dans tableWidgetQuai
-    const int zoneCol   = 2; // colonne "Z du port" / Zone_Port
-    const int capaCol   = 5; // colonne "C maximale" / capacit├⌐ quais
+    const int statutCol = 6;
+    const int zoneCol   = 2;
+    const int capaCol   = 5;
 
     for (int row = 0; row < rowCount; ++row) {
         bool match = true;
 
-        // 1) Filtre texte (recherche globale sur les colonnes de donn├⌐es)
         if (!searchText.isEmpty()) {
             bool found = false;
-            for (int col = 0; col < colCount - 1; ++col) { // on ignore la colonne Actions (widget)
+            for (int col = 0; col < colCount - 1; ++col) {
                 QTableWidgetItem *item = table->item(row, col);
                 if (item && item->text().toLower().contains(searchText)) {
                     found = true;
@@ -8961,18 +9755,17 @@ void MainWindow::applyQuaiFilters()
             }
         }
 
-        // 2) Filtre Statut
         if (match && !statutFilter.isEmpty() && statutFilter.compare(QStringLiteral("Tous"), Qt::CaseInsensitive) != 0) {
             QTableWidgetItem *statutItem = (statutCol >= 0 && statutCol < colCount)
                                            ? table->item(row, statutCol)
                                            : nullptr;
-            const QString cellStatut = statutItem ? statutItem->text().trimmed() : QString();
-            if (cellStatut.compare(statutFilter, Qt::CaseInsensitive) != 0) {
+            const QString cellStatut = statutItem ? canonicalQuaiStatus(statutItem->text()) : QString();
+            const QString selectedStatut = canonicalQuaiStatus(statutFilter);
+            if (cellStatut.compare(selectedStatut, Qt::CaseInsensitive) != 0) {
                 match = false;
             }
         }
 
-        // 3) Filtre Zone du port
         if (match && !zoneFilter.isEmpty() && zoneFilter.compare(QStringLiteral("Toutes"), Qt::CaseInsensitive) != 0) {
             QTableWidgetItem *zoneItem = (zoneCol >= 0 && zoneCol < colCount)
                                          ? table->item(row, zoneCol)
@@ -8983,7 +9776,6 @@ void MainWindow::applyQuaiFilters()
             }
         }
 
-        // 4) Filtre Capacit├⌐
         if (match && !capaciteFilter.isEmpty() && capaciteFilter.compare(QStringLiteral("Toutes"), Qt::CaseInsensitive) != 0) {
             QTableWidgetItem *capaItem = (capaCol >= 0 && capaCol < colCount)
                                          ? table->item(row, capaCol)
@@ -8991,7 +9783,6 @@ void MainWindow::applyQuaiFilters()
             const int capa = parseCapacity(capaItem ? capaItem->text() : QString());
 
             if (capaciteFilter.startsWith(QStringLiteral("<="))) {
-                // "<= 5 bateaux"
                 if (capa > 5) {
                     match = false;
                 }
@@ -9438,87 +10229,83 @@ void MainWindow::on_pushButton_pdfb_2_clicked()
 
     QTableWidget* table = ui->tableWidgetQuai;
     if (table->rowCount() == 0) {
-        QMessageBox::warning(this, "Export PDF", "Le tableau est vide, rien ├á exporter.");
+        QMessageBox::warning(this, "Export PDF", "Le tableau est vide, rien a exporter.");
         return;
     }
 
     const QString defaultPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation)
             + "/Quais_" + QDate::currentDate().toString("yyyy-MM-dd") + ".pdf";
-    const QString filePath = QFileDialog::getSaveFileName(this, "Enregistrer le PDF", defaultPath, "PDF (*.pdf)");
+    QString filePath = QFileDialog::getSaveFileName(this, "Enregistrer le PDF", defaultPath, "PDF (*.pdf)");
     if (filePath.isEmpty()) return;
+    if (!filePath.toLower().endsWith(QStringLiteral(".pdf"))) {
+        filePath += QStringLiteral(".pdf");
+    }
 
     QPdfWriter writer(filePath);
     writer.setPageSize(QPageSize(QPageSize::A4));
     writer.setPageOrientation(QPageLayout::Landscape);
     writer.setResolution(300);
+    writer.setPageMargins(QMarginsF(8, 8, 8, 8), QPageLayout::Millimeter);
+    writer.setTitle(QStringLiteral("Rapport des quais - Page 3"));
 
     QPainter painter(&writer);
     if (!painter.isActive()) {
-        QMessageBox::critical(this, "Erreur", "Impossible de cr├⌐er le fichier PDF.");
+        QMessageBox::critical(this, "Erreur", "Impossible de creer le fichier PDF.");
         return;
     }
+
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
 
     const QString exportStamp = QDateTime::currentDateTime().toString("dd/MM/yyyy HH:mm");
     const int pageW = writer.width();
     const int pageH = writer.height();
 
-    const int leftMargin = 50;
-    const int rightMargin = 50;
-    const int topMargin = 100;
-    const int bottomMargin = 80;
+    const int leftMargin = 54;
+    const int rightMargin = 54;
+    const int topMargin = 42;
+    const int bottomMargin = 56;
     const int contentW = pageW - leftMargin - rightMargin;
+    const int footerY = pageH - bottomMargin + 6;
+    const int contentBottom = footerY - 24;
 
-    QFont titleFont("Arial", 20, QFont::Bold);
-    QFont dateFont("Arial", 9);
-    QFont headerFont("Arial", 11, QFont::Bold);
-    QFont cellFont("Arial", 9);
-    QFont footerFont("Arial", 9);
+    const int actionColumn = findPecheurActionColumnIndex(table);
+    QVector<int> columns;
+    QVector<int> sourceWidths;
+    QVector<QString> headers;
+    int totalSourceWidth = 0;
 
-    painter.setFont(titleFont);
-    painter.setPen(QColor(0, 82, 155));
-    painter.drawText(QRect(leftMargin, topMargin - 40, contentW, 60), Qt::AlignCenter, "AQUATEC ΓÇô Liste des Quais");
-
-    painter.setFont(dateFont);
-    painter.setPen(Qt::darkGray);
-    painter.drawText(QRect(leftMargin, topMargin + 20, contentW, 30), Qt::AlignCenter,
-                     QString("Export├⌐ le %1").arg(exportStamp));
-
-    const int yStart = topMargin + 80;
-    const QStringList headers = { "ID Quai", "Nom Quai", "Zone Port", "Zone Couverte", "Longueur Max", "Capacit├⌐", "Statut" };
-    const QVector<double> proportions = { 0.08, 0.30, 0.12, 0.12, 0.12, 0.10, 0.16 };
-    const int colCount = headers.size();
-
-    QVector<int> colWidths(colCount, 0);
-    int usedW = 0;
-    for (int i = 0; i < colCount; ++i) {
-        colWidths[i] = static_cast<int>(contentW * proportions[i]);
-        usedW += colWidths[i];
-    }
-    if (colCount > 0) {
-        colWidths[colCount - 1] += (contentW - usedW);
-    }
-
-    const int headerHeight = 48;
-    const int rowHeight = 40;
-    const int footerY = pageH - bottomMargin + 10;
-
-    auto drawHeader = [&](int yHeader) {
-        painter.setFont(headerFont);
-        QLinearGradient headerGrad(0, yHeader, 0, yHeader + headerHeight);
-        headerGrad.setColorAt(0.0, QColor("#0b5ea8"));
-        headerGrad.setColorAt(1.0, QColor("#2e86c1"));
-
-        int x = leftMargin;
-        for (int c = 0; c < colCount; ++c) {
-            QRect cellRect(x, yHeader, colWidths[c], headerHeight);
-            painter.fillRect(cellRect, headerGrad);
-            painter.setPen(Qt::white);
-            painter.drawText(cellRect.adjusted(12, 0, -12, 0), Qt::AlignVCenter | Qt::AlignLeft, headers[c]);
-            painter.setPen(QPen(QColor(200, 210, 220), 1));
-            painter.drawRect(cellRect);
-            x += colWidths[c];
+    for (int c = 0; c < table->columnCount(); ++c) {
+        if (table->isColumnHidden(c) || c == actionColumn) {
+            continue;
         }
-    };
+
+        columns.push_back(c);
+        sourceWidths.push_back(qMax(70, table->columnWidth(c)));
+        totalSourceWidth += sourceWidths.back();
+
+        const QTableWidgetItem* headerItem = table->horizontalHeaderItem(c);
+        headers.push_back(headerItem ? normalizePdfCellText(headerItem->text())
+                                     : QStringLiteral("Colonne %1").arg(c + 1));
+    }
+
+    if (columns.isEmpty()) {
+        painter.end();
+        QMessageBox::warning(this, "Export PDF", "Aucune colonne a exporter.");
+        return;
+    }
+
+    QVector<int> colWidths;
+    colWidths.reserve(columns.size());
+    int usedWidth = 0;
+    for (int i = 0; i < sourceWidths.size(); ++i) {
+        const int width = qMax(80, static_cast<int>(
+                                   (static_cast<double>(sourceWidths[i]) / static_cast<double>(qMax(1, totalSourceWidth))) * contentW));
+        colWidths.push_back(width);
+        usedWidth += width;
+    }
+    colWidths.last() += (contentW - usedWidth);
 
     QVector<int> visibleRows;
     visibleRows.reserve(table->rowCount());
@@ -9528,57 +10315,217 @@ void MainWindow::on_pushButton_pdfb_2_clicked()
         }
     }
 
-    int y = yStart;
-    drawHeader(y);
-    y += headerHeight;
+    QSet<QString> visibleZones;
+    QSet<QString> visibleStatuts;
+    for (int row : visibleRows) {
+        const QString zone = table->item(row, 2)
+            ? normalizePdfCellText(table->item(row, 2)->text())
+            : QString();
+        const QString statut = table->item(row, 6)
+            ? normalizePdfCellText(table->item(row, 6)->text())
+            : QString();
+        if (!zone.isEmpty()) visibleZones.insert(zone);
+        if (!statut.isEmpty()) visibleStatuts.insert(statut);
+    }
 
-    painter.setFont(cellFont);
-    for (int visibleIndex = 0; visibleIndex < visibleRows.size(); ++visibleIndex) {
-        const int r = visibleRows[visibleIndex];
+    const QStringList infoLines = buildQuaiReportInfoLines(
+        ui,
+        QStringLiteral("Page 3 - Gestion des quais"),
+        exportStamp,
+        visibleRows.size(),
+        table->rowCount());
+    const int activeFilterCount = countActiveQuaiFilters(ui);
 
-        if (y + rowHeight > pageH - bottomMargin - 30) {
-            painter.setPen(QColor("#8a8a8a"));
-            painter.setFont(footerFont);
-            painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
-                             QString("AQUATEC - Rapport g├⌐n├⌐r├⌐ le %1").arg(exportStamp));
+    const QFont headerFont(QStringLiteral("Arial"), 10, QFont::Bold);
+    const QFont cellFont(QStringLiteral("Arial"), 9);
+    const QFont totalFont(QStringLiteral("Arial"), 9, QFont::Bold);
+    int tableHeaderHeight = 52;
+    for (int i = 0; i < headers.size(); ++i) {
+        tableHeaderHeight = qMax(
+            tableHeaderHeight,
+            pdfWrappedTextHeight(
+                painter,
+                headerFont,
+                headers[i],
+                colWidths[i] - 20,
+                24,
+                Qt::AlignLeft | Qt::AlignVCenter | Qt::TextWordWrap) + 14);
+    }
+    int pageNumber = 1;
 
-            writer.newPage();
-            y = topMargin;
-            drawHeader(y);
-            y += headerHeight;
-            painter.setFont(cellFont);
-        }
+    auto drawOverviewCards = [&](int startY) -> int {
+        const int cardGap = 18;
+        const int cardHeight = 126;
+        const int cardWidth = (contentW - (cardGap * 3)) / 4;
 
-        const QColor bg = (visibleIndex % 2 == 0) ? QColor(250, 250, 252) : QColor(245, 251, 255);
+        drawQuaiMetricCard(
+            painter,
+            QRect(leftMargin, startY, cardWidth, cardHeight),
+            QStringLiteral("Quais visibles"),
+            QString::number(visibleRows.size()),
+            QStringLiteral("Sur %1 quais charges dans le tableau").arg(table->rowCount()),
+            QColor(QStringLiteral("#0b5ea8")));
+
+        drawQuaiMetricCard(
+            painter,
+            QRect(leftMargin + cardWidth + cardGap, startY, cardWidth, cardHeight),
+            QStringLiteral("Zones couvertes"),
+            QString::number(visibleZones.size()),
+            visibleZones.isEmpty()
+                ? QStringLiteral("Aucune zone detectee")
+                : QStringLiteral("%1 zones distinctes dans la selection").arg(visibleZones.size()),
+            QColor(QStringLiteral("#2e8b57")));
+
+        drawQuaiMetricCard(
+            painter,
+            QRect(leftMargin + ((cardWidth + cardGap) * 2), startY, cardWidth, cardHeight),
+            QStringLiteral("Statuts visibles"),
+            QString::number(visibleStatuts.size()),
+            visibleStatuts.isEmpty()
+                ? QStringLiteral("Aucun statut detecte")
+                : QStringLiteral("%1 types de statut presentes").arg(visibleStatuts.size()),
+            QColor(QStringLiteral("#d97706")));
+
+        drawQuaiMetricCard(
+            painter,
+            QRect(leftMargin + ((cardWidth + cardGap) * 3), startY, cardWidth, cardHeight),
+            QStringLiteral("Vue appliquee"),
+            activeFilterCount > 0 ? QStringLiteral("%1 filtres").arg(activeFilterCount) : QStringLiteral("Complete"),
+            activeFilterCount > 0
+                ? QStringLiteral("Tri et filtres integres dans l'export")
+                : QStringLiteral("Aucun filtre actif sur la liste"),
+            QColor(QStringLiteral("#7c3aed")));
+
+        return startY + cardHeight + 24;
+    };
+
+    auto drawTableHeader = [&](int yHeader) {
+        painter.save();
+        painter.setFont(headerFont);
+
+        QLinearGradient headerGrad(0, yHeader, 0, yHeader + tableHeaderHeight);
+        headerGrad.setColorAt(0.0, QColor(QStringLiteral("#0b5ea8")));
+        headerGrad.setColorAt(1.0, QColor(QStringLiteral("#2e86c1")));
+
         int x = leftMargin;
-        for (int c = 0; c < colCount; ++c) {
-            QRect cellRect(x, y, colWidths[c], rowHeight);
-            painter.fillRect(cellRect, bg);
-            painter.setPen(QPen(QColor(220, 225, 230), 1));
+        for (int c = 0; c < headers.size(); ++c) {
+            const QRect cellRect(x, yHeader, colWidths[c], tableHeaderHeight);
+            painter.fillRect(cellRect, headerGrad);
+            painter.setPen(Qt::white);
+            painter.drawText(cellRect.adjusted(10, 8, -10, -8),
+                             Qt::AlignLeft | Qt::AlignVCenter | Qt::TextWordWrap,
+                             headers[c]);
+            painter.setPen(QPen(QColor(QStringLiteral("#d7e4ef")), 1));
             painter.drawRect(cellRect);
-
-            const QTableWidgetItem* item = table->item(r, c);
-            const QString text = item ? item->text().simplified() : QString();
-            painter.setPen(Qt::black);
-            painter.drawText(cellRect.adjusted(12, 6, -12, -6), Qt::AlignVCenter | Qt::AlignLeft | Qt::TextWordWrap, text);
             x += colWidths[c];
         }
+        painter.restore();
+    };
+
+    auto startPage = [&](bool createNewPage, bool isFirstPage) -> int {
+        if (createNewPage) {
+            writer.newPage();
+        }
+        int cursor = drawQuaiPdfHeader(
+            painter,
+            QRect(leftMargin, topMargin, contentW, 0),
+            QStringLiteral("Rapport des quais"),
+            infoLines);
+
+        if (isFirstPage) {
+            cursor = drawOverviewCards(cursor);
+        }
+
+        cursor = drawQuaiSectionIntro(
+            painter,
+            leftMargin,
+            cursor,
+            contentW,
+            isFirstPage ? QStringLiteral("Tableau detaille des quais") : QStringLiteral("Tableau detaille des quais - suite"),
+            isFirstPage
+                ? QStringLiteral("Toutes les lignes visibles dans la page 3 sont reprises avec leurs informations principales.")
+                : QStringLiteral("Suite du tableau detaille exporte sur la page precedente."));
+
+        drawTableHeader(cursor);
+        return cursor + tableHeaderHeight;
+    };
+
+    int y = startPage(false, true);
+
+    for (int visibleIndex = 0; visibleIndex < visibleRows.size(); ++visibleIndex) {
+        const int row = visibleRows[visibleIndex];
+        QStringList rowTexts;
+        rowTexts.reserve(columns.size());
+
+        int rowHeight = 40;
+        for (int i = 0; i < columns.size(); ++i) {
+            const QTableWidgetItem* item = table->item(row, columns[i]);
+            const QString text = item ? normalizePdfCellText(item->text()) : QString();
+            rowTexts << text;
+            rowHeight = qMax(
+                rowHeight,
+                pdfWrappedTextHeight(
+                    painter,
+                    cellFont,
+                    text,
+                    colWidths[i] - 20,
+                    18,
+                    Qt::AlignLeft | Qt::AlignVCenter | Qt::TextWordWrap) + 16);
+        }
+
+        if (y + rowHeight > contentBottom) {
+            drawQuaiPdfFooter(painter, leftMargin, footerY, contentW, exportStamp, pageNumber);
+            ++pageNumber;
+            y = startPage(true, false);
+        }
+
+        const QColor rowColor = (visibleIndex % 2 == 0)
+            ? QColor(QStringLiteral("#fbfdff"))
+            : QColor(QStringLiteral("#f2f8fd"));
+
+        int x = leftMargin;
+        for (int i = 0; i < columns.size(); ++i) {
+            const QRect cellRect(x, y, colWidths[i], rowHeight);
+            painter.fillRect(cellRect, rowColor);
+            painter.setPen(QPen(QColor(QStringLiteral("#d9e3ec")), 1));
+            painter.drawRect(cellRect);
+
+            painter.setPen(QColor(QStringLiteral("#102a43")));
+            painter.setFont(cellFont);
+            painter.drawText(cellRect.adjusted(10, 8, -10, -8),
+                             Qt::AlignLeft | Qt::AlignVCenter | Qt::TextWordWrap,
+                             rowTexts[i]);
+            x += colWidths[i];
+        }
+
         y += rowHeight;
     }
 
-    painter.setPen(Qt::darkGray);
-    painter.setFont(QFont("Arial", 9, QFont::Bold));
-    painter.drawText(QRect(leftMargin, qMin(y + 8, footerY - 24), contentW, 22), Qt::AlignCenter,
-                     QString("Total: %1 quais").arg(visibleRows.size()));
+    const int summaryHeight = 34;
+    if (y + summaryHeight > contentBottom) {
+        drawQuaiPdfFooter(painter, leftMargin, footerY, contentW, exportStamp, pageNumber);
+        ++pageNumber;
+        y = startPage(true, false);
+    }
 
-    painter.setPen(QColor("#8a8a8a"));
-    painter.setFont(footerFont);
-    painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
-                     QString("AQUATEC - Rapport g├⌐n├⌐r├⌐ le %1").arg(exportStamp));
+    painter.save();
+    painter.setBrush(QColor(QStringLiteral("#eef6fd")));
+    painter.setPen(QPen(QColor(QStringLiteral("#d5e2ef")), 1));
+    painter.drawRoundedRect(QRect(leftMargin, y + 8, contentW, summaryHeight), 10, 10);
+    painter.setPen(QColor(QStringLiteral("#0f172a")));
+    painter.setFont(totalFont);
+    painter.drawText(QRect(leftMargin + 14, y + 8, contentW - 28, summaryHeight),
+                     Qt::AlignLeft | Qt::AlignVCenter,
+                     QStringLiteral("Total exporte: %1 quais visibles sur %2 enregistrements.")
+                         .arg(visibleRows.size())
+                         .arg(table->rowCount()));
+    painter.restore();
+
+    drawQuaiPdfFooter(painter, leftMargin, footerY, contentW, exportStamp, pageNumber);
 
     painter.end();
 
-    QMessageBox::information(this, "Export PDF", QString("PDF export├⌐ avec succ├¿s !\n%1").arg(filePath));
+    QMessageBox::information(this, "Export PDF", QString("PDF exporte avec succes !\n%1").arg(filePath));
 }
 
 void MainWindow::on_btnExportStatsPDF_2_clicked()
@@ -9589,36 +10536,45 @@ void MainWindow::on_btnExportStatsPDF_2_clicked()
 
     QTableWidget* table = ui->tableWidgetQuai;
     if (table->rowCount() == 0) {
-        QMessageBox::warning(this, "Export PDF", "Le tableau est vide, rien ├á exporter.");
+        QMessageBox::warning(this, "Export PDF", "Le tableau est vide, rien a exporter.");
         return;
     }
 
     const QString defaultPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation)
             + "/Statistiques_Quais_" + QDate::currentDate().toString("yyyy-MM-dd") + ".pdf";
-    const QString filePath = QFileDialog::getSaveFileName(this, "Enregistrer le PDF", defaultPath, "PDF (*.pdf)");
+    QString filePath = QFileDialog::getSaveFileName(this, "Enregistrer le PDF", defaultPath, "PDF (*.pdf)");
     if (filePath.isEmpty()) return;
+    if (!filePath.toLower().endsWith(QStringLiteral(".pdf"))) {
+        filePath += QStringLiteral(".pdf");
+    }
 
     QPdfWriter writer(filePath);
     writer.setPageSize(QPageSize(QPageSize::A4));
     writer.setPageOrientation(QPageLayout::Landscape);
     writer.setResolution(300);
+    writer.setPageMargins(QMarginsF(8, 8, 8, 8), QPageLayout::Millimeter);
+    writer.setTitle(QStringLiteral("Rapport statistiques quais - Page 4"));
 
     QPainter painter(&writer);
     if (!painter.isActive()) {
-        QMessageBox::critical(this, "Erreur", "Impossible de cr├⌐er le fichier PDF.");
+        QMessageBox::critical(this, "Erreur", "Impossible de creer le fichier PDF.");
         return;
     }
+
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
 
     const QString exportStamp = QDateTime::currentDateTime().toString("dd/MM/yyyy HH:mm");
     const int pageW = writer.width();
     const int pageH = writer.height();
 
-    const int leftMargin = 50;
-    const int rightMargin = 50;
-    const int topMargin = 100;
-    const int bottomMargin = 80;
+    const int leftMargin = 54;
+    const int rightMargin = 54;
+    const int topMargin = 42;
+    const int bottomMargin = 56;
     const int contentW = pageW - leftMargin - rightMargin;
-    const int footerY = pageH - bottomMargin + 10;
+    const int footerY = pageH - bottomMargin + 6;
 
     QVector<int> visibleRows;
     visibleRows.reserve(table->rowCount());
@@ -9628,152 +10584,261 @@ void MainWindow::on_btnExportStatsPDF_2_clicked()
 
     QMap<QString, int> zoneCounts;
     QMap<QString, int> statutCounts;
+    auto normalizeZone = [](QString zone) {
+        zone = normalizePdfCellText(zone);
+        return zone.isEmpty() ? QStringLiteral("Non defini") : zone;
+    };
+    auto normalizeStatut = [](QString statut) {
+        const QString simplified = normalizePdfCellText(statut);
+        const QString lowered = simplified.toLower();
+        if (lowered.startsWith(QStringLiteral("lib"))) return QStringLiteral("Libre");
+        if (lowered.startsWith(QStringLiteral("occu"))) return QStringLiteral("Occupe");
+        if (lowered.startsWith(QStringLiteral("maint"))) return QStringLiteral("Maintenance");
+        if (lowered.startsWith(QStringLiteral("ferm"))) return QStringLiteral("Ferme");
+        return simplified.isEmpty() ? QStringLiteral("Non defini") : simplified;
+    };
+
     for (int r : visibleRows) {
-        QString zone = table->item(r, 2) ? table->item(r, 2)->text().trimmed() : QString();
-        QString statut = table->item(r, 6) ? table->item(r, 6)->text().trimmed() : QString();
-        if (zone.isEmpty()) zone = QStringLiteral("Non d├⌐fini");
-        if (statut.isEmpty()) statut = QStringLiteral("Non d├⌐fini");
+        QString zone = table->item(r, 2) ? table->item(r, 2)->text() : QString();
+        QString statut = table->item(r, 6) ? table->item(r, 6)->text() : QString();
+        zone = normalizeZone(zone);
+        statut = normalizeStatut(statut);
         zoneCounts[zone] += 1;
         statutCounts[statut] += 1;
     }
 
     const int totalQuais = visibleRows.size();
+    const int freeCount = statutCounts.value(QStringLiteral("Libre"));
+    const int occupiedCount = qMax(0, totalQuais - freeCount);
+    const int occupancyRate = (totalQuais > 0)
+        ? qRound((static_cast<double>(occupiedCount) / static_cast<double>(totalQuais)) * 100.0)
+        : 0;
 
-    int statsY = topMargin - 10;
-    painter.setPen(QColor(0, 82, 155));
-    painter.setFont(QFont("Arial", 18, QFont::Bold));
-    painter.drawText(QRect(leftMargin, statsY, contentW, 44), Qt::AlignCenter,
-                     QString::fromUtf8("Statistiques des Quais"));
-    statsY += 50;
-
-    painter.setPen(Qt::darkGray);
-    painter.setFont(QFont("Arial", 10, QFont::Bold));
-    painter.drawText(QRect(leftMargin, statsY, contentW, 22), Qt::AlignCenter,
-                     QString("Total: %1 quais").arg(totalQuais));
-    statsY += 34;
-
-    painter.setPen(QColor(0, 82, 155));
-    painter.setFont(QFont("Arial", 12, QFont::Bold));
-    painter.drawText(QRect(leftMargin, statsY, contentW, 28), Qt::AlignCenter,
-                     QString::fromUtf8("statistique par zone"));
-    statsY += 32;
-
-    const int pieSize = 180;
-    const int legendW = 420;
-    const int gap = 44;
-    const int blockW = pieSize + gap + legendW;
-    const int blockX = leftMargin + qMax(0, (contentW - blockW) / 2);
-    const int pieX = blockX;
-    const int pieY = statsY;
-    const QRect pieRect(pieX, pieY, pieSize, pieSize);
-
-    const QVector<QColor> zoneColors = {
-        QColor("#3498db"), QColor("#2ecc71"), QColor("#e67e22"), QColor("#9b59b6"), QColor("#4A90D9")
+    auto dominantLabel = [](const QMap<QString, int>& counts) {
+        QString bestLabel = QStringLiteral("-");
+        int bestValue = -1;
+        for (auto it = counts.constBegin(); it != counts.constEnd(); ++it) {
+            if (it.value() > bestValue) {
+                bestLabel = it.key();
+                bestValue = it.value();
+            }
+        }
+        return bestLabel;
     };
 
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    if (totalQuais > 0) {
-        int startAngle = 90 * 16;
-        int colorIndex = 0;
-        for (auto it = zoneCounts.constBegin(); it != zoneCounts.constEnd(); ++it) {
-            const int cnt = it.value();
-            if (cnt <= 0) continue;
-
-            const int span = -qRound((static_cast<double>(cnt) / static_cast<double>(totalQuais)) * 360.0 * 16.0);
-            painter.setBrush(zoneColors[colorIndex % zoneColors.size()]);
-            painter.setPen(Qt::white);
-            painter.drawPie(pieRect, startAngle, span);
-            startAngle += span;
-            ++colorIndex;
+    auto sortedEntries = [](const QMap<QString, int>& counts) {
+        QVector<QPair<QString, int>> entries;
+        entries.reserve(counts.size());
+        for (auto it = counts.constBegin(); it != counts.constEnd(); ++it) {
+            entries.push_back(qMakePair(it.key(), it.value()));
         }
-    } else {
-        painter.setBrush(QColor("#dadada"));
-        painter.setPen(Qt::white);
-        painter.drawEllipse(pieRect);
-    }
-    painter.setRenderHint(QPainter::Antialiasing, false);
-
-    int legendY = pieY + 10;
-    const int legendX = pieRect.right() + gap;
-    painter.setFont(QFont("Arial", 10));
-    int colorIndex = 0;
-    for (auto it = zoneCounts.constBegin(); it != zoneCounts.constEnd(); ++it) {
-        const int cnt = it.value();
-        const int pct = (totalQuais > 0) ? qRound(100.0 * cnt / totalQuais) : 0;
-        const QColor color = zoneColors[colorIndex % zoneColors.size()];
-
-        painter.fillRect(QRect(legendX, legendY + 6, 10, 10), color);
-        painter.setPen(Qt::black);
-        painter.drawText(QRect(legendX + 18, legendY - 2, legendW - 24, 22),
-                         Qt::AlignLeft | Qt::AlignVCenter,
-                         QString("%1: %2 (%3%)").arg(it.key()).arg(cnt).arg(pct));
-        legendY += 24;
-        ++colorIndex;
-    }
-
-    const int zoneBlockBottom = qMax(pieY + pieSize, legendY);
-    const int minStatusStartY = static_cast<int>(pageH * 0.58);
-    const int barsTitleY = qMax(zoneBlockBottom + 60, minStatusStartY);
-
-    painter.setPen(QPen(QColor(200, 210, 220), 2));
-    painter.drawLine(leftMargin + 60, barsTitleY - 12, leftMargin + contentW - 60, barsTitleY - 12);
-
-    painter.setPen(QColor(0, 82, 155));
-    painter.setFont(QFont("Arial", 13, QFont::Bold));
-    painter.drawText(QRect(leftMargin + 24, barsTitleY, contentW - 48, 34), Qt::AlignLeft,
-                     QString::fromUtf8("statistique par statut"));
-
-    int barsY = barsTitleY + 44;
-
-    const int labelX = leftMargin + 24;
-    const int labelW = 130;
-    const int barX = labelX + labelW + 14;
-    const int valueW = 150;
-    const int barMaxW = qMax(320, contentW - (barX - leftMargin) - valueW - 24);
-    const int barH = 30;
-    const int barSpacing = 16;
+        std::sort(entries.begin(), entries.end(), [](const QPair<QString, int>& lhs, const QPair<QString, int>& rhs) {
+            if (lhs.second == rhs.second) {
+                return lhs.first < rhs.first;
+            }
+            return lhs.second > rhs.second;
+        });
+        return entries;
+    };
 
     auto statusColorFor = [](const QString& raw) {
         const QString s = raw.trimmed().toLower();
         if (s.contains(QStringLiteral("lib"))) return QColor("#2ecc71");
         if (s.contains(QStringLiteral("occup"))) return QColor("#e74c3c");
         if (s.contains(QStringLiteral("maint"))) return QColor("#e67e22");
+        if (s.contains(QStringLiteral("ferm"))) return QColor("#64748b");
         return QColor("#90a4ae");
     };
 
-    for (auto it = statutCounts.constBegin(); it != statutCounts.constEnd(); ++it) {
-        const int cnt = it.value();
-        const int pct = (totalQuais > 0) ? qRound(100.0 * cnt / totalQuais) : 0;
-        const QColor fillColor = statusColorFor(it.key());
+    const QVector<QPair<QString, int>> sortedZones = sortedEntries(zoneCounts);
+    const QVector<QPair<QString, int>> sortedStatuts = sortedEntries(statutCounts);
+    const QStringList infoLines = buildQuaiReportInfoLines(
+        ui,
+        QStringLiteral("Page 4 - Statistiques des quais"),
+        exportStamp,
+        totalQuais,
+        table->rowCount());
 
-        painter.setPen(Qt::black);
-        painter.drawText(QRect(labelX, barsY, labelW, barH), Qt::AlignVCenter | Qt::AlignLeft, it.key());
+    int y = drawQuaiPdfHeader(
+        painter,
+        QRect(leftMargin, topMargin, contentW, 0),
+        QStringLiteral("Synthese des quais"),
+        infoLines);
 
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(QColor(230, 235, 245));
-        painter.drawRoundedRect(QRect(barX, barsY, barMaxW, barH), 6, 6);
+    const int cardGap = 18;
+    const int cardHeight = 128;
+    const int cardWidth = (contentW - (cardGap * 3)) / 4;
 
-        const int fillW = (pct > 0) ? qMax(30, qRound((static_cast<double>(pct) / 100.0) * barMaxW)) : 0;
-        if (fillW > 0) {
-            painter.setBrush(fillColor);
-            painter.drawRoundedRect(QRect(barX, barsY, fillW, barH), 6, 6);
+    drawQuaiMetricCard(
+        painter,
+        QRect(leftMargin, y, cardWidth, cardHeight),
+        QStringLiteral("Quais visibles"),
+        QString::number(totalQuais),
+        QStringLiteral("Total analyse dans ce rapport"),
+        QColor(QStringLiteral("#0b5ea8")));
+    drawQuaiMetricCard(
+        painter,
+        QRect(leftMargin + cardWidth + cardGap, y, cardWidth, cardHeight),
+        QStringLiteral("Zones actives"),
+        QString::number(zoneCounts.size()),
+        QStringLiteral("Zones portuaires presentes"),
+        QColor(QStringLiteral("#2e8b57")));
+    drawQuaiMetricCard(
+        painter,
+        QRect(leftMargin + ((cardWidth + cardGap) * 2), y, cardWidth, cardHeight),
+        QStringLiteral("Taux d'occupation"),
+        QStringLiteral("%1%").arg(occupancyRate),
+        QStringLiteral("%1 quais occupes ou indisponibles").arg(occupiedCount),
+        QColor(QStringLiteral("#d97706")));
+    drawQuaiMetricCard(
+        painter,
+        QRect(leftMargin + ((cardWidth + cardGap) * 3), y, cardWidth, cardHeight),
+        QStringLiteral("Statut dominant"),
+        dominantLabel(statutCounts),
+        QStringLiteral("Zone dominante: %1").arg(dominantLabel(zoneCounts)),
+        QColor(QStringLiteral("#7c3aed")));
+
+    y += cardHeight + 28;
+
+    const QRect zoneSection(leftMargin, y, contentW, 410);
+    painter.save();
+    painter.setPen(QPen(QColor(QStringLiteral("#d6e2ee")), 1));
+    painter.setBrush(QColor(QStringLiteral("#ffffff")));
+    painter.drawRoundedRect(zoneSection, 16, 16);
+
+    const int zoneContentTop = drawQuaiSectionIntro(
+        painter,
+        zoneSection.left() + 22,
+        zoneSection.top() + 22,
+        zoneSection.width() - 44,
+        QStringLiteral("Repartition par zone"),
+        QStringLiteral("Vue d'ensemble des quais visibles sur la page 4, avec leur poids relatif par zone."));
+
+    const int pieSize = 230;
+    const int pieX = zoneSection.left() + 30;
+    const int pieY = zoneContentTop + 26;
+    const QRect pieRect(pieX, pieY, pieSize, pieSize);
+    const int legendX = pieRect.right() + 46;
+    const int legendWidth = zoneSection.right() - 34 - legendX;
+    const QVector<QColor> zoneColors = {
+        QColor(QStringLiteral("#0ea5e9")),
+        QColor(QStringLiteral("#22c55e")),
+        QColor(QStringLiteral("#f97316")),
+        QColor(QStringLiteral("#8b5cf6")),
+        QColor(QStringLiteral("#14b8a6"))
+    };
+
+    if (totalQuais > 0) {
+        int startAngle = 90 * 16;
+        for (int i = 0; i < sortedZones.size(); ++i) {
+            const int count = sortedZones[i].second;
+            if (count <= 0) continue;
+
+            const int span = -qRound((static_cast<double>(count) / static_cast<double>(totalQuais)) * 360.0 * 16.0);
+            painter.setPen(Qt::white);
+            painter.setBrush(zoneColors[i % zoneColors.size()]);
+            painter.drawPie(pieRect, startAngle, span);
+            startAngle += span;
         }
-
-        painter.setPen(Qt::black);
-        painter.drawText(QRect(barX + barMaxW + 12, barsY, valueW, barH), Qt::AlignVCenter | Qt::AlignLeft,
-                         QString("%1 (%2%)").arg(cnt).arg(pct));
-
-        barsY += barH + barSpacing;
+    } else {
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(QStringLiteral("#e2e8f0")));
+        painter.drawEllipse(pieRect);
+        painter.setPen(QColor(QStringLiteral("#64748b")));
+        painter.setFont(QFont(QStringLiteral("Arial"), 10, QFont::Bold));
+        painter.drawText(pieRect, Qt::AlignCenter, QStringLiteral("Aucune donnee"));
     }
 
-    painter.setPen(QColor("#8a8a8a"));
-    painter.setFont(QFont("Arial", 9));
-    painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
-                     QString("AQUATEC - Rapport g├⌐n├⌐r├⌐ le %1").arg(exportStamp));
+    int legendY = pieY + 8;
+    const QFont legendFont(QStringLiteral("Arial"), 9);
+    painter.setFont(legendFont);
+    for (int i = 0; i < sortedZones.size(); ++i) {
+        const int count = sortedZones[i].second;
+        const int pct = (totalQuais > 0) ? qRound((100.0 * count) / totalQuais) : 0;
+        const QString lineText = QStringLiteral("%1 : %2 quais (%3%)")
+                                     .arg(sortedZones[i].first)
+                                     .arg(count)
+                                     .arg(pct);
+        const int lineHeight = pdfWrappedTextHeight(
+            painter,
+            legendFont,
+            lineText,
+            legendWidth - 30,
+            18,
+            Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap);
+
+        painter.fillRect(QRect(legendX, legendY + 5, 12, 12), zoneColors[i % zoneColors.size()]);
+        painter.setPen(QColor(QStringLiteral("#102a43")));
+        painter.drawText(QRect(legendX + 22, legendY, legendWidth - 22, lineHeight),
+                         Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
+                         lineText);
+        legendY += lineHeight + 14;
+    }
+    painter.restore();
+
+    y = zoneSection.bottom() + 22;
+
+    const QRect statusSection(leftMargin, y, contentW, 292);
+    painter.save();
+    painter.setPen(QPen(QColor(QStringLiteral("#d6e2ee")), 1));
+    painter.setBrush(QColor(QStringLiteral("#ffffff")));
+    painter.drawRoundedRect(statusSection, 16, 16);
+
+    const int statusContentTop = drawQuaiSectionIntro(
+        painter,
+        statusSection.left() + 22,
+        statusSection.top() + 22,
+        statusSection.width() - 44,
+        QStringLiteral("Repartition par statut"),
+        QStringLiteral("Lecture rapide de l'etat d'occupation et de disponibilite des quais exportes."));
+
+    const int labelX = statusSection.left() + 26;
+    const int labelWidth = 210;
+    const int valueWidth = 170;
+    const int barX = labelX + labelWidth + 18;
+    const int barWidth = statusSection.right() - 26 - valueWidth - barX;
+    const int barHeight = 24;
+    const int barSpacing = 20;
+    int barsY = statusContentTop + 22;
+
+    for (const auto& entry : sortedStatuts) {
+        const int count = entry.second;
+        const int pct = (totalQuais > 0) ? qRound((100.0 * count) / totalQuais) : 0;
+        const QColor fillColor = statusColorFor(entry.first);
+
+        painter.setPen(QColor(QStringLiteral("#0f172a")));
+        painter.setFont(QFont(QStringLiteral("Arial"), 9, QFont::Bold));
+        painter.drawText(QRect(labelX, barsY, labelWidth, barHeight),
+                         Qt::AlignLeft | Qt::AlignVCenter,
+                         entry.first);
+
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(QStringLiteral("#e7eef6")));
+        painter.drawRoundedRect(QRect(barX, barsY, barWidth, barHeight), 8, 8);
+
+        const int fillWidth = (pct > 0)
+            ? qMax(24, qRound((static_cast<double>(pct) / 100.0) * barWidth))
+            : 0;
+        if (fillWidth > 0) {
+            painter.setBrush(fillColor);
+            painter.drawRoundedRect(QRect(barX, barsY, fillWidth, barHeight), 8, 8);
+        }
+
+        painter.setPen(QColor(QStringLiteral("#334155")));
+        painter.setFont(QFont(QStringLiteral("Arial"), 9));
+        painter.drawText(QRect(barX + barWidth + 12, barsY, valueWidth, barHeight),
+                         Qt::AlignLeft | Qt::AlignVCenter,
+                         QStringLiteral("%1 quais (%2%)").arg(count).arg(pct));
+
+        barsY += barHeight + barSpacing;
+    }
+    painter.restore();
+
+    drawQuaiPdfFooter(painter, leftMargin, footerY, contentW, exportStamp, 1);
 
     painter.end();
 
-    QMessageBox::information(this, "Export PDF", QString("PDF export├⌐ avec succ├¿s !\n%1").arg(filePath));
+    QMessageBox::information(this, "Export PDF", QString("PDF exporte avec succes !\n%1").arg(filePath));
 }
 
 void MainWindow::legacy_comboChartType_2_currentIndexChanged(int)
@@ -9847,31 +10912,25 @@ void MainWindow::refreshStats_2()
 {
     if (!ui) return;
 
-    QMap<QString, QPair<int, int>> stats; // zone -> (occup├⌐s, total en base)
-
-    // Normalise les libell├⌐s de zone pour correspondre exactement
-    // aux cl├⌐s attendues ("Nord", "Sud", "Est", "Ouest"),
-    // quel que soit le texte stock├⌐ en base.
-    auto normalizeZone = [](const QString &raw) -> QString {
-        const QString lower = raw.trimmed().toLower();
-        if (lower == QStringLiteral("nord"))  return QStringLiteral("Nord");
-        if (lower == QStringLiteral("sud"))   return QStringLiteral("Sud");
-        if (lower == QStringLiteral("est"))   return QStringLiteral("Est");
-        if (lower == QStringLiteral("ouest")) return QStringLiteral("Ouest");
-        return raw.trimmed();
-    };
-
-    // Calcul des statistiques *uniquement* ├á partir de la base QUAIS
-    // pour garantir que les valeurs affich├⌐es correspondent aux donn├⌐es r├⌐elles.
     Connection *conn = Connection::getInstance();
     if (!conn->ensureOpen()) {
         QMessageBox::critical(this,
                               QStringLiteral("DB"),
-                              QStringLiteral("Connexion DB ├⌐chou├⌐e: %1").arg(conn->lastErrorText()));
+                              QStringLiteral("Connexion DB echouee: %1").arg(conn->lastErrorText()));
         return;
     }
 
     QSqlDatabase db = conn->getDatabase();
+    QMap<QString, QPair<int, int>> stats;
+
+    auto normalizeZone = [](const QString &raw) -> QString {
+        const QString lower = raw.trimmed().toLower();
+        if (lower == QStringLiteral("nord")) return QStringLiteral("Chenal");
+        if (lower == QStringLiteral("sud")) return QStringLiteral("Bassin");
+        if (lower == QStringLiteral("est")) return QStringLiteral("QuaiEst");
+        if (lower == QStringLiteral("ouest")) return QStringLiteral("QuaiOuest");
+        return raw.trimmed();
+    };
 
     QSqlQuery query(db);
     if (!query.exec(QStringLiteral(
@@ -9880,202 +10939,113 @@ void MainWindow::refreshStats_2()
             "FROM QUAIS GROUP BY Zone_Port"))) {
         QMessageBox::warning(this,
                              QStringLiteral("Statistiques"),
-                             QStringLiteral("Impossible de calculer les statistiques : %1")
-                                 .arg(query.lastError().text()));
+                             QStringLiteral("Impossible de calculer les statistiques : %1").arg(query.lastError().text()));
         return;
     }
 
     while (query.next()) {
         const QString zone = normalizeZone(query.value(0).toString());
-        const int total = query.value(1).toInt();
-        const int occupe = query.value(2).toInt();
-        stats.insert(zone, qMakePair(occupe, total));
+        stats.insert(zone, qMakePair(query.value(2).toInt(), query.value(1).toInt()));
     }
 
-    // Pourcentage d'occupation ├á l'int├⌐rieur d'une zone
     auto computePct = [&stats](const QString &zone) -> int {
         const auto it = stats.constFind(zone);
-        if (it == stats.constEnd() || it->second == 0)
-            return 0;
-        const int occupe = it->first;
-        const int total = it->second;
-        if (total <= 0)
-            return 0;
-        return (occupe * 100) / total;
+        if (it == stats.constEnd() || it->second <= 0) return 0;
+        return (it->first * 100) / it->second;
     };
 
-    auto getZoneCounts = [&stats](const QString &zone) -> QPair<int, int> {
+    auto getCounts = [&stats](const QString &zone) -> QPair<int, int> {
         const auto it = stats.constFind(zone);
-        if (it == stats.constEnd())
-            return qMakePair(0, 0);
-        return qMakePair(it->first, it->second);
+        return (it == stats.constEnd()) ? qMakePair(0, 0) : qMakePair(it->first, it->second);
     };
 
-    const int pctNord  = computePct(QStringLiteral("Nord"));
-    const int pctSud   = computePct(QStringLiteral("Sud"));
-    const int pctEst   = computePct(QStringLiteral("Est"));
-    const int pctOuest = computePct(QStringLiteral("Ouest"));
+    const int pctSud = computePct(QStringLiteral("Bassin"));
+    const int pctEst = computePct(QStringLiteral("QuaiEst"));
+    const int pctOuest = computePct(QStringLiteral("QuaiOuest"));
 
-    // Stat globale d'occupation (tous les quais confondus),
-    // bas├⌐e sur les m├¬mes donn├⌐es "stats" (table ou base).
     int totalOccupe = 0;
-    int totalQuais  = 0;
+    int totalQuais = 0;
     for (auto it = stats.constBegin(); it != stats.constEnd(); ++it) {
+        if (it.key() == QStringLiteral("Chenal")) continue;
         totalOccupe += it->first;
-        totalQuais  += it->second;
+        totalQuais += it->second;
     }
 
     const int pctGlobal = (totalQuais > 0) ? (totalOccupe * 100) / totalQuais : 0;
 
-    // R├⌐partition des quais par zone (pour le bloc "R├ëPARTITION PAR ZONE") :
-    // pourcentage du nombre total de quais appartenant ├á chaque zone.
     auto computeShare = [&stats, totalQuais](const QString &zone) -> int {
-        if (totalQuais <= 0)
-            return 0;
+        if (totalQuais <= 0) return 0;
         const auto it = stats.constFind(zone);
-        if (it == stats.constEnd())
-            return 0;
-        const int total = it->second;
-        if (total <= 0)
-            return 0;
-        return (total * 100) / totalQuais;
+        if (it == stats.constEnd() || it->second <= 0) return 0;
+        return (it->second * 100) / totalQuais;
     };
 
-    const int shareNord  = computeShare(QStringLiteral("Nord"));
-    const int shareSud   = computeShare(QStringLiteral("Sud"));
-    const int shareEst   = computeShare(QStringLiteral("Est"));
-    const int shareOuest = computeShare(QStringLiteral("Ouest"));
+    const int shareSud = computeShare(QStringLiteral("Bassin"));
+    const int shareEst = computeShare(QStringLiteral("QuaiEst"));
+    const int shareOuest = computeShare(QStringLiteral("QuaiOuest"));
 
-    // On utilise ces pourcentages de r├⌐partition pour les barres verticales
-    // "R├ëPARTITION PAR ZONE".
-    if (ui->progressZoneNord_2) {
-        ui->progressZoneNord_2->setRange(0, 100);
-        ui->progressZoneNord_2->setValue(shareNord);
-    }
-    if (ui->progressZoneSud_2) {
-        ui->progressZoneSud_2->setRange(0, 100);
-        ui->progressZoneSud_2->setValue(shareSud);
-    }
-    if (ui->progressZoneEst_2) {
-        ui->progressZoneEst_2->setRange(0, 100);
-        ui->progressZoneEst_2->setValue(shareEst);
-    }
-    if (ui->progressZoneOuest_2) {
-        ui->progressZoneOuest_2->setRange(0, 100);
-        ui->progressZoneOuest_2->setValue(shareOuest);
-    }
+    if (ui->progressZoneSud_2) { ui->progressZoneSud_2->setRange(0, 100); ui->progressZoneSud_2->setValue(shareSud); }
+    if (ui->progressZoneEst_2) { ui->progressZoneEst_2->setRange(0, 100); ui->progressZoneEst_2->setValue(shareEst); }
+    if (ui->progressZoneOuest_2) { ui->progressZoneOuest_2->setRange(0, 100); ui->progressZoneOuest_2->setValue(shareOuest); }
 
     if (ui->label_chartTitle_2) {
-        ui->label_chartTitle_2->setText(
-            QStringLiteral("├ëvolution du taux d'occupation (%1 %)").arg(pctGlobal));
+        ui->label_chartTitle_2->setText(QStringLiteral("Taux global d'occupation des quais : %1 %").arg(pctGlobal));
     }
 
-    // Tooltips sur les points de la courbe pour donner les stats
-    // d'occupation par zone directement depuis la base.
-    const auto nordCounts  = getZoneCounts(QStringLiteral("Nord"));
-    const auto sudCounts   = getZoneCounts(QStringLiteral("Sud"));
-    const auto estCounts   = getZoneCounts(QStringLiteral("Est"));
-    const auto ouestCounts = getZoneCounts(QStringLiteral("Ouest"));
+    const auto sudCounts = getCounts(QStringLiteral("Bassin"));
+    const auto estCounts = getCounts(QStringLiteral("QuaiEst"));
+    const auto ouestCounts = getCounts(QStringLiteral("QuaiOuest"));
 
-    const QString ttNordOcc  = QStringLiteral("Zone Nord : %1 % occup├⌐ (%2 / %3 quais)")
-                                   .arg(pctNord)
-                                   .arg(nordCounts.first)
-                                   .arg(nordCounts.second);
-    const QString ttSudOcc   = QStringLiteral("Zone Sud : %1 % occup├⌐ (%2 / %3 quais)")
-                                   .arg(pctSud)
-                                   .arg(sudCounts.first)
-                                   .arg(sudCounts.second);
-    const QString ttEstOcc   = QStringLiteral("Zone Est : %1 % occup├⌐ (%2 / %3 quais)")
-                                   .arg(pctEst)
-                                   .arg(estCounts.first)
-                                   .arg(estCounts.second);
-    const QString ttOuestOcc = QStringLiteral("Zone Ouest : %1 % occup├⌐ (%2 / %3 quais)")
-                                   .arg(pctOuest)
-                                   .arg(ouestCounts.first)
-                                   .arg(ouestCounts.second);
+    const QString ttSudOcc = QStringLiteral("Bassin central (Zone 3) : %1 % occupe (%2 / %3 quais)")
+        .arg(pctSud).arg(sudCounts.first).arg(sudCounts.second);
+    const QString ttEstOcc = QStringLiteral("Quai Est (Zone 2) : %1 % occupe (%2 / %3 quais)")
+        .arg(pctEst).arg(estCounts.first).arg(estCounts.second);
+    const QString ttOuestOcc = QStringLiteral("Quai Ouest (Zone 1) : %1 % occupe (%2 / %3 quais)")
+        .arg(pctOuest).arg(ouestCounts.first).arg(ouestCounts.second);
 
-    // Occupation par zone pour la courbe
-    if (ui->curvePoint1_2) ui->curvePoint1_2->setToolTip(ttNordOcc);
     if (ui->curvePoint3_2) ui->curvePoint3_2->setToolTip(ttSudOcc);
     if (ui->curvePoint5_2) ui->curvePoint5_2->setToolTip(ttEstOcc);
     if (ui->curvePoint7_2) ui->curvePoint7_2->setToolTip(ttOuestOcc);
 
-    // R├⌐partition du nombre de quais pour les barres verticales
-    const QString ttNordShare  = QStringLiteral("Zone Nord : %1 % des quais (%2 / %3, %4 % occup├⌐s)")
-                                     .arg(shareNord)
-                                     .arg(nordCounts.second)
-                                     .arg(totalQuais)
-                                     .arg(pctNord);
-    const QString ttSudShare   = QStringLiteral("Zone Sud : %1 % des quais (%2 / %3, %4 % occup├⌐s)")
-                                     .arg(shareSud)
-                                     .arg(sudCounts.second)
-                                     .arg(totalQuais)
-                                     .arg(pctSud);
-    const QString ttEstShare   = QStringLiteral("Zone Est : %1 % des quais (%2 / %3, %4 % occup├⌐s)")
-                                     .arg(shareEst)
-                                     .arg(estCounts.second)
-                                     .arg(totalQuais)
-                                     .arg(pctEst);
-    const QString ttOuestShare = QStringLiteral("Zone Ouest : %1 % des quais (%2 / %3, %4 % occup├⌐s)")
-                                     .arg(shareOuest)
-                                     .arg(ouestCounts.second)
-                                     .arg(totalQuais)
-                                     .arg(pctOuest);
+    if (ui->progressZoneSud_2) {
+        ui->progressZoneSud_2->setToolTip(QStringLiteral("Bassin central (Zone 3) : %1 % des quais (%2 / %3, %4 % occupes)")
+                                          .arg(shareSud).arg(sudCounts.second).arg(totalQuais).arg(pctSud));
+    }
+    if (ui->progressZoneEst_2) {
+        ui->progressZoneEst_2->setToolTip(QStringLiteral("Quai Est (Zone 2) : %1 % des quais (%2 / %3, %4 % occupes)")
+                                          .arg(shareEst).arg(estCounts.second).arg(totalQuais).arg(pctEst));
+    }
+    if (ui->progressZoneOuest_2) {
+        ui->progressZoneOuest_2->setToolTip(QStringLiteral("Quai Ouest (Zone 1) : %1 % des quais (%2 / %3, %4 % occupes)")
+                                            .arg(shareOuest).arg(ouestCounts.second).arg(totalQuais).arg(pctOuest));
+    }
 
-    if (ui->progressZoneNord_2)  ui->progressZoneNord_2->setToolTip(ttNordShare);
-    if (ui->progressZoneSud_2)   ui->progressZoneSud_2->setToolTip(ttSudShare);
-    if (ui->progressZoneEst_2)   ui->progressZoneEst_2->setToolTip(ttEstShare);
-    if (ui->progressZoneOuest_2) ui->progressZoneOuest_2->setToolTip(ttOuestShare);
-
-    // -------------------------------------------------------------
-    // Mise ├á jour de la carte (zoneNord_map, zoneSud_map, etc.)
-    // -------------------------------------------------------------
-    auto updateZoneMap = [&](const QString &zoneName,
-                             QFrame *zoneFrame,
-                             QLabel *valueLabel,
-                             int occupe, int total) {
-        Q_UNUSED(zoneName);
-        Q_UNUSED(occupe);
-        Q_UNUSED(total);
+    auto updateZoneMap = [](QFrame *zoneFrame, QLabel *valueLabel) {
         if (!zoneFrame) return;
-
-        // Pas de grand carreau color├⌐ : fond transparent, pas de bordure
         zoneFrame->setStyleSheet(QStringLiteral("background-color: transparent; border: none;"));
-        // Retirer les contraintes de taille fixe pour que le frame s'adapte
         zoneFrame->setMinimumSize(0, 0);
         zoneFrame->setMaximumSize(16777215, 16777215);
-
-        // Cacher le label "X / Y occup├⌐s"
         if (valueLabel) valueLabel->hide();
     };
 
-    updateZoneMap(QStringLiteral("Nord"),  ui->zoneNord_map,  ui->value_zoneNord_map,  nordCounts.first,  nordCounts.second);
-    updateZoneMap(QStringLiteral("Sud"),   ui->zoneSud_map,   ui->value_zoneSud_map,   sudCounts.first,   sudCounts.second);
-    updateZoneMap(QStringLiteral("Est"),   ui->zoneEst_map,   ui->value_zoneEst_map,   estCounts.first,   estCounts.second);
-    updateZoneMap(QStringLiteral("Ouest"), ui->zoneOuest_map, ui->value_zoneOuest_map, ouestCounts.first, ouestCounts.second);
+    updateZoneMap(ui->zoneNord_map, ui->value_zoneNord_map);
+    updateZoneMap(ui->zoneSud_map, ui->value_zoneSud_map);
+    updateZoneMap(ui->zoneEst_map, ui->value_zoneEst_map);
+    updateZoneMap(ui->zoneOuest_map, ui->value_zoneOuest_map);
 
-    // Cacher aussi les labels de titre de zone (label_zone*_map)
-    if (ui->label_zoneNord_map)  ui->label_zoneNord_map->hide();
-    if (ui->label_zoneSud_map)   ui->label_zoneSud_map->hide();
-    if (ui->label_zoneEst_map)   ui->label_zoneEst_map->hide();
+    if (ui->label_zoneNord_map) ui->label_zoneNord_map->hide();
+    if (ui->label_zoneSud_map) ui->label_zoneSud_map->hide();
+    if (ui->label_zoneEst_map) ui->label_zoneEst_map->hide();
     if (ui->label_zoneOuest_map) ui->label_zoneOuest_map->hide();
 
-    // Animation simple de la courbe : on positionne verticalement
-    // les points en fonction des pourcentages calcul├⌐s.
     if (ui->curveCanvas_2) {
-        const int yTop = 30;   // proche de 100 %
-        const int yBot = 145;  // proche de 0 %
-        auto yFromPct = [yTop, yBot](int pct) {
-            if (pct < 0) pct = 0;
-            if (pct > 100) pct = 100;
+        static const int yTop = 30;
+        static const int yBot = 145;
+        auto yFromPct = [](int pct) {
+            pct = qBound(0, pct, 100);
             return yBot - (pct * (yBot - yTop)) / 100;
         };
 
-        // Points principaux par zone
-        if (ui->curvePoint1_2) {
-            const QPoint p = ui->curvePoint1_2->pos();
-            ui->curvePoint1_2->move(p.x(), yFromPct(pctNord));
-        }
         if (ui->curvePoint3_2) {
             const QPoint p = ui->curvePoint3_2->pos();
             ui->curvePoint3_2->move(p.x(), yFromPct(pctSud));
@@ -10089,86 +11059,47 @@ void MainWindow::refreshStats_2()
             ui->curvePoint7_2->move(p.x(), yFromPct(pctOuest));
         }
 
-        // Points interm├⌐diaires pour lisser la courbe : moyenne entre zones voisines
-        if (ui->curvePoint2_2 && ui->curvePoint1_2 && ui->curvePoint3_2) {
-            const int pct12 = (pctNord + pctSud) / 2;
-            const QPoint p = ui->curvePoint2_2->pos();
-            ui->curvePoint2_2->move(p.x(), yFromPct(pct12));
-        }
-        if (ui->curvePoint4_2 && ui->curvePoint3_2 && ui->curvePoint5_2) {
-            const int pct34 = (pctSud + pctEst) / 2;
-            const QPoint p = ui->curvePoint4_2->pos();
-            ui->curvePoint4_2->move(p.x(), yFromPct(pct34));
-        }
-        if (ui->curvePoint6_2 && ui->curvePoint5_2 && ui->curvePoint7_2) {
-            const int pct56 = (pctEst + pctOuest) / 2;
-            const QPoint p = ui->curvePoint6_2->pos();
-            ui->curvePoint6_2->move(p.x(), yFromPct(pct56));
-        }
-
-        // Si tu ajoutes plus tard un point d├⌐di├⌐ au taux global
-        // (par exemple curvePoint8_2 dans le .ui), tu pourras ici
-        // le positionner en fonction de pctGlobal.
-
-        // Dessine une ligne color├⌐e reliant tous les points
         if (!m_curveLineLabelQuaiStats) {
             m_curveLineLabelQuaiStats = new QLabel(ui->curveCanvas_2);
-            m_curveLineLabelQuaiStats->setObjectName("curveLineLabelQuaiStats");
+            m_curveLineLabelQuaiStats->setObjectName(QStringLiteral("curveLineLabelQuaiStats"));
             m_curveLineLabelQuaiStats->setAttribute(Qt::WA_TransparentForMouseEvents);
-            m_curveLineLabelQuaiStats->setGeometry(ui->curveCanvas_2->rect());
-        } else {
-            m_curveLineLabelQuaiStats->setGeometry(ui->curveCanvas_2->rect());
         }
+        m_curveLineLabelQuaiStats->setGeometry(ui->curveCanvas_2->rect());
 
         QPixmap pix(ui->curveCanvas_2->size());
         pix.fill(Qt::transparent);
         QPainter painter(&pix);
         painter.setRenderHint(QPainter::Antialiasing, true);
 
-        QVector<QPoint> curvePoints;
-
-        auto centerInCanvas = [this](QWidget* w) -> QPoint {
+        auto centerInCanvas = [this](QWidget *w) -> QPoint {
             if (!w) return QPoint();
             const QPoint topLeft = w->mapTo(this->ui->curveCanvas_2, QPoint(0, 0));
             return QPoint(topLeft.x() + w->width() / 2, topLeft.y() + w->height() / 2);
         };
 
-        curvePoints << centerInCanvas(ui->curvePoint1_2)
-                << centerInCanvas(ui->curvePoint2_2)
-                << centerInCanvas(ui->curvePoint3_2)
-                << centerInCanvas(ui->curvePoint4_2)
-                << centerInCanvas(ui->curvePoint5_2)
-                << centerInCanvas(ui->curvePoint6_2)
-                << centerInCanvas(ui->curvePoint7_2);
+        QVector<QPoint> points;
+        points << centerInCanvas(ui->curvePoint3_2)
+               << centerInCanvas(ui->curvePoint5_2)
+               << centerInCanvas(ui->curvePoint7_2);
 
-        // Supprime les points nuls ├⌐ventuels
         QVector<QPoint> validPoints;
-        validPoints.reserve(curvePoints.size());
-        for (const QPoint &pt : curvePoints) {
-            if (!pt.isNull())
-                validPoints.append(pt);
+        for (const QPoint &pt : std::as_const(points)) {
+            if (!pt.isNull()) validPoints.append(pt);
         }
 
-        // Tracer des lignes de grille horizontales pour les niveaux cl├⌐s (0,25,50,75,100 %)
-        {
-            QPen gridPen(QColor(0, 0, 128, 40));
-            gridPen.setWidth(1);
-            painter.setPen(gridPen);
-            const int levels[] = {0, 25, 50, 75, 100};
-            for (int lvl : levels) {
-                const int y = yFromPct(lvl);
-                painter.drawLine(10, y, pix.width() - 10, y);
-            }
+        QPen gridPen(QColor(0, 0, 128, 40));
+        gridPen.setWidth(1);
+        painter.setPen(gridPen);
+        for (int lvl : {0, 25, 50, 75, 100}) {
+            painter.drawLine(10, yFromPct(lvl), pix.width() - 10, yFromPct(lvl));
         }
 
         if (validPoints.size() >= 2) {
-            // Courbe passant exactement par tous les points
             QPainterPath path(validPoints.first());
             for (int i = 1; i < validPoints.size(); ++i) {
                 path.lineTo(validPoints[i]);
             }
 
-            // Zone remplie sous la courbe
             QPainterPath fillPath(path);
             const qreal bottomY = pix.height() - 10;
             fillPath.lineTo(validPoints.last().x(), bottomY);
@@ -10180,7 +11111,6 @@ void MainWindow::refreshStats_2()
             grad.setColorAt(1.0, QColor(52, 152, 219, 10));
             painter.fillPath(fillPath, grad);
 
-            // Tracer la courbe principale par-dessus
             QPen mainPen(QColor(52, 152, 219));
             mainPen.setWidth(4);
             mainPen.setCapStyle(Qt::RoundCap);
@@ -10192,186 +11122,199 @@ void MainWindow::refreshStats_2()
         painter.end();
         m_curveLineLabelQuaiStats->setPixmap(pix);
         m_curveLineLabelQuaiStats->lower();
-        // On s'assure que les points restent au-dessus de la ligne
-        if (ui->curvePoint1_2) ui->curvePoint1_2->raise();
-        if (ui->curvePoint2_2) ui->curvePoint2_2->raise();
         if (ui->curvePoint3_2) ui->curvePoint3_2->raise();
-        if (ui->curvePoint4_2) ui->curvePoint4_2->raise();
         if (ui->curvePoint5_2) ui->curvePoint5_2->raise();
-        if (ui->curvePoint6_2) ui->curvePoint6_2->raise();
         if (ui->curvePoint7_2) ui->curvePoint7_2->raise();
     }
 
-    // -------------------------------------------------------------
-    // Affichage d├⌐taill├⌐ des places de quai par zone (carte)
-    // -------------------------------------------------------------
-    if (db.isOpen()) {
-        QSqlQuery queryPlaces(db);
-        if (queryPlaces.exec(QStringLiteral("SELECT ID_QUAI, ZONE_PORT, STATUT FROM QUAIS"))) {
-            // Regrouper les quais par zone
-            QMap<QString, QList<QPair<int, QString>>> quaisParZone;
-            while (queryPlaces.next()) {
-                int id = queryPlaces.value(0).toInt();
-                QString zone = queryPlaces.value(1).toString().trimmed();
-                QString statut = queryPlaces.value(2).toString().trimmed();
+    QSqlQuery queryPlaces(db);
+    if (!queryPlaces.exec(QStringLiteral("SELECT ID_QUAI, ZONE_PORT, STATUT FROM QUAIS"))) {
+        return;
+    }
 
-                // Normaliser le nom de la zone
-                if (zone.compare(QStringLiteral("Nord"), Qt::CaseInsensitive) == 0) zone = QStringLiteral("Nord");
-                else if (zone.compare(QStringLiteral("Sud"), Qt::CaseInsensitive) == 0) zone = QStringLiteral("Sud");
-                else if (zone.compare(QStringLiteral("Est"), Qt::CaseInsensitive) == 0) zone = QStringLiteral("Est");
-                else if (zone.compare(QStringLiteral("Ouest"), Qt::CaseInsensitive) == 0) zone = QStringLiteral("Ouest");
-                else continue; // ignorer les zones inconnues
+    QMap<QString, QList<QPair<int, QString>>> quaisParZone;
+    while (queryPlaces.next()) {
+        int id = queryPlaces.value(0).toInt();
+        QString zone = queryPlaces.value(1).toString().trimmed();
+        QString statut = queryPlaces.value(2).toString().trimmed();
 
-                quaisParZone[zone].append({id, statut});
+        if (zone.compare(QStringLiteral("Nord"), Qt::CaseInsensitive) == 0) zone = QStringLiteral("Nord");
+        else if (zone.compare(QStringLiteral("Sud"), Qt::CaseInsensitive) == 0) zone = QStringLiteral("Sud");
+        else if (zone.compare(QStringLiteral("Est"), Qt::CaseInsensitive) == 0) zone = QStringLiteral("Est");
+        else if (zone.compare(QStringLiteral("Ouest"), Qt::CaseInsensitive) == 0) zone = QStringLiteral("Ouest");
+        else continue;
+
+        quaisParZone[zone].append(qMakePair(id, statut));
+    }
+
+    auto rebuildZone = [&](const QString &zone, QVBoxLayout *layout) {
+        if (!layout) return;
+
+        QList<QWidget*> toDelete;
+        for (int i = 0; i < layout->count(); ++i) {
+            if (QWidget *w = layout->itemAt(i) ? layout->itemAt(i)->widget() : nullptr) {
+                if (w->objectName().startsWith(QStringLiteral("placesZone"))) {
+                    toDelete.append(w);
+                }
+            }
+        }
+        for (QWidget *w : std::as_const(toDelete)) delete w;
+
+        QWidget *placesWidget = new QWidget();
+        placesWidget->setObjectName(QStringLiteral("placesZone") + zone);
+        placesWidget->setStyleSheet(QStringLiteral("background: transparent; border: none;"));
+        QVBoxLayout *mainLayout = new QVBoxLayout(placesWidget);
+        mainLayout->setSpacing(5);
+        mainLayout->setContentsMargins(3, 3, 3, 3);
+
+        QString zoneIcon;
+        QString zoneBadgeColor;
+        QString zoneTitleText;
+        if (zone == QStringLiteral("Nord")) {
+            zoneIcon = QStringLiteral("\u2193");
+            zoneBadgeColor = QStringLiteral("#1565c0");
+            zoneTitleText = QStringLiteral("CHENAL D'ENTREE (Z4)");
+        } else if (zone == QStringLiteral("Ouest")) {
+            zoneIcon = QStringLiteral("\u25C0");
+            zoneBadgeColor = QStringLiteral("#6a1b9a");
+            zoneTitleText = QStringLiteral("QUAI OUEST (Z1)");
+        } else if (zone == QStringLiteral("Est")) {
+            zoneIcon = QStringLiteral("\u25B6");
+            zoneBadgeColor = QStringLiteral("#f57f17");
+            zoneTitleText = QStringLiteral("QUAI EST (Z2)");
+        } else {
+            zoneIcon = QStringLiteral("\u2191");
+            zoneBadgeColor = QStringLiteral("#2e7d32");
+            zoneTitleText = QStringLiteral("BASSIN CENTRAL (Z3)");
+        }
+
+        QLabel *zoneTitle = new QLabel(QStringLiteral("%1  %2").arg(zoneIcon, zoneTitleText));
+        zoneTitle->setAlignment(Qt::AlignCenter);
+        zoneTitle->setStyleSheet(QStringLiteral(
+            "color: white; font-weight: bold; font-size: 9px; "
+            "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 %1, stop:1 %2); "
+            "border: none; border-radius: 10px; padding: 4px 14px;")
+            .arg(zoneBadgeColor, QColor(zoneBadgeColor).lighter(130).name()));
+        mainLayout->addWidget(zoneTitle, 0, Qt::AlignCenter);
+
+        if (zone == QStringLiteral("Nord")) {
+            layout->addWidget(placesWidget, 0, Qt::AlignCenter);
+            return;
+        }
+
+        QList<QPair<int, QString>> ordered = quaisParZone.value(zone);
+        auto statusRank = [](const QString &s) -> int {
+            const QString v = s.trimmed().toLower();
+            if (v == QStringLiteral("libre")) return 0;
+            if (v == QStringLiteral("maintenance")) return 1;
+            if (v == QStringLiteral("occupe")) return 2;
+            if (v == QStringLiteral("ferme")) return 3;
+            return 4;
+        };
+        std::sort(ordered.begin(), ordered.end(), [&](const QPair<int, QString> &a, const QPair<int, QString> &b) {
+            const int ra = statusRank(a.second);
+            const int rb = statusRank(b.second);
+            return (ra == rb) ? (a.first < b.first) : (ra < rb);
+        });
+
+        QWidget *gridWidget = new QWidget();
+        gridWidget->setStyleSheet(QStringLiteral("background: transparent; border: none;"));
+        QGridLayout *grid = new QGridLayout(gridWidget);
+        grid->setSpacing(4);
+        grid->setContentsMargins(0, 2, 0, 0);
+
+        for (int i = 0; i < ordered.size(); ++i) {
+            const int qid = ordered.at(i).first;
+            const QString statut = ordered.at(i).second;
+
+            const int row = (zone == QStringLiteral("Sud")) ? 0 : i;
+            const int col = (zone == QStringLiteral("Sud")) ? i : 0;
+
+            QString bgStart;
+            QString bgEnd;
+            QString borderColor;
+            QString statusEmoji;
+
+            const bool isFermeStatus = (statut.compare(QStringLiteral("Ferme"), Qt::CaseInsensitive) == 0);
+            const bool isWeatherLocked = isFermeStatus && m_quaisFermeMeteo && m_quaisAutoLocked.contains(qid);
+
+            if (isFermeStatus) {
+                bgStart = QStringLiteral("#000000");
+                bgEnd = QStringLiteral("#000000");
+                borderColor = QStringLiteral("#000000");
+                statusEmoji = QStringLiteral("\u26D4");
+            } else if (statut.compare(QStringLiteral("Libre"), Qt::CaseInsensitive) == 0) {
+                bgStart = QStringLiteral("#66bb6a");
+                bgEnd = QStringLiteral("#43a047");
+                borderColor = QStringLiteral("#2e7d32");
+                statusEmoji = QStringLiteral("\u2713");
+            } else if (statut.compare(QStringLiteral("Occupe"), Qt::CaseInsensitive) == 0) {
+                bgStart = QStringLiteral("#ef5350");
+                bgEnd = QStringLiteral("#e53935");
+                borderColor = QStringLiteral("#c62828");
+                statusEmoji = QStringLiteral("\u26D4");
+            } else if (statut.compare(QStringLiteral("Maintenance"), Qt::CaseInsensitive) == 0) {
+                bgStart = QStringLiteral("#ffa726");
+                bgEnd = QStringLiteral("#fb8c00");
+                borderColor = QStringLiteral("#ef6c00");
+                statusEmoji = QStringLiteral("\u2699");
+            } else {
+                bgStart = QStringLiteral("#90a4ae");
+                bgEnd = QStringLiteral("#78909c");
+                borderColor = QStringLiteral("#546e7a");
+                statusEmoji = QStringLiteral("?");
             }
 
-            // Fonction pour mettre ├á jour l'affichage d'une zone donn├⌐e
-            auto updateZonePlaces = [&](const QString &zone, QVBoxLayout *layout) {
-                if (!layout) return;
+            QWidget *tileWidget = new QWidget();
+            tileWidget->setFixedSize(46, 50);
+            QString tooltip = QStringLiteral("Quai %1\nZone: %2\nStatut: %3").arg(qid).arg(zone).arg(statut);
+            if (isWeatherLocked) {
+                tooltip += QStringLiteral("\nFerme (meteo dangereuse)");
+            }
+            tileWidget->setToolTip(tooltip);
 
-                // Supprimer les anciens widgets "places" s'ils existent
-                QList<QWidget*> toDelete;
-                for (int i = 0; i < layout->count(); ++i) {
-                    QWidget *w = layout->itemAt(i) ? layout->itemAt(i)->widget() : nullptr;
-                    if (w && w->objectName().startsWith(QStringLiteral("placesZone"))) {
-                        toDelete.append(w);
-                    }
-                }
-                for (QWidget *w : toDelete) delete w;
+            const QString borderSides = QStringLiteral(
+                "border-left: 2px solid %1; border-right: 2px solid %1; border-bottom: 2px solid %1; border-top: 0px;")
+                .arg(borderColor);
+            tileWidget->setStyleSheet(QStringLiteral(
+                "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 %1, stop:1 %2); "
+                "border-radius: 0px; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; "
+                "border: 2px solid transparent; %3")
+                .arg(bgStart, bgEnd, borderSides));
 
-                // Conteneur principal de la zone
-                QWidget *placesWidget = new QWidget();
-                placesWidget->setObjectName(QStringLiteral("placesZone") + zone);
-                placesWidget->setStyleSheet(QStringLiteral("background: transparent; border: none;"));
-                QVBoxLayout *mainVLayout = new QVBoxLayout(placesWidget);
-                mainVLayout->setSpacing(5);
-                mainVLayout->setContentsMargins(3, 3, 3, 3);
+            QVBoxLayout *tileLayout = new QVBoxLayout(tileWidget);
+            tileLayout->setSpacing(0);
+            tileLayout->setContentsMargins(2, 3, 2, 3);
 
-                // Emoji de direction
-                QString zoneIcon;
-                QString zoneBadgeColor;
-                if (zone == QStringLiteral("Nord")) {
-                    zoneIcon = QStringLiteral("\u2191"); // ↑
-                    zoneBadgeColor = QStringLiteral("#1565c0");
-                } else if (zone == QStringLiteral("Sud")) {
-                    zoneIcon = QStringLiteral("\u2193"); // ↓
-                    zoneBadgeColor = QStringLiteral("#2e7d32");
-                } else if (zone == QStringLiteral("Est")) {
-                    zoneIcon = QStringLiteral("\u2192"); // →
-                    zoneBadgeColor = QStringLiteral("#f57f17");
-                } else if (zone == QStringLiteral("Ouest")) {
-                    zoneIcon = QStringLiteral("\u2190"); // ←
-                    zoneBadgeColor = QStringLiteral("#6a1b9a");
-                }
+            QLabel *idLbl = new QLabel(QString::number(qid));
+            idLbl->setAlignment(Qt::AlignCenter);
+            idLbl->setStyleSheet(QStringLiteral("color: white; font-weight: bold; font-size: 11px; background: transparent; border: none;"));
+            tileLayout->addWidget(idLbl);
 
-                // Titre de la zone : badge color├⌐ avec ombre
-                const auto &list = quaisParZone.value(zone);
-                QLabel *zoneTitle = new QLabel(QStringLiteral("  %1 %2  ").arg(zoneIcon).arg(zone));
-                zoneTitle->setAlignment(Qt::AlignCenter);
-                zoneTitle->setStyleSheet(QStringLiteral(
-                    "color: white; font-weight: bold; font-size: 11px; "
-                    "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, "
-                    "stop:0 %1, stop:1 %2); border: none; "
-                    "border-radius: 10px; padding: 4px 14px; "
-                    "letter-spacing: 1px;")
-                    .arg(zoneBadgeColor)
-                    .arg(QColor(zoneBadgeColor).lighter(130).name()));
-                mainVLayout->addWidget(zoneTitle, 0, Qt::AlignCenter);
+            QLabel *iconLbl = new QLabel(statusEmoji);
+            iconLbl->setAlignment(Qt::AlignCenter);
+            iconLbl->setStyleSheet(QStringLiteral("color: white; font-size: 12px; background: transparent; border: none;"));
+            tileLayout->addWidget(iconLbl);
 
-                // Grille pour les carreaux
-                QWidget *gridWidget = new QWidget();
-                gridWidget->setStyleSheet(QStringLiteral("background: transparent; border: none;"));
-                QGridLayout *grid = new QGridLayout(gridWidget);
-                grid->setSpacing(4);
-                grid->setContentsMargins(0, 2, 0, 0);
-
-                const int maxCols = 3;
-                for (int i = 0; i < list.size(); ++i) {
-                    int qid = list[i].first;
-                    QString statut = list[i].second;
-                    int row = i / maxCols;
-                    int col = i % maxCols;
-
-                    // Couleurs selon le statut avec d├⌐grad├⌐
-                    QString bgStart, bgEnd, borderColor, statusEmoji;
-                    if (statut.compare(QStringLiteral("Libre"), Qt::CaseInsensitive) == 0) {
-                        bgStart = QStringLiteral("#66bb6a");
-                        bgEnd = QStringLiteral("#43a047");
-                        borderColor = QStringLiteral("#2e7d32");
-                        statusEmoji = QStringLiteral("\u2713"); // ✓
-                    } else if (statut.compare(QStringLiteral("Occupe"), Qt::CaseInsensitive) == 0) {
-                        bgStart = QStringLiteral("#ef5350");
-                        bgEnd = QStringLiteral("#e53935");
-                        borderColor = QStringLiteral("#c62828");
-                        statusEmoji = QStringLiteral("\u26D4"); // ⛔
-                    } else if (statut.compare(QStringLiteral("Maintenance"), Qt::CaseInsensitive) == 0) {
-                        bgStart = QStringLiteral("#ffa726");
-                        bgEnd = QStringLiteral("#fb8c00");
-                        borderColor = QStringLiteral("#ef6c00");
-                        statusEmoji = QStringLiteral("\u2699"); // ⚙
-                    } else {
-                        bgStart = QStringLiteral("#90a4ae");
-                        bgEnd = QStringLiteral("#78909c");
-                        borderColor = QStringLiteral("#546e7a");
-                        statusEmoji = QStringLiteral("?");
-                    }
-
-                    // Carreau avec d├⌐grad├⌐, ID + emoji statut
-                    QWidget *tileWidget = new QWidget();
-                    tileWidget->setFixedSize(46, 50);
-                    tileWidget->setToolTip(QStringLiteral(
-                        "Quai %1\nZone: %2\nStatut: %3")
-                        .arg(qid).arg(zone).arg(statut));
-                    tileWidget->setStyleSheet(QStringLiteral(
-                        "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-                        "stop:0 %1, stop:1 %2); "
-                        "border: 2px solid %3; border-radius: 12px;")
-                        .arg(bgStart).arg(bgEnd).arg(borderColor));
-
-                    QVBoxLayout *tileLay = new QVBoxLayout(tileWidget);
-                    tileLay->setSpacing(0);
-                    tileLay->setContentsMargins(2, 3, 2, 3);
-
-                    // ID du quai
-                    QLabel *idLbl = new QLabel(QString::number(qid));
-                    idLbl->setAlignment(Qt::AlignCenter);
-                    idLbl->setStyleSheet(QStringLiteral(
-                        "color: white; font-weight: bold; font-size: 11px; "
-                        "background: transparent; border: none;"));
-                    tileLay->addWidget(idLbl);
-
-                    // Emoji statut
-                    QLabel *iconLbl = new QLabel(statusEmoji);
-                    iconLbl->setAlignment(Qt::AlignCenter);
-                    iconLbl->setStyleSheet(QStringLiteral(
-                        "font-size: 12px; background: transparent; border: none;"));
-                    tileLay->addWidget(iconLbl);
-
-                    grid->addWidget(tileWidget, row, col, Qt::AlignCenter);
-                }
-
-                mainVLayout->addWidget(gridWidget, 0, Qt::AlignCenter);
-
-                // Si aucun quai dans cette zone
-                if (list.isEmpty()) {
-                    QLabel *emptyLabel = new QLabel(QStringLiteral("Aucun quai"));
-                    emptyLabel->setAlignment(Qt::AlignCenter);
-                    emptyLabel->setStyleSheet(QStringLiteral(
-                        "color: #90a4ae; font-size: 9px; font-style: italic; "
-                        "background: transparent; border: none;"));
-                    mainVLayout->addWidget(emptyLabel);
-                }
-
-                layout->addWidget(placesWidget, 0, Qt::AlignCenter);
-            };
-
-            // Mettre ├á jour chaque zone
-            updateZonePlaces(QStringLiteral("Nord"),  ui->verticalLayout_zoneNord);
-            updateZonePlaces(QStringLiteral("Sud"),   ui->verticalLayout_zoneSud);
-            updateZonePlaces(QStringLiteral("Est"),   ui->verticalLayout_zoneEst);
-            updateZonePlaces(QStringLiteral("Ouest"), ui->verticalLayout_zoneOuest);
+            grid->addWidget(tileWidget, row, col, Qt::AlignCenter);
         }
-    }
+
+        mainLayout->addWidget(gridWidget, 0, Qt::AlignCenter);
+
+        if (ordered.isEmpty()) {
+            QLabel *emptyLabel = new QLabel(QStringLiteral("Aucun quai"));
+            emptyLabel->setAlignment(Qt::AlignCenter);
+            emptyLabel->setStyleSheet(QStringLiteral("color: #90a4ae; font-size: 9px; font-style: italic; background: transparent; border: none;"));
+            mainLayout->addWidget(emptyLabel);
+        }
+
+        layout->addWidget(placesWidget, 0, Qt::AlignCenter);
+    };
+
+    rebuildZone(QStringLiteral("Nord"), ui->verticalLayout_zoneNord);
+    rebuildZone(QStringLiteral("Sud"), ui->verticalLayout_zoneSud);
+    rebuildZone(QStringLiteral("Est"), ui->verticalLayout_zoneEst);
+    rebuildZone(QStringLiteral("Ouest"), ui->verticalLayout_zoneOuest);
 }
 
 void MainWindow::on_btnExportMapPdf_clicked()
@@ -10386,44 +11329,370 @@ void MainWindow::updateWeatherLabels(const QString& icon,
                                      const QString& temperatureText,
                                      const QString& descriptionText,
                                      const QString& windText,
-                                     const QString& humidityText)
+                                     const QString& humidityText,
+                                     const QString& hourlyText,
+                                     const QString& dailyText,
+                                     bool isDay)
 {
     if (!ui) return;
 
+    auto htmlEscaped = [](const QString& s) -> QString {
+        return s.toHtmlEscaped();
+    };
+
+    auto emphasizedLines = [&](const QString& text) -> QString {
+        const QStringList lines = text.split(QStringLiteral("\n"), Qt::KeepEmptyParts);
+        const QString primary = lines.value(0).trimmed();
+        const QString secondary = lines.mid(1).join(QStringLiteral("<br>")).trimmed();
+
+        QString html = QStringLiteral("<div style=\"font-family:'Segoe UI';line-height:1.45;\">");
+        if (!primary.isEmpty()) {
+            html += QStringLiteral("<div style=\"font-size:14px;font-weight:800;color:#0B1F36;\">%1</div>")
+                        .arg(htmlEscaped(primary));
+        }
+        if (!secondary.isEmpty()) {
+            html += QStringLiteral("<div style=\"margin-top:4px;font-size:12px;font-weight:600;color:rgba(11,31,54,170);\">%1</div>")
+                        .arg(secondary);
+        }
+        html += QStringLiteral("</div>");
+        return html;
+    };
+
+    struct MeteoMetric {
+        QString label;
+        QString value;
+    };
+
+    auto parseMetric = [](const QString& segment) -> MeteoMetric {
+        MeteoMetric metric;
+        const int colon = segment.indexOf(QLatin1Char(':'));
+        if (colon < 0) {
+            metric.value = segment.trimmed();
+            return metric;
+        }
+        metric.label = segment.left(colon).trimmed();
+        metric.value = segment.mid(colon + 1).trimmed();
+        return metric;
+    };
+
+    auto metricsGrid = [&](const QString& text, int maxCols, const QColor &accent) -> QString {
+        const QStringList lines = text.split(QStringLiteral("\n"), Qt::SkipEmptyParts);
+        QVector<MeteoMetric> metrics;
+        metrics.reserve(16);
+
+        for (const QString &line : lines) {
+            const QStringList parts = line.split(QStringLiteral(" • "), Qt::SkipEmptyParts);
+            for (const QString &part : parts) {
+                const MeteoMetric metric = parseMetric(part);
+                if (!metric.label.isEmpty() || !metric.value.isEmpty()) {
+                    metrics.push_back(metric);
+                }
+            }
+        }
+
+        if (metrics.isEmpty()) {
+            return QStringLiteral("<div style=\"font-family:'Segoe UI';font-size:11px;line-height:1.5;color:rgba(11,31,54,170);\">%1</div>")
+                .arg(htmlEscaped(text.trimmed()));
+        }
+
+        const int cols = qBound(1, maxCols, 4);
+        const int colPct = 100 / cols;
+        const int ar = accent.red();
+        const int ag = accent.green();
+        const int ab = accent.blue();
+
+        QString html = QStringLiteral("<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:separate;border-spacing:12px 12px;\"><tr>");
+        int col = 0;
+        for (const MeteoMetric &metric : metrics) {
+            if (col == cols) {
+                html += QStringLiteral("</tr><tr>");
+                col = 0;
+            }
+
+            html += QStringLiteral(
+                "<td width=\"%1%\"><div style=\"width:100%;padding:12px 14px;border-radius:16px;"
+                "background:rgba(%2,%3,%4,0.10);border:1px solid rgba(%2,%3,%4,0.20);\">")
+                .arg(QString::number(colPct),
+                     QString::number(ar),
+                     QString::number(ag),
+                     QString::number(ab));
+
+            if (!metric.label.isEmpty()) {
+                html += QStringLiteral("<div style=\"font-size:10px;font-weight:900;color:rgba(11,31,54,160);\">%1</div>")
+                            .arg(htmlEscaped(metric.label.toUpper()));
+            }
+
+            html += QStringLiteral("<div style=\"margin-top:4px;font-size:13px;font-weight:900;color:#0B1F36;line-height:1.4;\">%1</div></div></td>")
+                        .arg(htmlEscaped(metric.value.isEmpty() ? QStringLiteral("--") : metric.value));
+            ++col;
+        }
+
+        html += QStringLiteral("</tr></table>");
+        return html;
+    };
+
+    auto chipLine = [&](const QString& fullText) -> QString {
+        const QStringList lines = fullText.split(QStringLiteral("\n"), Qt::KeepEmptyParts);
+        const QString mainLine = lines.value(0).trimmed();
+        const QString metaLine = lines.mid(1).join(QStringLiteral(" • ")).trimmed();
+
+        const int colon = mainLine.indexOf(QLatin1Char(':'));
+        const QString header = (colon >= 0) ? mainLine.left(colon).trimmed() : QString();
+        const QString body = (colon >= 0) ? mainLine.mid(colon + 1).trimmed() : mainLine;
+
+        QStringList parts = body.split(QStringLiteral("  | "), Qt::SkipEmptyParts);
+        if (parts.size() == 1) {
+            parts = body.split(QStringLiteral("|"), Qt::SkipEmptyParts);
+            for (QString &part : parts) part = part.trimmed();
+        }
+
+        QString html = QStringLiteral("<div style=\"font-family:'Segoe UI';line-height:1.45;\">");
+        if (!header.isEmpty()) {
+            html += QStringLiteral("<div style=\"font-size:11px;font-weight:800;color:rgba(11,31,54,190);margin-bottom:6px;\">%1</div>")
+                        .arg(htmlEscaped(header));
+        }
+
+        if (!parts.isEmpty()) {
+            html += QStringLiteral("<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:separate;border-spacing:8px 8px;\"><tr>");
+            int col = 0;
+            for (const QString &part : parts) {
+                if (col == 4) {
+                    html += QStringLiteral("</tr><tr>");
+                    col = 0;
+                }
+                html += QStringLiteral(
+                    "<td style=\"background:rgba(2,132,199,0.10);border:1px solid rgba(2,132,199,0.18);"
+                    "border-radius:14px;padding:7px 10px;white-space:nowrap;\">"
+                    "<span style=\"font-size:11px;font-weight:900;color:#0B1F36;\">%1</span></td>")
+                    .arg(htmlEscaped(part));
+                ++col;
+            }
+            html += QStringLiteral("</tr></table>");
+        } else {
+            html += QStringLiteral("<div style=\"font-size:11px;color:rgba(11,31,54,170);\">%1</div>").arg(htmlEscaped(body));
+        }
+
+        if (!metaLine.isEmpty()) {
+            html += QStringLiteral("<div style=\"margin-top:6px;font-size:11px;font-weight:700;color:rgba(11,31,54,165);\">%1</div>")
+                        .arg(htmlEscaped(metaLine));
+        }
+        html += QStringLiteral("</div>");
+        return html;
+    };
+
+    auto dailyColor = [](int weatherCode) -> QColor {
+        if (weatherCode == 0 || weatherCode == 1) return QColor(245, 158, 11);
+        if (weatherCode == 2) return QColor(56, 189, 248);
+        if (weatherCode == 3 || weatherCode == 45 || weatherCode == 48) return QColor(148, 163, 184);
+        if ((weatherCode >= 51 && weatherCode <= 57) || (weatherCode >= 61 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 82)) {
+            return QColor(14, 165, 233);
+        }
+        if ((weatherCode >= 71 && weatherCode <= 77) || weatherCode == 85 || weatherCode == 86) {
+            return QColor(99, 102, 241);
+        }
+        if (weatherCode >= 95 && weatherCode <= 99) {
+            return QColor(249, 115, 22);
+        }
+        return QColor(2, 132, 199);
+    };
+
+    auto dailyChips = [&]() -> QString {
+        QString header = QStringLiteral("Tendance (5 jours)");
+        const QString firstLine = dailyText.split(QStringLiteral("\n")).value(0);
+        const int colon = firstLine.indexOf(QLatin1Char(':'));
+        if (colon > 0) header = firstLine.left(colon).trimmed();
+
+        QString html = QStringLiteral("<div style=\"font-family:'Segoe UI';line-height:1.45;\">");
+        html += QStringLiteral("<div style=\"font-size:11px;font-weight:900;color:rgba(11,31,54,190);margin-bottom:8px;\">%1</div>")
+                    .arg(htmlEscaped(header));
+
+        if (m_dailyForecast.isEmpty()) {
+            html += QStringLiteral("<div style=\"font-size:11px;color:rgba(11,31,54,170);\">%1</div></div>").arg(htmlEscaped(dailyText));
+            return html;
+        }
+
+        html += QStringLiteral("<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:separate;border-spacing:10px 10px;\"><tr>");
+        const QLocale frLocale(QLocale::French, QLocale::France);
+        int col = 0;
+        for (int i = 0; i < m_dailyForecast.size(); ++i) {
+            if (col == 4) {
+                html += QStringLiteral("</tr><tr>");
+                col = 0;
+            }
+
+            const DailyForecastItem &day = m_dailyForecast.at(i);
+            const QString dayName = day.date.isValid()
+                ? frLocale.dayName(day.date.dayOfWeek(), QLocale::ShortFormat)
+                : QStringLiteral("Jour %1").arg(i + 1);
+            const QString dateStr = day.date.isValid() ? day.date.toString(QStringLiteral("dd/MM")) : QStringLiteral("--/--");
+            const QString temp = QStringLiteral("%1/%2°C").arg(QString::number(day.tMin, 'f', 0), QString::number(day.tMax, 'f', 0));
+            const QString prob = (day.probMax >= 0) ? QStringLiteral("%1%").arg(day.probMax) : QString();
+            const QColor accent = dailyColor(day.code);
+            const int ar = accent.red();
+            const int ag = accent.green();
+            const int ab = accent.blue();
+            const bool selected = (i == m_selectedDailyIndex);
+
+            const QString bg = selected
+                ? QStringLiteral("rgba(%1,%2,%3,0.22)").arg(ar).arg(ag).arg(ab)
+                : QStringLiteral("rgba(%1,%2,%3,0.10)").arg(ar).arg(ag).arg(ab);
+            const QString border = selected
+                ? QStringLiteral("rgba(%1,%2,%3,0.55)").arg(ar).arg(ag).arg(ab)
+                : QStringLiteral("rgba(%1,%2,%3,0.22)").arg(ar).arg(ag).arg(ab);
+
+            const QString content = QStringLiteral(
+                "<div style=\"padding:10px 12px;border-radius:16px;background:%1;border:1px solid %2;\">"
+                "<div style=\"font-size:10px;font-weight:900;color:rgba(11,31,54,170);\">%3 <span style=\"font-weight:800;color:rgba(11,31,54,140);\">%4</span></div>"
+                "<div style=\"margin-top:4px;font-size:12px;font-weight:900;color:#0B1F36;\">%5 <span style=\"margin-left:8px;\">%6</span></div>"
+                "<div style=\"margin-top:3px;font-size:11px;font-weight:900;color:rgba(11,31,54,170);\">%7</div>"
+                "</div>")
+                .arg(bg, border, htmlEscaped(dayName), htmlEscaped(dateStr), htmlEscaped(temp), htmlEscaped(weatherIconEmoji(day.code)), htmlEscaped(prob));
+
+            html += QStringLiteral("<td><a href=\"daily:%1\" style=\"text-decoration:none;color:inherit;\">%2</a></td>")
+                        .arg(i).arg(content);
+            ++col;
+        }
+        html += QStringLiteral("</tr></table><div style=\"margin-top:6px;font-size:11px;font-weight:800;color:rgba(11,31,54,150);\">Cliquez sur un jour pour les details</div></div>");
+        return html;
+    };
+
     if (ui->labelMeteoIcon) {
-        ui->labelMeteoIcon->setStyleSheet(QStringLiteral(
+        const QString dayStyle = QStringLiteral(
             "qproperty-alignment: AlignCenter;"
-            "font-size: 28px;"
-            "color: rgb(0, 0, 90);"
-            "image: none;"));
+            "font-size: 32px;"
+            "color: white;"
+            "background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 rgba(0,149,255,255), stop:1 rgba(0,102,204,255));"
+            "border-radius: 28px;"
+            "border: 1px solid rgba(255,255,255,70);");
+        const QString nightStyle = QStringLiteral(
+            "qproperty-alignment: AlignCenter;"
+            "font-size: 32px;"
+            "color: white;"
+            "background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:1, stop:0 rgba(10,20,70,255), stop:1 rgba(2,4,30,255));"
+            "border-radius: 28px;"
+            "border: 1px solid rgba(255,255,255,55);");
+        ui->labelMeteoIcon->setStyleSheet(isDay ? dayStyle : nightStyle);
         ui->labelMeteoIcon->setText(icon);
     }
     if (ui->labelMeteoTemp) {
-        ui->labelMeteoTemp->setText(temperatureText);
+        ui->labelMeteoTemp->setTextFormat(Qt::RichText);
+        ui->labelMeteoTemp->setText(QStringLiteral(
+            "<div style=\"font-family:'Segoe UI';font-size:36px;font-weight:900;color:#0B1F36;\">%1</div>")
+            .arg(htmlEscaped(temperatureText)));
     }
     if (ui->labelMeteoDesc) {
-        ui->labelMeteoDesc->setText(descriptionText);
+        ui->labelMeteoDesc->setTextFormat(Qt::RichText);
+        ui->labelMeteoDesc->setText(emphasizedLines(descriptionText));
     }
     if (ui->labelMeteoWind) {
-        ui->labelMeteoWind->setText(windText);
+        ui->labelMeteoWind->setTextFormat(Qt::RichText);
+        ui->labelMeteoWind->setText(metricsGrid(windText, 2, QColor(2, 132, 199)));
     }
     if (ui->labelMeteoHumidity) {
-        ui->labelMeteoHumidity->setText(humidityText);
+        ui->labelMeteoHumidity->setTextFormat(Qt::RichText);
+        ui->labelMeteoHumidity->setText(metricsGrid(humidityText, 3, QColor(99, 102, 241)));
+    }
+    if (ui->labelMeteoHourly) {
+        ui->labelMeteoHourly->setTextFormat(Qt::RichText);
+        ui->labelMeteoHourly->setText(chipLine(hourlyText));
+    }
+    if (ui->labelMeteoDaily) {
+        ui->labelMeteoDaily->setTextFormat(Qt::RichText);
+        ui->labelMeteoDaily->setText(dailyChips());
     }
 
-    // Some labels are updated asynchronously (network), so normalize after updates.
     normalizeUiTexts();
+}
+
+void MainWindow::updateSelectedDayDetails()
+{
+    if (!ui || !ui->labelMeteoDayDetails) return;
+
+    ui->labelMeteoDayDetails->setTextFormat(Qt::RichText);
+    if (m_dailyForecast.isEmpty()) {
+        ui->labelMeteoDayDetails->clear();
+        return;
+    }
+
+    if (m_selectedDailyIndex < 0 || m_selectedDailyIndex >= m_dailyForecast.size()) {
+        m_selectedDailyIndex = 0;
+    }
+
+    auto colorForCode = [](int weatherCode) -> QColor {
+        if (weatherCode == 0 || weatherCode == 1) return QColor(245, 158, 11);
+        if (weatherCode == 2) return QColor(56, 189, 248);
+        if (weatherCode == 3 || weatherCode == 45 || weatherCode == 48) return QColor(148, 163, 184);
+        if ((weatherCode >= 51 && weatherCode <= 57) || (weatherCode >= 61 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 82)) {
+            return QColor(14, 165, 233);
+        }
+        if ((weatherCode >= 71 && weatherCode <= 77) || weatherCode == 85 || weatherCode == 86) {
+            return QColor(99, 102, 241);
+        }
+        if (weatherCode >= 95 && weatherCode <= 99) {
+            return QColor(249, 115, 22);
+        }
+        return QColor(2, 132, 199);
+    };
+
+    const DailyForecastItem &day = m_dailyForecast.at(m_selectedDailyIndex);
+    const QLocale frLocale(QLocale::French, QLocale::France);
+    const QString dayName = day.date.isValid()
+        ? frLocale.dayName(day.date.dayOfWeek(), QLocale::LongFormat)
+        : QStringLiteral("Jour");
+    const QString dateStr = day.date.isValid() ? day.date.toString(QStringLiteral("dd/MM/yyyy")) : QStringLiteral("--/--/----");
+    const QString desc = weatherDescriptionFr(day.code);
+    const QString temp = QStringLiteral("%1°C / %2°C").arg(QString::number(day.tMin, 'f', 0), QString::number(day.tMax, 'f', 0));
+    const QString prob = (day.probMax >= 0) ? QStringLiteral("%1%").arg(day.probMax) : QStringLiteral("--");
+    const QString sunrise = day.sunrise.isValid() ? day.sunrise.toString(QStringLiteral("HH:mm")) : QStringLiteral("--:--");
+    const QString sunset = day.sunset.isValid() ? day.sunset.toString(QStringLiteral("HH:mm")) : QStringLiteral("--:--");
+    const QColor accent = colorForCode(day.code);
+
+    const QString html = QStringLiteral(
+        "<div style=\"margin-top:6px;padding:10px 12px;border-radius:16px;"
+        "background:rgba(%1,%2,%3,0.08);border:1px solid rgba(%1,%2,%3,0.20);font-family:'Segoe UI';\">"
+        "<div style=\"font-size:11px;font-weight:900;color:#0B1F36;\">%4 - %5 <span style=\"margin-left:6px;\">%6</span></div>"
+        "<div style=\"margin-top:3px;font-size:10px;font-weight:800;color:rgba(11,31,54,170);\">%7</div>"
+        "<div style=\"margin-top:8px;\">"
+        "<span style=\"display:inline-block;padding:5px 10px;border-radius:12px;background:rgba(255,255,255,0.7);border:1px solid rgba(15,23,42,0.08);font-size:10px;font-weight:900;color:#0B1F36;\">Temperatures : %8</span>&nbsp;&nbsp;"
+        "<span style=\"display:inline-block;padding:5px 10px;border-radius:12px;background:rgba(255,255,255,0.7);border:1px solid rgba(15,23,42,0.08);font-size:10px;font-weight:900;color:#0B1F36;\">Pluie (max) : %9</span>&nbsp;&nbsp;"
+        "<span style=\"display:inline-block;padding:5px 10px;border-radius:12px;background:rgba(255,255,255,0.7);border:1px solid rgba(15,23,42,0.08);font-size:10px;font-weight:900;color:#0B1F36;\">Lever : %10</span>&nbsp;&nbsp;"
+        "<span style=\"display:inline-block;padding:5px 10px;border-radius:12px;background:rgba(255,255,255,0.7);border:1px solid rgba(15,23,42,0.08);font-size:10px;font-weight:900;color:#0B1F36;\">Coucher : %11</span>"
+        "</div></div>")
+        .arg(accent.red()).arg(accent.green()).arg(accent.blue())
+        .arg(dayName.toHtmlEscaped(), dateStr.toHtmlEscaped(), weatherIconEmoji(day.code).toHtmlEscaped(),
+             desc.toHtmlEscaped(), temp.toHtmlEscaped(), prob.toHtmlEscaped(),
+             sunrise.toHtmlEscaped(), sunset.toHtmlEscaped());
+
+    ui->labelMeteoDayDetails->setText(html);
 }
 
 void MainWindow::refreshWeatherForPage3()
 {
     if (!ui || !m_weatherNetwork) return;
 
+    m_dailyForecast.clear();
+    m_hasLastWeather = false;
+    updateSelectedDayDetails();
+
+    auto showWeatherError = [this](const QString &desc) {
+        updateWeatherLabels(QStringLiteral("\u26D4"),
+                            QStringLiteral("--\u00B0C"),
+                            desc,
+                            QStringLiteral("Vent : -- km/h"),
+                            QStringLiteral("Humidite : --%"),
+                            QStringLiteral("Previsions (6h) : indisponibles"),
+                            QStringLiteral("Tendance (5 jours) : indisponible"),
+                            true);
+    };
+
     updateWeatherLabels(QStringLiteral("\u23F3"),
                         QStringLiteral("--\u00B0C"),
-                        QStringLiteral("Chargement m\u00E9t\u00E9o..."),
-                        QStringLiteral("Vent: -- km/h"),
-                        QStringLiteral("Humidit\u00E9: --%"));
+                        QStringLiteral("Chargement meteo..."),
+                        QStringLiteral("Vent : -- km/h"),
+                        QStringLiteral("Humidite : --%"),
+                        QStringLiteral("Previsions (6h) : --"),
+                        QStringLiteral("Tendance (5 jours) : --"),
+                        true);
 
     QUrl geoUrl(QStringLiteral("https://geocoding-api.open-meteo.com/v1/search"));
     QUrlQuery geoQuery;
@@ -10434,108 +11703,310 @@ void MainWindow::refreshWeatherForPage3()
     geoUrl.setQuery(geoQuery);
 
     QNetworkReply* geoReply = m_weatherNetwork->get(QNetworkRequest(geoUrl));
-    connect(geoReply, &QNetworkReply::finished, this, [this, geoReply]() {
+    connect(geoReply, &QNetworkReply::finished, this, [this, geoReply, showWeatherError]() {
         const QByteArray geoPayload = geoReply->readAll();
         const QNetworkReply::NetworkError geoError = geoReply->error();
         geoReply->deleteLater();
 
         if (geoError != QNetworkReply::NoError) {
-            updateWeatherLabels(QStringLiteral("\u26D4"),
-                                QStringLiteral("--\u00B0C"),
-                                QStringLiteral("M\u00E9t\u00E9o indisponible"),
-                                QStringLiteral("Vent: -- km/h"),
-                                QStringLiteral("Humidit\u00E9: --%"));
+            showWeatherError(QStringLiteral("Meteo indisponible"));
             return;
         }
 
-        QJsonParseError parseGeoError;
-        const QJsonDocument geoDoc = QJsonDocument::fromJson(geoPayload, &parseGeoError);
-        if (parseGeoError.error != QJsonParseError::NoError || !geoDoc.isObject()) {
-            updateWeatherLabels(QStringLiteral("\u26D4"),
-                                QStringLiteral("--\u00B0C"),
-                                QStringLiteral("R\u00E9ponse m\u00E9t\u00E9o invalide"),
-                                QStringLiteral("Vent: -- km/h"),
-                                QStringLiteral("Humidit\u00E9: --%"));
+        QJsonParseError geoParseError;
+        const QJsonDocument geoDoc = QJsonDocument::fromJson(geoPayload, &geoParseError);
+        if (geoParseError.error != QJsonParseError::NoError || !geoDoc.isObject()) {
+            showWeatherError(QStringLiteral("Reponse meteo invalide"));
             return;
         }
 
-        const QJsonObject geoObj = geoDoc.object();
-        const QJsonArray results = geoObj.value(QStringLiteral("results")).toArray();
+        const QJsonArray results = geoDoc.object().value(QStringLiteral("results")).toArray();
         if (results.isEmpty() || !results.first().isObject()) {
-            updateWeatherLabels(QStringLiteral("\u26D4"),
-                                QStringLiteral("--\u00B0C"),
-                                QStringLiteral("Localisation m\u00E9t\u00E9o introuvable"),
-                                QStringLiteral("Vent: -- km/h"),
-                                QStringLiteral("Humidit\u00E9: --%"));
+            showWeatherError(QStringLiteral("Localisation meteo introuvable"));
             return;
         }
 
-        const QJsonObject firstResult = results.first().toObject();
-        const double latitude = firstResult.value(QStringLiteral("latitude")).toDouble();
-        const double longitude = firstResult.value(QStringLiteral("longitude")).toDouble();
-        const QString cityName = firstResult.value(QStringLiteral("name")).toString(m_selectedCity);
+        const QJsonObject place = results.first().toObject();
+        const double latitude = place.value(QStringLiteral("latitude")).toDouble();
+        const double longitude = place.value(QStringLiteral("longitude")).toDouble();
+        const QString cityName = place.value(QStringLiteral("name")).toString(m_selectedCity);
 
         QUrl weatherUrl(QStringLiteral("https://api.open-meteo.com/v1/forecast"));
         QUrlQuery weatherQuery;
         weatherQuery.addQueryItem(QStringLiteral("latitude"), QString::number(latitude, 'f', 6));
         weatherQuery.addQueryItem(QStringLiteral("longitude"), QString::number(longitude, 'f', 6));
         weatherQuery.addQueryItem(QStringLiteral("current"),
-                                  QStringLiteral("temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code"));
+                                  QStringLiteral("temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,pressure_msl,cloud_cover,visibility,wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,is_day"));
+        weatherQuery.addQueryItem(QStringLiteral("hourly"),
+                                  QStringLiteral("temperature_2m,weather_code,precipitation_probability,wind_speed_10m"));
+        weatherQuery.addQueryItem(QStringLiteral("daily"),
+                                  QStringLiteral("temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset,precipitation_probability_max"));
+        weatherQuery.addQueryItem(QStringLiteral("forecast_days"), QStringLiteral("5"));
         weatherQuery.addQueryItem(QStringLiteral("timezone"), QStringLiteral("auto"));
         weatherUrl.setQuery(weatherQuery);
 
         QNetworkReply* weatherReply = m_weatherNetwork->get(QNetworkRequest(weatherUrl));
-        connect(weatherReply, &QNetworkReply::finished, this, [this, weatherReply, cityName]() {
+        connect(weatherReply, &QNetworkReply::finished, this, [this, weatherReply, cityName, showWeatherError]() {
             const QByteArray weatherPayload = weatherReply->readAll();
             const QNetworkReply::NetworkError weatherError = weatherReply->error();
             weatherReply->deleteLater();
 
             if (weatherError != QNetworkReply::NoError) {
-                updateWeatherLabels(QStringLiteral("\u26D4"),
-                                    QStringLiteral("--\u00B0C"),
-                                    QStringLiteral("M\u00E9t\u00E9o indisponible (%1)").arg(cityName),
-                                    QStringLiteral("Vent: -- km/h"),
-                                    QStringLiteral("Humidit\u00E9: --%"));
+                showWeatherError(QStringLiteral("Meteo indisponible (%1)").arg(cityName));
                 return;
             }
 
-            QJsonParseError parseWeatherError;
-            const QJsonDocument weatherDoc = QJsonDocument::fromJson(weatherPayload, &parseWeatherError);
-            if (parseWeatherError.error != QJsonParseError::NoError || !weatherDoc.isObject()) {
-                updateWeatherLabels(QStringLiteral("\u26D4"),
-                                    QStringLiteral("--\u00B0C"),
-                                    QStringLiteral("Donn\u00E9es m\u00E9t\u00E9o invalides (%1)").arg(cityName),
-                                    QStringLiteral("Vent: -- km/h"),
-                                    QStringLiteral("Humidit\u00E9: --%"));
+            QJsonParseError weatherParseError;
+            const QJsonDocument weatherDoc = QJsonDocument::fromJson(weatherPayload, &weatherParseError);
+            if (weatherParseError.error != QJsonParseError::NoError || !weatherDoc.isObject()) {
+                showWeatherError(QStringLiteral("Donnees meteo invalides (%1)").arg(cityName));
                 return;
             }
 
             const QJsonObject root = weatherDoc.object();
             const QJsonObject current = root.value(QStringLiteral("current")).toObject();
             if (current.isEmpty()) {
-                updateWeatherLabels(QStringLiteral("\u26D4"),
-                                    QStringLiteral("--\u00B0C"),
-                                    QStringLiteral("Aucune m\u00E9t\u00E9o courante (%1)").arg(cityName),
-                                    QStringLiteral("Vent: -- km/h"),
-                                    QStringLiteral("Humidit\u00E9: --%"));
+                showWeatherError(QStringLiteral("Aucune meteo courante (%1)").arg(cityName));
                 return;
             }
 
             const double temp = current.value(QStringLiteral("temperature_2m")).toDouble();
             const int humidity = current.value(QStringLiteral("relative_humidity_2m")).toInt();
             const double wind = current.value(QStringLiteral("wind_speed_10m")).toDouble();
+            const double apparent = current.value(QStringLiteral("apparent_temperature")).toDouble(temp);
+            const double precipitation = current.value(QStringLiteral("precipitation")).toDouble(0.0);
+            const double pressure = current.value(QStringLiteral("pressure_msl")).toDouble(0.0);
+            const double cloudCover = current.value(QStringLiteral("cloud_cover")).toDouble(0.0);
+            const double visibilityMeters = current.value(QStringLiteral("visibility")).toDouble(0.0);
+            const double windDir = current.value(QStringLiteral("wind_direction_10m")).toDouble(-1.0);
+            const double windGusts = current.value(QStringLiteral("wind_gusts_10m")).toDouble(0.0);
             const int code = current.value(QStringLiteral("weather_code")).toInt();
+            const bool isDay = current.value(QStringLiteral("is_day")).toInt(1) == 1;
+            const QString currentTimeIso = current.value(QStringLiteral("time")).toString();
+            const QDateTime currentDt = QDateTime::fromString(currentTimeIso, Qt::ISODate);
 
-            const QString icon = weatherIconEmoji(code);
-            const QString desc = weatherDescriptionFr(code);
-            const QString tempText = QStringLiteral("%1\u00B0C").arg(QString::number(temp, 'f', 1));
-            const QString descText = QStringLiteral("%1 \u2022 %2").arg(cityName, desc);
-            const QString windText = QStringLiteral("Vent: %1 km/h").arg(QString::number(wind, 'f', 1));
-            const QString humidityText = QStringLiteral("Humidit\u00E9: %1%").arg(QString::number(humidity));
+            auto degToCompassFr = [](double degrees) -> QString {
+                if (degrees < 0.0) return QStringLiteral("--");
+                static const QStringList dirs = {
+                    QStringLiteral("N"), QStringLiteral("NNE"), QStringLiteral("NE"), QStringLiteral("ENE"),
+                    QStringLiteral("E"), QStringLiteral("ESE"), QStringLiteral("SE"), QStringLiteral("SSE"),
+                    QStringLiteral("S"), QStringLiteral("SSO"), QStringLiteral("SO"), QStringLiteral("OSO"),
+                    QStringLiteral("O"), QStringLiteral("ONO"), QStringLiteral("NO"), QStringLiteral("NNO")
+                };
+                const int idx = static_cast<int>(std::floor((degrees + 11.25) / 22.5)) % 16;
+                return dirs.value(idx, QStringLiteral("--"));
+            };
 
-            updateWeatherLabels(icon, tempText, descText, windText, humidityText);
+            const QString icon = weatherIconEmojiDayNight(code, isDay);
+            const QString tempText = QStringLiteral("%1°C").arg(QString::number(temp, 'f', 1));
+            const QString descText = QStringLiteral("%1 - %2\nMise a jour : %3")
+                .arg(cityName,
+                     weatherDescriptionFr(code),
+                     currentDt.isValid() ? currentDt.toString(QStringLiteral("HH:mm")) : QStringLiteral("--:--"));
+            const QString windDirText = (windDir >= 0.0)
+                ? QStringLiteral("%1° (%2)").arg(QString::number(windDir, 'f', 0), degToCompassFr(windDir))
+                : QStringLiteral("--");
+            const QString windText = QStringLiteral("Vent : %1 km/h • %2\nRafales : %3 km/h")
+                .arg(QString::number(wind, 'f', 1),
+                     windDirText,
+                     QString::number(windGusts, 'f', 1));
+            const QString humidityText = QStringLiteral(
+                "Humidite : %1% • Ressenti : %2°C • Pluie : %3 mm\nPression : %4 hPa • Visibilite : %5 km • Nuages : %6%")
+                .arg(humidity)
+                .arg(QString::number(apparent, 'f', 1))
+                .arg(QString::number(precipitation, 'f', 1))
+                .arg(QString::number(pressure, 'f', 0))
+                .arg(QString::number((visibilityMeters > 0.0) ? visibilityMeters / 1000.0 : 0.0, 'f', 1))
+                .arg(QString::number(cloudCover, 'f', 0));
+
+            QString hourlyText = QStringLiteral("Previsions (6h) : indisponibles");
+            const QJsonObject hourly = root.value(QStringLiteral("hourly")).toObject();
+            if (!hourly.isEmpty()) {
+                const QJsonArray times = hourly.value(QStringLiteral("time")).toArray();
+                const QJsonArray temps = hourly.value(QStringLiteral("temperature_2m")).toArray();
+                const QJsonArray codes = hourly.value(QStringLiteral("weather_code")).toArray();
+                const QJsonArray probs = hourly.value(QStringLiteral("precipitation_probability")).toArray();
+                const QJsonArray winds = hourly.value(QStringLiteral("wind_speed_10m")).toArray();
+
+                if (!times.isEmpty() && temps.size() == times.size() && codes.size() == times.size()) {
+                    int startIndex = 0;
+                    if (currentDt.isValid()) {
+                        for (int i = 0; i < times.size(); ++i) {
+                            const QDateTime hourDt = QDateTime::fromString(times.at(i).toString(), Qt::ISODate);
+                            if (hourDt.isValid() && hourDt >= currentDt) {
+                                startIndex = i;
+                                break;
+                            }
+                        }
+                    }
+
+                    QStringList parts;
+                    const int endIndex = std::min(startIndex + 6, static_cast<int>(times.size()));
+                    for (int i = startIndex; i < endIndex; ++i) {
+                        const QDateTime hourDt = QDateTime::fromString(times.at(i).toString(), Qt::ISODate);
+                        const QString hourStr = hourDt.isValid() ? hourDt.toString(QStringLiteral("HH'h'")) : QStringLiteral("--h");
+                        const double hourTemp = temps.at(i).toDouble();
+                        const int hourCode = codes.at(i).toInt();
+                        const int hourProb = (i < probs.size()) ? probs.at(i).toInt(-1) : -1;
+                        const double hourWind = (i < winds.size()) ? winds.at(i).toDouble(0.0) : 0.0;
+                        const bool hourDay = !hourDt.isValid() || (hourDt.time().hour() >= 6 && hourDt.time().hour() < 20);
+
+                        QString part = QStringLiteral("%1 %2°C %3").arg(hourStr, QString::number(hourTemp, 'f', 0), weatherIconEmojiDayNight(hourCode, hourDay));
+                        if (hourProb >= 0) part += QStringLiteral(" • %1%").arg(hourProb);
+                        if (hourWind > 0.0) part += QStringLiteral(" • %1 km/h").arg(QString::number(hourWind, 'f', 0));
+                        parts.append(part);
+                    }
+                    if (!parts.isEmpty()) {
+                        hourlyText = QStringLiteral("Previsions (6h) : %1").arg(parts.join(QStringLiteral("  | ")));
+                    }
+                }
+            }
+
+            QString dailyText = QStringLiteral("Tendance (5 jours) : indisponible");
+            m_dailyForecast.clear();
+            const QJsonObject daily = root.value(QStringLiteral("daily")).toObject();
+            if (!daily.isEmpty()) {
+                const QJsonArray times = daily.value(QStringLiteral("time")).toArray();
+                const QJsonArray tmax = daily.value(QStringLiteral("temperature_2m_max")).toArray();
+                const QJsonArray tmin = daily.value(QStringLiteral("temperature_2m_min")).toArray();
+                const QJsonArray codes = daily.value(QStringLiteral("weather_code")).toArray();
+                const QJsonArray sunrises = daily.value(QStringLiteral("sunrise")).toArray();
+                const QJsonArray sunsets = daily.value(QStringLiteral("sunset")).toArray();
+                const QJsonArray probs = daily.value(QStringLiteral("precipitation_probability_max")).toArray();
+
+                if (!times.isEmpty() && tmax.size() == times.size() && tmin.size() == times.size() && codes.size() == times.size()) {
+                    const int maxDays = std::min(5, static_cast<int>(times.size()));
+                    const QLocale frLocale(QLocale::French, QLocale::France);
+                    QStringList parts;
+                    m_dailyForecast.reserve(maxDays);
+
+                    for (int i = 0; i < maxDays; ++i) {
+                        DailyForecastItem item;
+                        item.date = QDate::fromString(times.at(i).toString(), Qt::ISODate);
+                        item.tMax = tmax.at(i).toDouble();
+                        item.tMin = tmin.at(i).toDouble();
+                        item.code = codes.at(i).toInt();
+                        item.probMax = (i < probs.size()) ? probs.at(i).toInt(-1) : -1;
+                        if (i < sunrises.size() && sunrises.at(i).isString()) {
+                            item.sunrise = QDateTime::fromString(sunrises.at(i).toString(), Qt::ISODate);
+                        }
+                        if (i < sunsets.size() && sunsets.at(i).isString()) {
+                            item.sunset = QDateTime::fromString(sunsets.at(i).toString(), Qt::ISODate);
+                        }
+                        m_dailyForecast.push_back(item);
+
+                        const QString dayName = item.date.isValid()
+                            ? frLocale.dayName(item.date.dayOfWeek(), QLocale::ShortFormat)
+                            : QStringLiteral("Jour %1").arg(i + 1);
+                        QString part = QStringLiteral("%1 %2/%3°C %4")
+                            .arg(dayName,
+                                 QString::number(item.tMin, 'f', 0),
+                                 QString::number(item.tMax, 'f', 0),
+                                 weatherIconEmoji(item.code));
+                        if (item.probMax >= 0) {
+                            part += QStringLiteral(" %1%").arg(item.probMax);
+                        }
+                        parts.append(part);
+                    }
+
+                    if (!parts.isEmpty()) {
+                        dailyText = QStringLiteral("Tendance (5 jours) : %1\nCliquez sur un jour pour les details")
+                            .arg(parts.join(QStringLiteral("  | ")));
+                    }
+                }
+            }
+
+            const bool shouldClose = (wind >= 10.0);
+            const bool wasClosed = m_quaisFermeMeteo;
+            m_quaisFermeMeteo = shouldClose;
+
+            if (m_selectedDailyIndex < 0 || (!m_dailyForecast.isEmpty() && m_selectedDailyIndex >= m_dailyForecast.size())) {
+                m_selectedDailyIndex = 0;
+            }
+
+            m_lastWeatherIcon = icon;
+            m_lastWeatherTemp = tempText;
+            m_lastWeatherDesc = descText;
+            m_lastWeatherWind = windText;
+            m_lastWeatherHumidity = humidityText;
+            m_lastWeatherHourly = hourlyText;
+            m_lastWeatherDaily = dailyText;
+            m_lastWeatherIsDay = isDay;
+            m_hasLastWeather = true;
+
+            updateWeatherLabels(icon, tempText, descText, windText, humidityText, hourlyText, dailyText, isDay);
+            updateSelectedDayDetails();
+
+            if (shouldClose && !wasClosed) {
+                lockQuaisForWeather();
+            } else if (!shouldClose) {
+                unlockQuaisForWeather();
+            }
+
+            refreshQuaiTable();
+            if (ui->stackedWidget && ui->page_4 && ui->stackedWidget->currentWidget() == ui->page_4) {
+                refreshStats_2();
+            }
         });
     });
+}
+
+void MainWindow::lockQuaisForWeather()
+{
+    Connection *conn = Connection::getInstance();
+    if (!conn->ensureOpen()) return;
+
+    QSqlDatabase db = conn->getDatabase();
+    if (!db.isOpen()) return;
+
+    m_quaisAutoLocked.clear();
+
+    QSqlQuery selectQuery(db);
+    if (selectQuery.exec(QStringLiteral("SELECT ID_QUAI, STATUT, ID_BATEAU FROM QUAIS"))) {
+        while (selectQuery.next()) {
+            const int id = selectQuery.value(0).toInt();
+            const QString statut = selectQuery.value(1).toString().trimmed();
+            const bool hasBoat = !selectQuery.value(2).isNull() && selectQuery.value(2).toInt() > 0;
+            if (statut.compare(QStringLiteral("Occupe"), Qt::CaseInsensitive) == 0) {
+                m_quaisAutoLocked.insert(id, QStringLiteral("Occupe"));
+            } else if (statut.compare(QStringLiteral("Ferme"), Qt::CaseInsensitive) == 0 && hasBoat) {
+                m_quaisAutoLocked.insert(id, QStringLiteral("Occupe"));
+            }
+        }
+    }
+
+    QSqlQuery updateQuery(db);
+    updateQuery.prepare(QStringLiteral(
+        "UPDATE QUAIS SET STATUT = 'Ferme' "
+        "WHERE UPPER(STATUT) = 'OCCUPE'"));
+    updateQuery.exec();
+}
+
+void MainWindow::unlockQuaisForWeather()
+{
+    Connection *conn = Connection::getInstance();
+    if (!conn->ensureOpen()) return;
+
+    QSqlDatabase db = conn->getDatabase();
+    if (!db.isOpen()) return;
+
+    if (!m_quaisAutoLocked.isEmpty()) {
+        QSqlQuery updateQuery(db);
+        updateQuery.prepare(QStringLiteral("UPDATE QUAIS SET STATUT = :statut WHERE ID_QUAI = :id AND UPPER(STATUT) = 'FERME'"));
+        for (auto it = m_quaisAutoLocked.constBegin(); it != m_quaisAutoLocked.constEnd(); ++it) {
+            updateQuery.bindValue(QStringLiteral(":statut"), it.value());
+            updateQuery.bindValue(QStringLiteral(":id"), it.key());
+            updateQuery.exec();
+        }
+        m_quaisAutoLocked.clear();
+        return;
+    }
+
+    QSqlQuery fallbackQuery(db);
+    fallbackQuery.exec(QStringLiteral(
+        "UPDATE QUAIS "
+        "SET STATUT = CASE WHEN NVL(ID_BATEAU,0) > 0 THEN 'Occupe' ELSE 'Libre' END "
+        "WHERE UPPER(STATUT) = 'FERME'"));
 }
 
 static void exportCapturesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
@@ -11006,34 +12477,64 @@ static void updateCapturesStats(MainWindow* parent, Ui::MainWindow* ui)
 
 static QString weatherDescriptionFr(int weatherCode)
 {
-    if (weatherCode == 0) return QStringLiteral("Ensoleill\u00E9");
-    if (weatherCode >= 1 && weatherCode <= 3) return QStringLiteral("Partiellement nuageux");
-    if (weatherCode == 45 || weatherCode == 48) return QStringLiteral("Brouillard");
-    if ((weatherCode >= 51 && weatherCode <= 57) ||
-        (weatherCode >= 61 && weatherCode <= 67) ||
-        (weatherCode >= 80 && weatherCode <= 82)) {
-        return QStringLiteral("Pluie");
-    }
-    if (weatherCode >= 71 && weatherCode <= 77) return QStringLiteral("Neige");
-    if (weatherCode >= 95 && weatherCode <= 99) return QStringLiteral("Orage");
-    return QStringLiteral("Nuageux");
+    if (weatherCode == 0) return QStringLiteral("Ciel degage");
+    if (weatherCode == 1) return QStringLiteral("Principalement degage");
+    if (weatherCode == 2) return QStringLiteral("Partiellement nuageux");
+    if (weatherCode == 3) return QStringLiteral("Couvert");
+    if (weatherCode == 45) return QStringLiteral("Brouillard");
+    if (weatherCode == 48) return QStringLiteral("Brouillard givrant");
+    if (weatherCode == 51) return QStringLiteral("Bruine faible");
+    if (weatherCode == 53) return QStringLiteral("Bruine moderee");
+    if (weatherCode == 55) return QStringLiteral("Bruine forte");
+    if (weatherCode == 56) return QStringLiteral("Bruine verglaçante faible");
+    if (weatherCode == 57) return QStringLiteral("Bruine verglaçante forte");
+    if (weatherCode == 61) return QStringLiteral("Pluie faible");
+    if (weatherCode == 63) return QStringLiteral("Pluie moderee");
+    if (weatherCode == 65) return QStringLiteral("Pluie forte");
+    if (weatherCode == 66) return QStringLiteral("Pluie verglaçante faible");
+    if (weatherCode == 67) return QStringLiteral("Pluie verglaçante forte");
+    if (weatherCode == 71) return QStringLiteral("Neige faible");
+    if (weatherCode == 73) return QStringLiteral("Neige moderee");
+    if (weatherCode == 75) return QStringLiteral("Neige forte");
+    if (weatherCode == 77) return QStringLiteral("Grains de neige");
+    if (weatherCode == 80) return QStringLiteral("Averses faibles");
+    if (weatherCode == 81) return QStringLiteral("Averses moderees");
+    if (weatherCode == 82) return QStringLiteral("Averses fortes");
+    if (weatherCode == 85) return QStringLiteral("Averses de neige faibles");
+    if (weatherCode == 86) return QStringLiteral("Averses de neige fortes");
+    if (weatherCode == 95) return QStringLiteral("Orage");
+    if (weatherCode == 96) return QStringLiteral("Orage avec grele faible");
+    if (weatherCode == 99) return QStringLiteral("Orage avec grele forte");
+    return QStringLiteral("Meteo variable");
 }
 
 static QString weatherIconEmoji(int weatherCode)
 {
-    // Use BMP symbols to avoid encoding issues across toolchains.
-    if (weatherCode == 0) return QStringLiteral("\u2600\uFE0F");        // ☀️
-    if (weatherCode == 1 || weatherCode == 2) return QStringLiteral("\u26C5"); // ⛅
-    if (weatherCode == 3) return QStringLiteral("\u2601\uFE0F");        // ☁️
-    if (weatherCode == 45 || weatherCode == 48) return QStringLiteral("\u2601\uFE0F"); // ☁️ (fog fallback)
+    if (weatherCode == 0) return QStringLiteral("\u2600\uFE0F");
+    if (weatherCode == 1 || weatherCode == 2) return QStringLiteral("\u26C5");
+    if (weatherCode == 3) return QStringLiteral("\u2601\uFE0F");
+    if (weatherCode == 45 || weatherCode == 48) return QStringLiteral("\u2601\uFE0F");
     if ((weatherCode >= 51 && weatherCode <= 57) ||
         (weatherCode >= 61 && weatherCode <= 67) ||
         (weatherCode >= 80 && weatherCode <= 82)) {
-        return QStringLiteral("\u2614"); // ☔
+        return QStringLiteral("\u2614");
     }
-    if (weatherCode >= 71 && weatherCode <= 77) return QStringLiteral("\u2744\uFE0F"); // ❄️
-    if (weatherCode >= 95 && weatherCode <= 99) return QStringLiteral("\u26A1");      // ⚡
+    if (weatherCode >= 71 && weatherCode <= 77) return QStringLiteral("\u2744\uFE0F");
+    if (weatherCode >= 95 && weatherCode <= 99) return QStringLiteral("\u26A1");
     return QStringLiteral("\u2601\uFE0F");
+}
+
+static QString weatherIconEmojiDayNight(int weatherCode, bool isDay)
+{
+    if (isDay) {
+        return weatherIconEmoji(weatherCode);
+    }
+
+    if (weatherCode == 0 || weatherCode == 1 || weatherCode == 2) {
+        return QStringLiteral("\u263E");
+    }
+
+    return weatherIconEmoji(weatherCode);
 }
 
 void MainWindow::on_btnCapturep_clicked()

@@ -4,6 +4,7 @@
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QDebug>
+#include <QMetaType>
 
 Quai::Quai() {}
 
@@ -204,11 +205,27 @@ bool Quai::ajouter(const QVariantMap &donnees)
         }
     }
 
+    // ID_BATEAU optionnel :
+    // - 0 ou valeur manquante  => NULL en base (aucun bateau)
+    // - > 0                    => cl├⌐ existante dans BATEAUX
+    QVariant idBateauVar;
+    if (donnees.contains("ID_BATEAU")) {
+        const int idBateau = donnees.value("ID_BATEAU").toInt();
+        if (idBateau > 0) {
+            idBateauVar = idBateau;
+        } else {
+            // force un NULL pour ne pas violer la contrainte FK_QUAI_BATEAU
+            idBateauVar = QVariant(QMetaType::fromType<int>());
+        }
+    } else {
+        idBateauVar = QVariant(QMetaType::fromType<int>());
+    }
+
     QSqlQuery query(db);
     // Utilisation de paramètres positionnels "?" comme dans les autres insertions du projet,
     // pour éviter les problèmes du driver ODBC avec les noms de paramètres.
-    query.prepare("INSERT INTO QUAIS (ID_QUAI, NOM_QUAI, ZONE_PORT, ZONE_COUVERTE, LONGUEUR, CAPACITE_QUAIS, STATUT) "
-                  "VALUES (?, ?, ?, ?, ?, ?, ?)");
+    query.prepare("INSERT INTO QUAIS (ID_QUAI, NOM_QUAI, ZONE_PORT, ZONE_COUVERTE, LONGUEUR, CAPACITE_QUAIS, STATUT, ID_BATEAU) "
+                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
 
     query.addBindValue(idQuai);
     query.addBindValue(donnees.value("NOM_QUAI").toString());
@@ -217,6 +234,7 @@ bool Quai::ajouter(const QVariantMap &donnees)
     query.addBindValue(donnees.value("LONGUEUR").toDouble());
     query.addBindValue(donnees.value("CAPACITE_QUAIS").toInt());
     query.addBindValue(donnees.value("STATUT").toString());
+    query.addBindValue(idBateauVar);
 
     if (!query.exec()) {
         m_lastError = query.lastError().text();
@@ -238,7 +256,7 @@ QList<QVariantMap> Quai::lister()
 
     QSqlQuery query(db);
     query.setForwardOnly(true);
-    if (!query.exec("SELECT ID_QUAI, NOM_QUAI, ZONE_PORT, ZONE_COUVERTE, LONGUEUR, CAPACITE_QUAIS, STATUT FROM QUAIS")) {
+    if (!query.exec("SELECT ID_QUAI, NOM_QUAI, ZONE_PORT, ZONE_COUVERTE, LONGUEUR, CAPACITE_QUAIS, STATUT, ID_BATEAU FROM QUAIS")) {
         m_lastError = query.lastError().text();
         qDebug() << "Erreur affichage quais:" << m_lastError;
         return liste;
@@ -253,6 +271,7 @@ QList<QVariantMap> Quai::lister()
         ligne["LONGUEUR"] = query.value(4);
         ligne["CAPACITE_QUAIS"] = query.value(5);
         ligne["STATUT"] = query.value(6);
+        ligne["ID_BATEAU"] = query.value(7);
         liste.append(ligne);
     }
     return liste;
@@ -271,8 +290,19 @@ bool Quai::modifier(int id, const QVariantMap &donnees)
     QStringList sets;
     QVariantList values;
     for (auto it = donnees.begin(); it != donnees.end(); ++it) {
-        sets << QString("%1 = ?").arg(it.key());
-        values << it.value();
+        QString col = it.key();
+        QVariant val = it.value();
+
+        if (col.compare(QStringLiteral("ID_BATEAU"), Qt::CaseInsensitive) == 0) {
+            // M├¬me logique que pour l'ajout : 0 ou valeur vide => NULL (aucun bateau)
+            int idBateau = val.toInt();
+            if (idBateau <= 0) {
+                val = QVariant(QMetaType::fromType<int>());
+            }
+        }
+
+        sets << QString("%1 = ?").arg(col);
+        values << val;
     }
     QString sql = QString("UPDATE QUAIS SET %1 WHERE ID_QUAI = ?").arg(sets.join(", "));
     QSqlQuery query(db);
@@ -321,7 +351,7 @@ QVariantMap Quai::chargerInfos(int id)
     }
 
     QSqlQuery query(db);
-    query.prepare("SELECT ID_QUAI, NOM_QUAI, ZONE_PORT, ZONE_COUVERTE, LONGUEUR, CAPACITE_QUAIS, STATUT FROM QUAIS WHERE ID_QUAI = ?");
+    query.prepare("SELECT ID_QUAI, NOM_QUAI, ZONE_PORT, ZONE_COUVERTE, LONGUEUR, CAPACITE_QUAIS, STATUT, ID_BATEAU FROM QUAIS WHERE ID_QUAI = ?");
     query.addBindValue(id);
     if (query.exec() && query.next()) {
         infos["ID_QUAI"] = query.value(0);
@@ -331,6 +361,7 @@ QVariantMap Quai::chargerInfos(int id)
         infos["LONGUEUR"] = query.value(4);
         infos["CAPACITE_QUAIS"] = query.value(5);
         infos["STATUT"] = query.value(6);
+        infos["ID_BATEAU"] = query.value(7);
     } else if (query.lastError().isValid()) {
         m_lastError = query.lastError().text();
     }

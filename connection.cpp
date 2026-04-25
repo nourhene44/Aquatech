@@ -30,16 +30,21 @@ Connection* Connection::getInstance() {
 bool Connection::createconnect() {
     try {
         // 🔧 PARAMÈTRES DE CONNEXION - À MODIFIER SELON VOTRE CONFIG
-        QString nomSourceDonnees = "Nourhene";  // Nom de votre source ODBC
-        QString nomUtilisateur = "hr";            // Nom d'utilisateur Oracle
-        QString motDePasse = "hr";              // Mot de passe Oracle
+        QString nomUtilisateur = "nour1";           // Nom d'utilisateur Oracle
+        QString motDePasse = "nour123";                  // Mot de passe Oracle
+        QString hote = "localhost";                  // Adresse du serveur
+        int port = 1521;                             // Port Oracle
+        QString sid = "XE";                          // SID de votre base (XE, ORCL, etc.)
 
-        // Configuration de la connexion
-        db.setDatabaseName(nomSourceDonnees);  // ← Correction: plus de variable 'source'
-        db.setUserName(nomUtilisateur);        // ← Correction: plus de variable 'hr'
-        db.setPassword(motDePasse);            // ← Correction: plus de variable 'hr'
-        db.setHostName("localhost");
-        db.setPort(1521);  // Port par défaut d'Oracle
+        // Méthode 1: Chaîne de connexion ODBC complète (recommandée)
+        QString connectionString = QString(
+                                       "DRIVER={Oracle in XE};"            // Driver Oracle détecté sur votre système
+                                       "DBQ=%1:%2/%3;"                     // Format: hote:port/sid
+                                       "UID=%4;"
+                                       "PWD=%5;"
+                                       ).arg(hote).arg(port).arg(sid).arg(nomUtilisateur).arg(motDePasse);
+
+        db.setDatabaseName(connectionString);
 
         // Tentative d'ouverture de la connexion
         if (!db.open()) {
@@ -53,7 +58,8 @@ bool Connection::createconnect() {
         }
 
         qDebug() << "✅ Connexion à la base de données établie avec succès !";
-        qDebug() << "📌 Nom de la source : " << nomSourceDonnees;
+        qDebug() << "📌 Hôte : " << hote << ":" << port;
+        qDebug() << "📌 SID : " << sid;
         qDebug() << "👤 Utilisateur : " << nomUtilisateur;
 
         QMessageBox::information(nullptr,
@@ -101,5 +107,17 @@ bool Connection::ensureOpen() {
 }
 
 QString Connection::lastErrorText() const {
+    return db.lastError().text();
+}
+
+QStringList Connection::availableDrivers() const {
+    return QSqlDatabase::drivers();
+}
+
+QString Connection::selectedDriver() const {
+    return db.driverName();
+}
+
+QString Connection::lastError() const {
     return db.lastError().text();
 }

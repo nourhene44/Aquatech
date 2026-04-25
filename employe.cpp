@@ -137,16 +137,6 @@ static QString canonicalEquipe(const QString &raw)
 	return QString();
 }
 
-static int employeRoleCodeForId(const QString& roleRaw)
-{
-	const QString role = canonicalRole(roleRaw);
-	if (role == QStringLiteral("Gardien")) return 3;
-	if (role == QStringLiteral("Technicien")) return 4;
-	if (role == QStringLiteral("Responsable")) return 5;
-	if (role == QStringLiteral("Ouvrier")) return 6;
-	return 0;
-}
-
 static bool isValidPersonName(const QString& text)
 {
 	static const QRegularExpression pattern(QStringLiteral("^[A-Za-zÀ-ÿ\\s'-]+$"));

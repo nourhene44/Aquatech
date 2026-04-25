@@ -42,6 +42,11 @@ public:
     // Helpers used by UI code
     bool ensureOpen();
     QString lastErrorText() const;
+
+    // Méthodes pour obtenir les informations du driver
+    QStringList availableDrivers() const;
+    QString selectedDriver() const;
+    QString lastError() const;
 };
 
 #endif // CONNECTION_H

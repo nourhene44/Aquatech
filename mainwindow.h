@@ -7,7 +7,9 @@
 #include <QLabel>
 #include <QDateTime>
 #include <QTimer>
+#include <QHash>
 #include <QSet>
+#include <QVector>
 #include "connection.h"
 #include "quai.h"
 #include "pecheurs.h"
@@ -200,6 +202,30 @@ private:
     QTimer* m_weatherTimer = nullptr;
     QNetworkAccessManager* m_weatherNetwork = nullptr;
     QString m_selectedCity = QStringLiteral("Bizerte");
+    bool m_quaisFermeMeteo = false;
+    QHash<int, QString> m_quaisAutoLocked;
+
+    struct DailyForecastItem {
+        QDate date;
+        double tMin = 0.0;
+        double tMax = 0.0;
+        int code = 0;
+        int probMax = -1;
+        QDateTime sunrise;
+        QDateTime sunset;
+    };
+    QVector<DailyForecastItem> m_dailyForecast;
+    int m_selectedDailyIndex = 0;
+
+    QString m_lastWeatherIcon;
+    QString m_lastWeatherTemp;
+    QString m_lastWeatherDesc;
+    QString m_lastWeatherWind;
+    QString m_lastWeatherHumidity;
+    QString m_lastWeatherHourly;
+    QString m_lastWeatherDaily;
+    bool m_lastWeatherIsDay = true;
+    bool m_hasLastWeather = false;
 
     // --- Arduino / Serial integration (Qt SerialPort) ---
     ArduinoSerial* m_arduino = nullptr;
@@ -283,11 +309,17 @@ private:
     void updateCapturesTableLiveTemperature(double temperatureC);
     void applyQuaiFilters();
     void refreshWeatherForPage3();
+    void lockQuaisForWeather();
+    void unlockQuaisForWeather();
     void updateWeatherLabels(const QString& icon,
                              const QString& temperatureText,
                              const QString& descriptionText,
                              const QString& windText,
-                             const QString& humidityText);
+                             const QString& humidityText,
+                             const QString& hourlyText = QString(),
+                             const QString& dailyText = QString(),
+                             bool isDay = true);
+    void updateSelectedDayDetails();
     bool exportWidgetToPdf(QWidget *widget,
                            const QString &defaultFileName,
                            const QString &dialogTitle);

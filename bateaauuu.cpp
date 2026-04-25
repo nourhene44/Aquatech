@@ -3,8 +3,11 @@
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSqlError>
+#include <QMetaType>
 #include <QVariant>
 #include <QDebug>
+#include <QSet>
+#include <QStringList>
 
 static QString g_lastError;
 
@@ -41,7 +44,7 @@ bool ensureDbOpen(QSqlDatabase* outDb = nullptr)
 
 QVariant bindableDate(const QDate& date)
 {
-    return date.isValid() ? QVariant(date) : QVariant(QVariant::Date);
+    return date.isValid() ? QVariant(date) : QVariant(QMetaType::fromType<QDate>());
 }
 
 bool execQuery(QSqlQuery& query)
@@ -59,6 +62,42 @@ bool execQuery(QSqlQuery& query)
                       .arg(e.text(), e.driverText(), query.lastQuery());
     qWarning() << "Query failed:" << g_lastError;
     return false;
+}
+
+QString resolveBateauMaintenanceFrequencyColumn(QSqlDatabase db)
+{
+    if (!db.isValid() || !db.isOpen()) {
+        return QString();
+    }
+
+    QSqlQuery query(db);
+    query.prepare(QStringLiteral(
+        "SELECT COLUMN_NAME "
+        "FROM USER_TAB_COLUMNS "
+        "WHERE UPPER(TABLE_NAME) = 'BATEAUX'"));
+
+    if (!query.exec()) {
+        return QString();
+    }
+
+    QSet<QString> availableColumns;
+    while (query.next()) {
+        availableColumns.insert(query.value(0).toString().trimmed().toUpper());
+    }
+
+    static const QStringList candidates = {
+        QStringLiteral("PROCHAINE_MAINTENANCE"),
+        QStringLiteral("FREQUENCE_MAINTENANCE"),
+        QStringLiteral("FREQUENCE")
+    };
+
+    for (const QString& candidate : candidates) {
+        if (availableColumns.contains(candidate)) {
+            return candidate;
+        }
+    }
+
+    return QString();
 }
 
 } // namespace
@@ -99,10 +138,37 @@ static bool ensureZeroBoatExists(QSqlDatabase& db)
     }
 
     QSqlQuery ins(db);
-    ins.prepare(
-        "INSERT INTO BATEAUX "
-        "(ID_BATEAU, NOM, TYPE, CAPACITE, PROPRIETAIRE, STATUT, LARGEUR, PROCHAINE_MAINTENANCE, DATE_ENTREE, DATE_DERNIERE_MAINTENANCE) "
-        "VALUES (0, :nom, :type, 0, :prop, :statut, 0, 0, NULL, NULL)");
+    QStringList cols = {
+        QStringLiteral("ID_BATEAU"),
+        QStringLiteral("NOM"),
+        QStringLiteral("TYPE"),
+        QStringLiteral("CAPACITE"),
+        QStringLiteral("PROPRIETAIRE"),
+        QStringLiteral("STATUT"),
+        QStringLiteral("LARGEUR"),
+        QStringLiteral("DATE_ENTREE"),
+        QStringLiteral("DATE_DERNIERE_MAINTENANCE")
+    };
+    QStringList vals = {
+        QStringLiteral("0"),
+        QStringLiteral(":nom"),
+        QStringLiteral(":type"),
+        QStringLiteral("0"),
+        QStringLiteral(":prop"),
+        QStringLiteral(":statut"),
+        QStringLiteral("0"),
+        QStringLiteral("NULL"),
+        QStringLiteral("NULL")
+    };
+
+    const QString maintenanceFrequencyColumn = resolveBateauMaintenanceFrequencyColumn(db);
+    if (!maintenanceFrequencyColumn.isEmpty()) {
+        cols.insert(7, maintenanceFrequencyColumn);
+        vals.insert(7, QStringLiteral("0"));
+    }
+
+    ins.prepare(QStringLiteral("INSERT INTO BATEAUX (%1) VALUES (%2)")
+                    .arg(cols.join(QStringLiteral(", ")), vals.join(QStringLiteral(", "))));
     ins.bindValue(":nom", QStringLiteral("aucun bateau"));
     ins.bindValue(":type", defaultType);
     ins.bindValue(":prop", QStringLiteral("SYSTEME"));
@@ -172,6 +238,7 @@ bool bateaauuu::addBateau(const QString& id, const QString& nom, const QString& 
     QSqlDatabase db;
     if (!ensureDbOpen(&db)) return false;
 
+    const QString maintenanceFrequencyColumn = resolveBateauMaintenanceFrequencyColumn(db);
     QStringList cols = {
         QStringLiteral("ID_BATEAU"),
         QStringLiteral("NOM"),
@@ -179,8 +246,7 @@ bool bateaauuu::addBateau(const QString& id, const QString& nom, const QString& 
         QStringLiteral("CAPACITE"),
         QStringLiteral("PROPRIETAIRE"),
         QStringLiteral("STATUT"),
-        QStringLiteral("LARGEUR"),
-        QStringLiteral("PROCHAINE_MAINTENANCE")
+        QStringLiteral("LARGEUR")
     };
     QStringList vals = {
         QStringLiteral(":id"),
@@ -189,9 +255,13 @@ bool bateaauuu::addBateau(const QString& id, const QString& nom, const QString& 
         QStringLiteral(":capacite"),
         QStringLiteral(":proprietaire"),
         QStringLiteral(":statut"),
-        QStringLiteral(":largeur"),
-        QStringLiteral(":frequence")
+        QStringLiteral(":largeur")
     };
+
+    if (!maintenanceFrequencyColumn.isEmpty()) {
+        cols << maintenanceFrequencyColumn;
+        vals << QStringLiteral(":frequence");
+    }
 
     // Preserve previous behavior: if date is invalid, omit the column so DB defaults can apply.
     if (date_entree.isValid()) {
@@ -213,7 +283,9 @@ bool bateaauuu::addBateau(const QString& id, const QString& nom, const QString& 
     query.bindValue(QStringLiteral(":proprietaire"), proprietaire);
     query.bindValue(QStringLiteral(":statut"), statut);
     query.bindValue(QStringLiteral(":largeur"), largeur);
-    query.bindValue(QStringLiteral(":frequence"), frequence_maintenance);
+    if (!maintenanceFrequencyColumn.isEmpty()) {
+        query.bindValue(QStringLiteral(":frequence"), frequence_maintenance);
+    }
     if (date_entree.isValid()) {
         query.bindValue(QStringLiteral(":date_entree"), date_entree);
     }
@@ -234,19 +306,25 @@ bool bateaauuu::updateBateau(const QString& id, const QString& nom, const QStrin
     QSqlDatabase db;
     if (!ensureDbOpen(&db)) return false;
 
+    QStringList updates = {
+        QStringLiteral("NOM = :nom"),
+        QStringLiteral("TYPE = :type"),
+        QStringLiteral("CAPACITE = :capacite"),
+        QStringLiteral("PROPRIETAIRE = :proprietaire"),
+        QStringLiteral("STATUT = :statut"),
+        QStringLiteral("LARGEUR = :largeur"),
+        QStringLiteral("DATE_ENTREE = :date_entree"),
+        QStringLiteral("DATE_DERNIERE_MAINTENANCE = :date_derniere_maintenance")
+    };
+    const QString maintenanceFrequencyColumn = resolveBateauMaintenanceFrequencyColumn(db);
+    if (!maintenanceFrequencyColumn.isEmpty()) {
+        updates << QStringLiteral("%1 = :frequence").arg(maintenanceFrequencyColumn);
+    }
+
     QSqlQuery query(db);
     query.prepare(QStringLiteral(
-        "UPDATE BATEAUX SET "
-        "NOM = :nom, "
-        "TYPE = :type, "
-        "CAPACITE = :capacite, "
-        "PROPRIETAIRE = :proprietaire, "
-        "STATUT = :statut, "
-        "LARGEUR = :largeur, "
-        "DATE_ENTREE = :date_entree, "
-        "DATE_DERNIERE_MAINTENANCE = :date_derniere_maintenance, "
-        "PROCHAINE_MAINTENANCE = :frequence "
-        "WHERE ID_BATEAU = :id"));
+        "UPDATE BATEAUX SET %1 WHERE ID_BATEAU = :id")
+                      .arg(updates.join(QStringLiteral(", "))));
 
     query.bindValue(QStringLiteral(":nom"), nom);
     query.bindValue(QStringLiteral(":type"), type);
@@ -256,7 +334,9 @@ bool bateaauuu::updateBateau(const QString& id, const QString& nom, const QStrin
     query.bindValue(QStringLiteral(":largeur"), largeur);
     query.bindValue(QStringLiteral(":date_entree"), bindableDate(date_entree));
     query.bindValue(QStringLiteral(":date_derniere_maintenance"), bindableDate(date_derniere_maintenance));
-    query.bindValue(QStringLiteral(":frequence"), frequence_maintenance);
+    if (!maintenanceFrequencyColumn.isEmpty()) {
+        query.bindValue(QStringLiteral(":frequence"), frequence_maintenance);
+    }
     query.bindValue(QStringLiteral(":id"), id.trimmed());
 
     return execQuery(query);
