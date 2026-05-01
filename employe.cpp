@@ -14,25 +14,55 @@
 
 static QString normalizeKey(QString text)
 {
-	text = text.trimmed().toLower();
+	// On utilise simplified() pour gérer les espaces multiples, tabs, newlines
+	// et on passe en minuscule pour la comparaison.
+	text = text.simplified().toLower();
+	
+	// Remplacement des caractères accentués courants
 	text.replace(QStringLiteral("é"), QStringLiteral("e"));
 	text.replace(QStringLiteral("è"), QStringLiteral("e"));
 	text.replace(QStringLiteral("ê"), QStringLiteral("e"));
 	text.replace(QStringLiteral("à"), QStringLiteral("a"));
-	text.replace(QStringLiteral("ù"), QStringLiteral("u"));
+	text.replace(QStringLiteral("â"), QStringLiteral("a"));
 	text.replace(QStringLiteral("î"), QStringLiteral("i"));
+	text.replace(QStringLiteral("ï"), QStringLiteral("i"));
 	text.replace(QStringLiteral("ô"), QStringLiteral("o"));
-	text.replace(QStringLiteral("ç"), QStringLiteral("c"));
-	text.remove(QLatin1Char('_'));
-	text.remove(QLatin1Char(' '));
-	return text;
+	text.replace(QStringLiteral("û"), QStringLiteral("u"));
+	
+	// Suppression de tout ce qui n'est pas alphanumérique pour une comparaison brute
+	QString result;
+	for (const QChar &c : text) {
+		if (c.isLetterOrNumber()) {
+			result.append(c);
+		}
+	}
+	return result;
 }
 
 static QString normalizeRfidKey(QString text)
 {
 	text = text.trimmed().toUpper();
-	text.remove(QLatin1Char(' '));
+	text.remove(QRegularExpression(QStringLiteral("[^0-9A-Z]+")));
 	return text;
+}
+
+static QString sqlNormalizedRfidExpr(const QString &column)
+{
+	QString expr = QStringLiteral("UPPER(TRIM(%1))").arg(column);
+	const QStringList charsToStrip = {
+		QStringLiteral(" "),
+		QStringLiteral("-"),
+		QStringLiteral(":"),
+		QStringLiteral("."),
+		QStringLiteral("/"),
+		QStringLiteral("\\")
+	};
+
+	for (const QString &ch : charsToStrip) {
+		expr = QStringLiteral("REPLACE(%1, '%2', '')").arg(expr, ch);
+	}
+
+	return expr;
 }
 
 static QString resolveEmployeTableName(QSqlDatabase db)
@@ -122,11 +152,44 @@ static QString canonicalEtat(const QString &raw)
 static QString canonicalStatut(const QString &raw)
 {
 	const QString key = normalizeKey(raw);
-	if (key.contains(QStringLiteral("indispon"))) return QStringLiteral("Indisponible");
-	if (key.contains(QStringLiteral("mission"))) return QStringLiteral("En mission");
-	if (key.contains(QStringLiteral("conge"))) return QStringLiteral("Congé");
-	if (key.contains(QStringLiteral("dispon"))) return QStringLiteral("Disponible");
+	
+	// Détection par mots-clés pour gérer les troncatures ou variations
+	if (key.contains(QStringLiteral("indispo")) || 
+		key.contains(QStringLiteral("absent")) || 
+		key.contains(QStringLiteral("nonpo"))) 
+		return QStringLiteral("Indisponible");
+		
+	if (key.contains(QStringLiteral("mission")) || 
+		key.contains(QStringLiteral("deplacement"))) 
+		return QStringLiteral("En mission");
+		
+	if (key.contains(QStringLiteral("conge")) || 
+		key.contains(QStringLiteral("vacance"))) 
+		return QStringLiteral("Congé");
+		
+	if (key.contains(QStringLiteral("dispo")) || 
+		key.contains(QStringLiteral("present")) || 
+		key.contains(QStringLiteral("libre")) ||
+		key.contains(QStringLiteral("actif"))) 
+		return QStringLiteral("Disponible");
+		
+	// Valeur par défaut si rien n'est reconnu
 	return raw.trimmed();
+}
+
+static QString toggledStatutForRfid(const QString &raw)
+{
+	// On normalise le statut actuel
+	const QString current = canonicalStatut(raw);
+	
+	// Basculement strict : Disponible <-> Indisponible
+	// Si l'employé est "Disponible", il devient "Indisponible"
+	if (current == QStringLiteral("Disponible")) {
+		return QStringLiteral("Indisponible");
+	}
+	
+	// Dans tous les autres cas (Indisponible, En mission, Congé), on le remet en "Disponible"
+	return QStringLiteral("Disponible");
 }
 
 static QString canonicalEquipe(const QString &raw)
@@ -281,10 +344,11 @@ static bool employeRfidExists(QSqlDatabase db,
 	}
 
 	QSqlQuery query(db);
+	const QString rfidExpr = sqlNormalizedRfidExpr(map.rfid);
 	QString sql = QStringLiteral(
 		"SELECT COUNT(1) FROM %1 "
-		"WHERE REPLACE(UPPER(TRIM(%2)), ' ', '') = :rfid")
-				  .arg(map.table, map.rfid);
+		"WHERE %2 = :rfid")
+				  .arg(map.table, rfidExpr);
 	if (excludeId > 0) {
 		sql += QStringLiteral(" AND %1 <> :excludeId").arg(map.id);
 	}
@@ -305,6 +369,78 @@ static bool employeRfidExists(QSqlDatabase db,
 	}
 
 	return true;
+}
+static bool findEmployeByRfid(QSqlDatabase db,
+						  const EmployeDbMap &map,
+						  const QString &rfidId,
+						  QVariant &employeIdOut,
+						  QString &statutOut,
+						  QString &nomOut,
+						  QString &prenomOut,
+						  QString &err,
+						  QString *etatOut = nullptr)
+{
+	employeIdOut.clear();
+	statutOut.clear();
+	nomOut.clear();
+	prenomOut.clear();
+	err.clear();
+	if (etatOut) {
+		etatOut->clear();
+	}
+
+	if (map.id.isEmpty() || map.rfid.isEmpty() || map.statut.isEmpty()) {
+		err = QStringLiteral("Configuration RFID/statut invalide.");
+		return false;
+	}
+
+	const QString rfidKey = normalizeRfidKey(rfidId);
+	if (rfidKey.isEmpty()) {
+		err = QStringLiteral("UID RFID vide ou invalide.");
+		return false;
+	}
+
+	QSqlQuery query(db);
+	QStringList selectCols;
+	selectCols << map.id << map.rfid << map.statut << map.nom;
+	if (!map.prenom.isEmpty()) {
+		selectCols << map.prenom;
+	} else {
+		selectCols << QStringLiteral("''"); // Fallback
+	}
+	if (!map.etat.isEmpty()) {
+		selectCols << map.etat;
+	} else {
+		selectCols << QStringLiteral("''");
+	}
+
+	query.prepare(QStringLiteral("SELECT %1 FROM %2")
+						.arg(selectCols.join(QStringLiteral(", ")), map.table));
+	if (!query.exec()) {
+		err = query.lastError().text();
+		return false;
+	}
+
+	while (query.next()) {
+		const QString dbRfid = normalizeRfidKey(query.value(1).toString());
+		if (dbRfid.isEmpty()) {
+			continue;
+		}
+
+		if (dbRfid == rfidKey) {
+			employeIdOut = query.value(0);
+			statutOut = query.value(2).toString().trimmed();
+			nomOut = query.value(3).toString().trimmed();
+			prenomOut = query.value(4).toString().trimmed();
+			if (etatOut) {
+				*etatOut = query.value(5).toString().trimmed();
+			}
+			return true;
+		}
+	}
+
+	err = QStringLiteral("Aucun employé trouvé avec ce RFID: %1").arg(rfidId);
+	return false;
 }
 
 QString Employe::s_lastError;
@@ -764,7 +900,69 @@ int Employe::genererNouvelId(const QString &role)
 	return nextId;
 }
 
-bool Employe::updateStatutByRfid(const QString &rfidId, QString *nouveauStatutOut)
+bool Employe::canAccessByRfid(const QString &rfidId, QString *nomEmployeOut, QString *reasonOut)
+{
+	if (nomEmployeOut) {
+		nomEmployeOut->clear();
+	}
+	if (reasonOut) {
+		reasonOut->clear();
+	}
+
+	Connection* conn = Connection::getInstance();
+	if (!conn->ensureOpen()) {
+		s_lastError = QStringLiteral("Connexion DB echouee: %1").arg(conn->lastErrorText());
+		if (reasonOut) {
+			*reasonOut = s_lastError;
+		}
+		return false;
+	}
+
+	QSqlDatabase db = conn->getDatabase();
+	EmployeDbMap map;
+	QString mapErr;
+	if (!resolveEmployeDbMap(db, map, mapErr)) {
+		s_lastError = mapErr;
+		if (reasonOut) {
+			*reasonOut = s_lastError;
+		}
+		return false;
+	}
+
+	QVariant employeId;
+	QString statutActuel;
+	QString nomEmp;
+	QString prenomEmp;
+	QString err;
+	QString etatEmp;
+	if (!findEmployeByRfid(db, map, rfidId, employeId, statutActuel, nomEmp, prenomEmp, err, &etatEmp)) {
+		s_lastError = err;
+		if (reasonOut) {
+			*reasonOut = s_lastError;
+		}
+		return false;
+	}
+
+	Q_UNUSED(employeId);
+	Q_UNUSED(statutActuel);
+
+	if (nomEmployeOut) {
+		*nomEmployeOut = QStringLiteral("%1 %2").arg(prenomEmp, nomEmp).trimmed();
+	}
+
+	if (canonicalEtat(etatEmp) == QStringLiteral("Banni")) {
+		s_lastError = QStringLiteral("Acces refuse: employe banni.");
+		if (reasonOut) {
+			*reasonOut = s_lastError;
+		}
+		return false;
+	}
+
+	s_lastError.clear();
+	return true;
+}
+
+bool Employe::updateStatutByRfid(const QString &rfidId, const QString &forcedStatut, QString *nouveauStatutOut, QString *nomEmployeOut)
 {
 	Connection* conn = Connection::getInstance();
 	if (!conn->ensureOpen()) {
@@ -780,95 +978,105 @@ bool Employe::updateStatutByRfid(const QString &rfidId, QString *nouveauStatutOu
 		return false;
 	}
 
-	if (map.rfid.isEmpty()) {
-		s_lastError = QStringLiteral("Colonne RFID introuvable dans la base.");
-		return false;
-	}
-
-	if (map.statut.isEmpty()) {
-		s_lastError = QStringLiteral("Colonne statut introuvable dans la base.");
-		return false;
-	}
-
-	const bool canTx = db.driver() && db.driver()->hasFeature(QSqlDriver::Transactions);
-	if (canTx && !db.transaction()) {
-		s_lastError = QStringLiteral("Impossible de démarrer la transaction RFID.");
-		return false;
-	}
-
-	QSqlQuery query(db);
-	
 	const QString rfidClean = normalizeRfidKey(rfidId);
-	qDebug() << "ℹ️ RFID - table cible:" << map.table << "| colonne RFID:" << map.rfid << "| colonne statut:" << map.statut;
+	qDebug() << "--- DÉBUT RFID POINTAGE ---";
+	qDebug() << "Badge scanné (nettoyé) :" << rfidClean;
 
-	// On recherche le statut actuel (insensible à la casse et aux espaces)
-	query.prepare(QStringLiteral("SELECT %1 FROM %2 WHERE REPLACE(UPPER(TRIM(%3)), ' ', '') = :rfid")
-					  .arg(map.statut, map.table, map.rfid));
-	query.bindValue(QStringLiteral(":rfid"), rfidClean);
-	
-	QString nouveauStatut = QStringLiteral("Indisponible");
-	if (query.exec() && query.next()) {
-		QString actuelRaw = query.value(0).toString().trimmed();
-		const QString actuelCanon = canonicalStatut(actuelRaw);
-		const QString key = normalizeKey(actuelCanon);
-		
-		qDebug() << "🔍 RFID - Badge détecté [" << rfidClean << "]. Statut actuel en base :" << actuelRaw;
+	if (rfidClean.isEmpty()) {
+		s_lastError = QStringLiteral("UID RFID vide ou invalide.");
+		return false;
+	}
 
-		// Bascule stricte: Disponible <-> Indisponible
-		if (key.contains(QStringLiteral("indispon"))) {
-			nouveauStatut = QStringLiteral("Disponible");
-		} else {
-			nouveauStatut = QStringLiteral("Indisponible");
-		}
+	// 1. Rechercher l'employé pour avoir ses infos actuelles
+	QVariant employeId;
+	QString actuelRaw, nomEmp, prenomEmp, findErr;
+	if (!findEmployeByRfid(db, map, rfidClean, employeId, actuelRaw, nomEmp, prenomEmp, findErr)) {
+		qDebug() << "❌ Employé non trouvé pour RFID:" << rfidClean;
+		s_lastError = QStringLiteral("Employé non trouvé pour RFID: %1").arg(rfidClean);
+		return false;
+	}
+
+	qDebug() << "👤 Employé trouvé :" << prenomEmp << nomEmp << "(ID:" << employeId.toString() << ")";
+	qDebug() << "📊 Statut actuel en base :" << actuelRaw;
+
+	// Remplissage immédiat des infos de sortie pour l'UI (même si l'update échoue plus tard)
+	if (nomEmployeOut) {
+		*nomEmployeOut = QStringLiteral("%1 %2").arg(prenomEmp, nomEmp).trimmed();
+	}
+
+	// 2. Déterminer le nouveau statut
+	QString nouveauStatut;
+	if (!forcedStatut.isEmpty()) {
+		nouveauStatut = forcedStatut;
 	} else {
-		qDebug() << "⚠️ RFID - Badge non trouvé dans la table EMPLOYES :" << rfidClean;
-		if (canTx) db.rollback();
-		return false;
+		nouveauStatut = toggledStatutForRfid(actuelRaw);
 	}
-
-	qDebug() << "🚀 RFID - Décision finale : Passage au statut ->" << nouveauStatut;
-
-	query.prepare(QStringLiteral("UPDATE %1 SET %2 = :statut WHERE REPLACE(UPPER(TRIM(%3)), ' ', '') = :rfid")
-					  .arg(map.table, map.statut, map.rfid));
-	query.bindValue(QStringLiteral(":statut"), nouveauStatut); // On utilise directement la chaîne propre
-	query.bindValue(QStringLiteral(":rfid"), rfidClean);
-
-	if (!query.exec()) {
-		s_lastError = query.lastError().text();
-		if (canTx) db.rollback();
-		return false;
-	}
-
-	const qint64 rowsAffected = query.numRowsAffected();
-	qDebug() << "📝 RFID - lignes mises à jour :" << rowsAffected;
-	if (rowsAffected <= 0) {
-		s_lastError = QStringLiteral("Aucun employé trouvé avec ce RFID: %1").arg(rfidId);
-		if (canTx) db.rollback();
-		return false;
-	}
-
-	bool committed = false;
-	if (canTx) {
-		committed = db.commit();
-		if (!committed) {
-			s_lastError = db.lastError().text();
-			db.rollback();
-			return false;
-		}
-	} else {
-		QSqlQuery commitQuery(db);
-		committed = commitQuery.exec(QStringLiteral("COMMIT"));
-		if (!committed) {
-			s_lastError = commitQuery.lastError().text();
-			return false;
-		}
-	}
-	qDebug() << "✅ RFID - commit base effectué pour UID:" << rfidClean << "->" << nouveauStatut;
 
 	if (nouveauStatutOut) {
 		*nouveauStatutOut = nouveauStatut;
 	}
+	
+	qDebug() << "******************************************";
+	qDebug() << "[RFID] MISE À JOUR DE STATUT DETECTE";
+	qDebug() << "[RFID] Employe :" << prenomEmp << nomEmp;
+	qDebug() << "[RFID] Ancien Statut :" << actuelRaw;
+	qDebug() << "[RFID] NOUVEAU STATUT :" << nouveauStatut;
+	qDebug() << "******************************************";
 
+	// 3. Exécuter l'UPDATE par ID
+	QSqlQuery query(db);
+	// Utilisation de placeholders positionnels (?) pour une meilleure compatibilité ODBC/Oracle
+	query.prepare(QStringLiteral("UPDATE %1 SET %2 = ? WHERE %3 = ?")
+					  .arg(map.table, map.statut, map.id));
+	query.addBindValue(nouveauStatut);
+	query.addBindValue(employeId); // Utilisation directe du QVariant original
+
+	if (!query.exec()) {
+		qDebug() << "❌ Erreur SQL UPDATE (pos) :" << query.lastError().text();
+		
+		// Tentative de secours : augmenter la taille de la colonne statut au cas où (ex: "Indisponible" > 10 chars)
+		QSqlQuery alter(db);
+		alter.exec(QStringLiteral("ALTER TABLE %1 MODIFY %2 VARCHAR2(50)").arg(map.table, map.statut));
+		
+		// Ré-essai après l'éventuel ALTER
+		query.prepare(QStringLiteral("UPDATE %1 SET %2 = ? WHERE %3 = ?")
+						  .arg(map.table, map.statut, map.id));
+		query.addBindValue(nouveauStatut);
+		query.addBindValue(employeId);
+		
+		if (!query.exec()) {
+			qDebug() << "❌ Erreur SQL UPDATE (retry) :" << query.lastError().text();
+			s_lastError = QStringLiteral("Erreur SQL UPDATE : %1").arg(query.lastError().text());
+			return false;
+		}
+	}
+
+	int rows = query.numRowsAffected();
+	qDebug() << "📝 Lignes affectées :" << rows;
+
+	if (rows == 0) {
+		qDebug() << "⚠️ Aucune ligne modifiée par ID. Tentative par RFID...";
+		query.prepare(QStringLiteral("UPDATE %1 SET %2 = ? WHERE UPPER(REPLACE(%3, ' ', '')) = ?")
+						  .arg(map.table, map.statut, map.rfid));
+		query.addBindValue(nouveauStatut);
+		query.addBindValue(rfidClean);
+		if (!query.exec() || query.numRowsAffected() == 0) {
+			qDebug() << "❌ Échec total de la mise à jour.";
+			s_lastError = QStringLiteral("Échec de la mise à jour (aucune ligne affectée).");
+			return false;
+		}
+		qDebug() << "✅ Mise à jour réussie par RFID.";
+	}
+
+	// 4. COMMIT EXPLICITE
+	if (!QSqlQuery(db).exec(QStringLiteral("COMMIT"))) {
+		qDebug() << "❌ Erreur COMMIT :" << db.lastError().text();
+	}
+
+	// 5. Fin
+	qDebug() << "✅ POINTAGE TERMINÉ AVEC SUCCÈS";
+	qDebug() << "---------------------------";
+	
 	s_lastError.clear();
 	return true;
 }

@@ -17,7 +17,8 @@ SOURCES += \
     mainwindow.cpp \
     quai.cpp \
     bateaauuu.cpp \
-    pecheurs.cpp
+    pecheurs.cpp \
+    Qarduino.cpp
 
 HEADERS += \
     captures.h \
@@ -27,7 +28,8 @@ HEADERS += \
     mainwindow.h \
     quai.h \
     bateaauuu.h \
-    pecheurs.h
+    pecheurs.h \
+    Qarduino.h
 
 FORMS += \
     mainwindow.ui
@@ -41,6 +43,7 @@ RESOURCES += \
     img.qrc
 
 DEFINES += QT_DEPRECATED_WARNINGS
+win32: LIBS += -lsetupapi
 
 # Export Excel réel (.xlsx) via ActiveQt/COM (nécessite Excel installé)
 win32:qtHaveModule(axcontainer) {

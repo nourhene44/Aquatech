@@ -32,7 +32,13 @@ public:
     static int genererNouvelId(const QString &role);
 
     // RFID Pointage
-    static bool updateStatutByRfid(const QString &rfidId, QString *nouveauStatutOut = nullptr);
+    static bool canAccessByRfid(const QString &rfidId,
+                                QString *nomEmployeOut = nullptr,
+                                QString *reasonOut = nullptr);
+    static bool updateStatutByRfid(const QString &rfidId, 
+                                   const QString &forcedStatut = QString(),
+                                   QString *nouveauStatutOut = nullptr,
+                                   QString *nomEmployeOut = nullptr);
 
     // Dernière erreur rencontrée
     static QString lastError();

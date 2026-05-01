@@ -11,6 +11,7 @@
 #include "pecheurs.h"
 #include "captures.h"
 #include "employe.h"
+#include "Qarduino.h"
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -103,7 +104,6 @@ private slots:
     void on_p4b_clicked();
     void on_pushButton_clicked();
     void on_p6b_clicked();
-    void readSerial();
     void on_pushButton_10e_clicked();
     void on_pushButton_pdfb_5_clicked();
     void on_pushButton_7c_5_clicked();
@@ -155,7 +155,7 @@ private slots:
     void on_cap_btnValiider_4_clicked();
 
 public:
-    // Ajout des m├⌐thodes manquantes pour la gestion des quais
+    // Ajout des méthodes manquantes pour la gestion des quais
     void refreshQuaiTable();
     void ensureQuaiActionsColumn(const QString& css);
     void showQuaiFormPage();
@@ -165,17 +165,19 @@ public:
 protected:
     Quai m_quai;
 
+private slots:
+    void handleArduinoUid(const QString& uid);
+    void handleArduinoDoorOpened(const QString& uid);
+    void handleArduinoUploadFinished(bool success, const QString& message);
+    void on_btnUploadArduino_clicked();
+    void on_btnAnalyzeRfidQt_clicked();
+
 private:
+    void applyRfidEmployeeToggle(const QString& uid);
     Ui::MainWindow *ui;
-#ifdef Q_OS_WIN
-    HANDLE arduinoHandle = INVALID_HANDLE_VALUE;
-#endif
-    QString serialBuffer;
-    QTimer* m_serialReadTimer = nullptr;
-    QTimer* m_serialReconnectTimer = nullptr;
+    QArduino* m_arduino = nullptr;
     QString m_lastAppliedUid;
     qint64 m_lastAppliedMs = 0;
-    void setupArduino();
     QString m_editingPecheurId;
     int m_editingEmployeId = -1;
     QString m_editingClientId;

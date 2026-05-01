@@ -1,5 +1,6 @@
-﻿#include "mainwindow.h"
+#include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include <utility>
 #include <QAbstractButton>
 #include <QComboBox>
 #include <QGroupBox>
@@ -51,9 +52,12 @@
 #include <QJsonArray>
 #include <QJsonParseError>
 #include <QColor>
+#include <QFontMetrics>
+#include <QStringView>
 #include <QGraphicsDropShadowEffect>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <functional>
 #include <initializer_list>
 
@@ -64,6 +68,160 @@ static QString weatherIconEmoji(int weatherCode);
 static QString weatherIconEmojiDayNight(int weatherCode, bool isDay);
 static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui);
 static void updateCapturesStats(MainWindow* parent, Ui::MainWindow* ui);
+
+static QColor colorFromHex(uint32_t rgb, int alpha = 255)
+{
+    return QColor::fromRgb(
+        static_cast<int>((rgb >> 16) & 0xFF),
+        static_cast<int>((rgb >> 8) & 0xFF),
+        static_cast<int>(rgb & 0xFF),
+        alpha);
+}
+
+static int drawQuaiPdfHeader(QPainter& painter,
+                             int pageW,
+                             int leftMargin,
+                             int rightMargin,
+                             int topMargin,
+                             const QString& title,
+                             const QString& subtitle,
+                             const QString& exportStamp)
+{
+    const int contentW = pageW - leftMargin - rightMargin;
+    const QRect headerRect(leftMargin, topMargin, contentW, 250);
+    const int innerPadding = 36;
+
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    QLinearGradient headerGradient(headerRect.topLeft(), headerRect.bottomLeft());
+    headerGradient.setColorAt(0.0, colorFromHex(0xF5FAFF));
+    headerGradient.setColorAt(1.0, colorFromHex(0xE8F2FB));
+    painter.setPen(QPen(colorFromHex(0xC8D8E8), 2));
+    painter.setBrush(headerGradient);
+    painter.drawRoundedRect(headerRect, 24, 24);
+
+    const QPixmap logo(QStringLiteral(":/res/LOOOG.png"));
+    const bool hasLogo = !logo.isNull();
+    const int logoAreaW = hasLogo ? 300 : 0;
+    const QRect logoArea(headerRect.left() + innerPadding,
+                         headerRect.top() + 26,
+                         logoAreaW,
+                         headerRect.height() - 52);
+
+    int textLeft = headerRect.left() + innerPadding;
+    if (hasLogo) {
+        const QSize scaledSize = logo.size().scaled(logoArea.size(), Qt::KeepAspectRatio);
+        const QRect logoRect(
+            logoArea.left() + (logoArea.width() - scaledSize.width()) / 2,
+            logoArea.top() + (logoArea.height() - scaledSize.height()) / 2,
+            scaledSize.width(),
+            scaledSize.height());
+        painter.drawPixmap(logoRect, logo);
+        textLeft = logoArea.right() + 36;
+    }
+
+    const int textRight = headerRect.right() - innerPadding;
+    const QRect titleRect(textLeft, headerRect.top() + 42, textRight - textLeft, 64);
+    const QRect subtitleRect(textLeft, titleRect.bottom() + 10, textRight - textLeft, 34);
+    const QRect stampRect(textLeft, subtitleRect.bottom() + 12, textRight - textLeft, 28);
+
+    painter.setPen(colorFromHex(0x0B5EA8));
+    painter.setFont(QFont(QStringLiteral("Arial"), 20, QFont::Bold));
+    painter.drawText(titleRect, Qt::AlignLeft | Qt::AlignVCenter, title);
+
+    painter.setPen(colorFromHex(0x4F6F8E));
+    painter.setFont(QFont(QStringLiteral("Arial"), 11));
+    painter.drawText(subtitleRect, Qt::AlignLeft | Qt::AlignVCenter, subtitle);
+
+    painter.setPen(Qt::darkGray);
+    painter.setFont(QFont(QStringLiteral("Arial"), 10, QFont::Bold));
+    painter.drawText(stampRect, Qt::AlignLeft | Qt::AlignVCenter,
+                     QStringLiteral("Exporte le %1").arg(exportStamp));
+
+    const int dividerY = headerRect.bottom() - 28;
+    painter.setPen(QPen(colorFromHex(0xB5C7D8), 2));
+    painter.drawLine(headerRect.left() + innerPadding, dividerY,
+                     headerRect.right() - innerPadding, dividerY);
+
+    painter.restore();
+    return headerRect.bottom() + 42;
+}
+
+static void drawPdfReportFooter(QPainter& painter,
+                                int leftMargin,
+                                int contentW,
+                                int footerY,
+                                const QString& exportStamp)
+{
+    painter.save();
+    painter.setPen(colorFromHex(0x8A8A8A));
+    painter.setFont(QFont(QStringLiteral("Arial"), 9));
+    painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
+                     QStringLiteral("AQUATEC - Rapport genere le %1").arg(exportStamp));
+    painter.restore();
+}
+
+static void drawQuaiStatCard(QPainter& painter,
+                             const QRect& rect,
+                             const QString& label,
+                             const QString& value,
+                             const QColor& accent)
+{
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(QPen(colorFromHex(0xD9E4EF), 1));
+    painter.setBrush(Qt::white);
+    painter.drawRoundedRect(rect, 18, 18);
+
+    const QRect accentRect(rect.left() + 18, rect.top() + 18, 8, rect.height() - 36);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(accent);
+    painter.drawRoundedRect(accentRect, 4, 4);
+
+    painter.setPen(colorFromHex(0x607D94));
+    painter.setFont(QFont(QStringLiteral("Arial"), 10, QFont::Bold));
+    painter.drawText(QRect(rect.left() + 42, rect.top() + 18, rect.width() - 60, 24),
+                     Qt::AlignLeft | Qt::AlignVCenter, label);
+
+    painter.setPen(colorFromHex(0x0B5EA8));
+    painter.setFont(QFont(QStringLiteral("Arial"), 22, QFont::Bold));
+    painter.drawText(QRect(rect.left() + 42, rect.top() + 44, rect.width() - 60, 40),
+                     Qt::AlignLeft | Qt::AlignVCenter, value);
+
+    painter.restore();
+}
+
+static void drawQuaiSectionPanel(QPainter& painter, const QRect& rect, const QString& title)
+{
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(QPen(colorFromHex(0xD9E4EF), 1));
+    painter.setBrush(Qt::white);
+    painter.drawRoundedRect(rect, 22, 22);
+
+    painter.setPen(colorFromHex(0x0B5EA8));
+    painter.setFont(QFont(QStringLiteral("Arial"), 13, QFont::Bold));
+    painter.drawText(QRect(rect.left() + 26, rect.top() + 18, rect.width() - 52, 28),
+                     Qt::AlignLeft | Qt::AlignVCenter, title);
+
+    painter.setPen(QPen(colorFromHex(0xDCE7F1), 2));
+    painter.drawLine(rect.left() + 24, rect.top() + 58, rect.right() - 24, rect.top() + 58);
+    painter.restore();
+}
+
+static int wrappedTextHeight(const QFontMetrics& fm, const QString& text, int width, int minHeight = 0)
+{
+    const QString normalized = text.simplified();
+    if (normalized.isEmpty()) {
+        return minHeight;
+    }
+
+    const QRect bounds = fm.boundingRect(QRect(0, 0, qMax(20, width), 2000),
+                                         Qt::TextWordWrap | Qt::AlignLeft | Qt::AlignVCenter,
+                                         normalized);
+    return qMax(minHeight, bounds.height());
+}
 
 static bool handleCrudDisabled(QWidget* parent)
 {
@@ -146,7 +304,7 @@ static void loadPecheurBateauChoices(Ui::MainWindow* ui)
             const QString nom = query.value(1).toString().trimmed();
             const QString label = nom.isEmpty()
                 ? QString::number(id)
-                : QStringLiteral("%1 - %2").arg(id).arg(nom);
+                : QStringLiteral("%1 - %2").arg(QString::number(id), nom);
             combo->addItem(label, id);
         }
     }
@@ -190,9 +348,9 @@ static void loadQuaiBateauChoices(Ui::MainWindow* ui)
         while (query.next()) {
             const int id = query.value(0).toInt();
             const QString nom = query.value(1).toString().trimmed();
-            const QString label = nom.isEmpty()
+                const QString label = nom.isEmpty()
                     ? QString::number(id)
-                    : QStringLiteral("%1 - %2").arg(id).arg(nom);
+                    : QStringLiteral("%1 - %2").arg(QString::number(id), nom);
             combo->addItem(label, id);
         }
     }
@@ -271,10 +429,10 @@ static QPixmap buildDisponibiliteCirclePixmap(int disponible, int bientot, int i
     }
 
     QVector<QPair<QColor, int>> slices = {
-        { QColor(QStringLiteral("#00C853")), sDisponible },
-        { QColor(QStringLiteral("#007BFF")), sBientot },
-        { QColor(QStringLiteral("#FF1744")), sIndisponible },
-        { QColor(QStringLiteral("#9b59b6")), sEnConge }
+        { colorFromHex(0x00C853), sDisponible },
+        { colorFromHex(0x007BFF), sBientot },
+        { colorFromHex(0xFF1744), sIndisponible },
+        { colorFromHex(0x9B59B6), sEnConge }
     };
 
     int startAngle = 90 * 16;
@@ -361,10 +519,10 @@ static QPixmap buildEmployeRoleCirclePixmap(int gardien,
     }
 
     QVector<QPair<QColor, int>> slices = {
-        { QColor(QStringLiteral("#3498db")), sGardien },
-        { QColor(QStringLiteral("#27ae60")), sTechnicien },
-        { QColor(QStringLiteral("#f39c12")), sResponsable },
-        { QColor(QStringLiteral("#9b59b6")), sOuvrier }
+        { colorFromHex(0x3498DB), sGardien },
+        { colorFromHex(0x27AE60), sTechnicien },
+        { colorFromHex(0xF39C12), sResponsable },
+        { colorFromHex(0x9B59B6), sOuvrier }
     };
 
     int startAngle = 90 * 16;
@@ -411,19 +569,19 @@ static void updateEmployeRoleStats(Ui::MainWindow* ui,
     }
     if (ui->label_legend_chalutiere) {
         ui->label_legend_chalutiere->setText(
-            QStringLiteral("\u2022 Gardien: %1 (%2%)").arg(gardien).arg(pct(gardien)));
+            QStringLiteral("\u2022 Gardien: %1 (%2%)").arg(QString::number(gardien), pct(gardien)));
     }
     if (ui->label_legend_palangriere) {
         ui->label_legend_palangriere->setText(
-            QStringLiteral("\u2022 Technicien: %1 (%2%)").arg(technicien).arg(pct(technicien)));
+            QStringLiteral("\u2022 Technicien: %1 (%2%)").arg(QString::number(technicien), pct(technicien)));
     }
     if (ui->label_legend_caseyeure) {
         ui->label_legend_caseyeure->setText(
-            QStringLiteral("\u2022 Responsable: %1 (%2%)").arg(responsable).arg(pct(responsable)));
+            QStringLiteral("\u2022 Responsable: %1 (%2%)").arg(QString::number(responsable), pct(responsable)));
     }
     if (ui->label_legend_traditionale) {
         ui->label_legend_traditionale->setText(
-            QStringLiteral("\u2022 Ouvrier: %1 (%2%)").arg(ouvrier).arg(pct(ouvrier)));
+            QStringLiteral("\u2022 Ouvrier: %1 (%2%)").arg(QString::number(ouvrier), pct(ouvrier)));
     }
     if (ui->progressTypeCirclee) {
         const int size = qMin(ui->progressTypeCirclee->width(), ui->progressTypeCirclee->height());
@@ -454,19 +612,19 @@ static void updateDisponibiliteStats(
 
     if (ui->label_legend_chalutierp) {
         ui->label_legend_chalutierp->setText(
-            QStringLiteral("\u2022 Disponible: %1 (%2%)").arg(disponible).arg(pct(disponible)));
+            QStringLiteral("\u2022 Disponible: %1 (%2%)").arg(QString::number(disponible), pct(disponible)));
     }
     if (ui->label_legend_palangrierp) {
         ui->label_legend_palangrierp->setText(
-            QStringLiteral("\u2022 Disponible bient\u00F4t: %1 (%2%)").arg(bientot).arg(pct(bientot)));
+            QStringLiteral("\u2022 Disponible bient\u00F4t: %1 (%2%)").arg(QString::number(bientot), pct(bientot)));
     }
     if (ui->label_legend_caseyeurp) {
         ui->label_legend_caseyeurp->setText(
-            QStringLiteral("\u2022 Indisponible: %1 (%2%)").arg(indisponible).arg(pct(indisponible)));
+            QStringLiteral("\u2022 Indisponible: %1 (%2%)").arg(QString::number(indisponible), pct(indisponible)));
     }
     if (ui->label_legend_traditionalp) {
         ui->label_legend_traditionalp->setText(
-            QStringLiteral("\u2022 En cong\u00E9: %1 (%2%)").arg(enConge).arg(pct(enConge)));
+            QStringLiteral("\u2022 En cong\u00E9: %1 (%2%)").arg(QString::number(enConge), pct(enConge)));
     }
     if (ui->progressTypeCirclep) {
         const int size = qMin(ui->progressTypeCirclep->width(), ui->progressTypeCirclep->height());
@@ -495,6 +653,13 @@ static QString normalizeKey(const QString& s)
     out.remove(diacRx);
     out.replace(QRegularExpression(QStringLiteral("[\\s_]+")), QString());
     return out.toLower();
+}
+
+static QString normalizeRfidEventKey(QString uid)
+{
+    uid = uid.trimmed().toUpper();
+    uid.remove(QRegularExpression(QStringLiteral("[^0-9A-Z]+")));
+    return uid;
 }
 
 static QStringList dbTableNames(QSqlDatabase db)
@@ -912,7 +1077,17 @@ static void reloadTableWidgetFromDb(QTableWidget* table,
                 text = value.toString();
             }
 
-            auto *cellItem = new QTableWidgetItem(text);
+            auto *cellItem = new QTableWidgetItem();
+            
+            // Si c'est un nombre, on injecte le QVariant numérique directement dans le DisplayRole.
+            // Cela permet à QTableWidget de faire un tri numérique (10 > 6) au lieu de textuel ("6" > "10").
+            if (value.userType() == QMetaType::Int || value.userType() == QMetaType::Double || 
+                value.userType() == QMetaType::LongLong || value.userType() == QMetaType::UInt) {
+                cellItem->setData(Qt::DisplayRole, value);
+            } else {
+                cellItem->setText(text);
+            }
+            
             table->setItem(row, col, cellItem);
         }
         ++row;
@@ -1443,7 +1618,10 @@ void MainWindow::refreshClientsPage()
         bar->setRange(0, 100);
         const int percent = (total > 0) ? qRound((double)count * 100.0 / (double)total) : 0;
         bar->setValue(percent);
-        lbl->setText(QStringLiteral("%1/%2 (%3%)").arg(count).arg(total).arg(percent));
+        lbl->setText(QStringLiteral("%1/%2 (%3%)")
+                 .arg(QString::number(count),
+                      QString::number(total),
+                      QString::number(percent)));
     };
 
     updateOne(ui->progressCc,   ui->value_Cc,   countFidele);
@@ -1823,9 +2001,61 @@ if (ui->pushButton_pdfb_5) {
         });
     }
 
-    // Chargement m├⌐t├⌐o initial
+    // Chargement météo initial
     refreshWeatherForPage3();
-    setupArduino();
+
+    // --- Ajout du combo de tri pour les quais ---
+    if (ui->lineEdit_3) {
+        QWidget *parent = ui->lineEdit_3->parentWidget();
+        if (parent) {
+            QComboBox *comboTri = new QComboBox(parent);
+            comboTri->setObjectName(QStringLiteral("comboBox_sortQuais"));
+            
+            comboTri->addItem(QStringLiteral("Tri: Par d\u00E9faut"), 0);
+            comboTri->addItem(QStringLiteral("Tri: ID (Croissant)"), 1);
+            comboTri->addItem(QStringLiteral("Tri: ID (D\u00E9croissant)"), 2);
+            comboTri->addItem(QStringLiteral("Tri: Capacit\u00E9 (Croissante)"), 3);
+            comboTri->addItem(QStringLiteral("Tri: Capacit\u00E9 (D\u00E9croissante)"), 4);
+            comboTri->addItem(QStringLiteral("Tri: Longueur (Croissante)"), 5);
+            comboTri->addItem(QStringLiteral("Tri: Longueur (D\u00E9croissante)"), 6);
+
+            // Style identique aux autres combos
+            comboTri->setStyleSheet(QStringLiteral(
+                "QComboBox {"
+                "    font-size: 16px;"
+                "    padding: 6px;"
+                "    background-color: rgb(224, 238, 255);"
+                "    border: 2px solid rgb(0, 0, 115);"
+                "    border-radius: 10px;"
+                "    color: rgb(0, 0, 90);"
+                "    font-weight: 600;"
+                "}"
+            ));
+
+            // Géométrie : Placé juste à DROITE du champ RECHERCHE (lineEdit_3)
+            QRect geom = ui->lineEdit_3->geometry();
+            comboTri->setGeometry(geom.right() + 20, geom.top() - 5, 180, 41);
+            
+            connect(comboTri, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int){
+                applyQuaiFilters();
+            });
+            
+            comboTri->raise();
+        }
+    }
+
+    m_arduino = new QArduino(this);
+    connect(m_arduino, &QArduino::uidReceived, this, &MainWindow::handleArduinoUid);
+    connect(m_arduino, &QArduino::doorOpened, this, &MainWindow::handleArduinoDoorOpened);
+    connect(m_arduino, &QArduino::statusMessage, this, [this](const QString& msg){ 
+        qDebug() << "[SERIAL] STATUS :" << msg;
+        if (statusBar()) statusBar()->showMessage(msg, 5000);
+    });
+    connect(m_arduino, &QArduino::uploadFinished, this, &MainWindow::handleArduinoUploadFinished);
+    m_arduino->start();
+
+    // Petit message de confirmation au démarrage pour rassurer l'utilisateur
+    if (statusBar()) statusBar()->showMessage(QStringLiteral("Système RFID initialisé."), 3000);
 
     // Ajout du champ RFID dans le formulaire employé
     if (ui->frame_2e) {
@@ -1841,6 +2071,8 @@ if (ui->pushButton_pdfb_5) {
         if (ui->lineEdit_14e_2) {
             rfidEdit->setStyleSheet(ui->lineEdit_14e_2->styleSheet());
         }
+
+        connect(rfidEdit, &QLineEdit::returnPressed, this, &MainWindow::on_btnAnalyzeRfidQt_clicked);
     }
 
     // Ajout du statut Indisponible dans les listes déroulantes
@@ -1901,7 +2133,8 @@ void MainWindow::setupFrames()
         connect(ui->labelMeteoDaily, &QLabel::linkActivated, this, [this](const QString &link) {
             if (!link.startsWith(QStringLiteral("daily:"))) return;
             bool ok = false;
-            const int idx = link.mid(QStringLiteral("daily:").size()).toInt(&ok);
+            const QStringView linkView(link);
+            const int idx = linkView.mid(QStringLiteral("daily:").size()).toInt(&ok);
             if (!ok) return;
 
             m_selectedDailyIndex = idx;
@@ -1973,7 +2206,14 @@ void MainWindow::on_p6b_clicked()
 
 void MainWindow::loadEmployes()
 {
+    // On désactive temporairement le rafraîchissement si on est déjà en train de charger
+    // pour éviter les messages de déconnexion à répétition dans la console.
+    static bool isRefreshing = false;
+    if (isRefreshing) return;
+    isRefreshing = true;
+
     if (!ui || !ui->tableWidgetee) {
+        isRefreshing = false;
         return;
     }
 
@@ -2127,6 +2367,7 @@ void MainWindow::loadEmployes()
                            countTechnicien,
                            countResponsable,
                            countOuvrier);
+    isRefreshing = false;
 }
 
 void MainWindow::ensureEmployeActionsColumn(const QString &buttonStyle)
@@ -2643,7 +2884,7 @@ void MainWindow::loadCaptures()
     }
 
     int row = 0;
-    for (const captures::TableRowData& record : rows) {
+    for (const captures::TableRowData& record : std::as_const(rows)) {
         const int currentRow = row;
         table->insertRow(row);
 
@@ -3527,19 +3768,6 @@ void MainWindow::legacy_pushButton_7b_clicked()
 
 MainWindow::~MainWindow()
 {
-#ifdef Q_OS_WIN
-    if (m_serialReconnectTimer && m_serialReconnectTimer->isActive()) {
-        m_serialReconnectTimer->stop();
-    }
-    if (m_serialReadTimer && m_serialReadTimer->isActive()) {
-        m_serialReadTimer->stop();
-    }
-    if (arduinoHandle != INVALID_HANDLE_VALUE) {
-        CloseHandle(arduinoHandle);
-        arduinoHandle = INVALID_HANDLE_VALUE;
-    }
-#endif
-
     delete ui;
 }
 
@@ -3952,6 +4180,7 @@ void MainWindow::on_pushButton_5e_clicked()
 
 Pecheurs MainWindow::pecheurFromForm() const
 {
+    if (!ui) return Pecheurs();
     const QDateTime now = QDateTime::currentDateTime();
     QString id = ui->lineEditp ? ui->lineEditp->text().trimmed().toUpper() : QString();
     const QString nom = ui->lineEdit_2p ? ui->lineEdit_2p->text() : QString();
@@ -4049,7 +4278,7 @@ void MainWindow::loadPecheurs()
     table->setRowCount(0);
 
     int row = 0;
-    for (const Pecheurs::TableRowData& record : rows) {
+    for (const Pecheurs::TableRowData& record : std::as_const(rows)) {
         const int currentRow = row;
         table->insertRow(row);
 
@@ -4497,7 +4726,7 @@ void MainWindow::on_pushButton_5p_clicked()
     QMessageBox::StandardButton reply = QMessageBox::question(
         this,
         "Confirmation",
-        QStringLiteral("Voulez-vous vraiment supprimer le p\u00EAcheur :\n%1 %2 (ID: %3) ?").arg(nom).arg(prenom).arg(id),
+        QStringLiteral("Voulez-vous vraiment supprimer le p\u00EAcheur :\n%1 %2 (ID: %3) ?").arg(nom, prenom, id),
         QMessageBox::Yes | QMessageBox::No
     );
 
@@ -4643,8 +4872,8 @@ static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
         painter.setFont(headerFont);
 
         QLinearGradient headerGrad(0, y, 0, y + headerH);
-        headerGrad.setColorAt(0.0, QColor(QStringLiteral("#0b5ea8")));
-        headerGrad.setColorAt(1.0, QColor(QStringLiteral("#2e86c1")));
+        headerGrad.setColorAt(0.0, colorFromHex(0x0B5EA8));
+        headerGrad.setColorAt(1.0, colorFromHex(0x2E86C1));
 
         for (int i = 0; i < columns.size(); ++i) {
             const int c = columns[i];
@@ -4721,12 +4950,13 @@ static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
 
     if (totalVisibleRows > exportedRows) {
         painter.setFont(QFont(QStringLiteral("Arial"), 9, QFont::Normal));
-        painter.setPen(QColor(QStringLiteral("#8a8a8a")));
+        painter.setPen(colorFromHex(0x8A8A8A));
         painter.drawText(QRect(leftMargin, y + 24, contentW, 18), Qt::AlignCenter,
-                         QStringLiteral("(%1 lignes affichees sur %2 dans cette page)").arg(exportedRows).arg(totalVisibleRows));
+                         QStringLiteral("(%1 lignes affichees sur %2 dans cette page)")
+                             .arg(QString::number(exportedRows), QString::number(totalVisibleRows)));
     }
 
-    painter.setPen(QColor(QStringLiteral("#8a8a8a")));
+    painter.setPen(colorFromHex(0x8A8A8A));
     painter.setFont(footerFont);
     painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
                      QStringLiteral("AQUATEC - Rapport genere le %1").arg(exportStamp));
@@ -4749,7 +4979,7 @@ static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
         }
     }
 
-    for (int r : visibleRows) {
+    for (int r : std::as_const(visibleRows)) {
         const QString role = (roleColumn >= 0 && table->item(r, roleColumn)) ? table->item(r, roleColumn)->text().trimmed() : QString();
         const QString roleCanonical = canonicalEmployeRole(role);
         if (roleCanonical == QStringLiteral("Gardien")) ++countGardien;
@@ -4782,10 +5012,10 @@ static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
 
     const QRect pieRect(blockX, blockY, pieSize, pieSize);
     const QVector<QPair<QString, QPair<int, QColor>>> slices = {
-        { QStringLiteral("Gardien"), { countGardien, QColor(QStringLiteral("#3498db")) } },
-        { QStringLiteral("Technicien"), { countTechnicien, QColor(QStringLiteral("#27ae60")) } },
-        { QStringLiteral("Responsable"), { countResponsable, QColor(QStringLiteral("#f39c12")) } },
-        { QStringLiteral("Ouvrier"), { countOuvrier, QColor(QStringLiteral("#9b59b6")) } }
+        { QStringLiteral("Gardien"), { countGardien, colorFromHex(0x3498DB) } },
+        { QStringLiteral("Technicien"), { countTechnicien, colorFromHex(0x27AE60) } },
+        { QStringLiteral("Responsable"), { countResponsable, colorFromHex(0xF39C12) } },
+        { QStringLiteral("Ouvrier"), { countOuvrier, colorFromHex(0x9B59B6) } }
     };
 
     painter.setRenderHint(QPainter::Antialiasing, true);
@@ -4801,7 +5031,7 @@ static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
             startAngle += span;
         }
     } else {
-        painter.setBrush(QColor(QStringLiteral("#dadada")));
+        painter.setBrush(colorFromHex(0xDADADA));
         painter.setPen(Qt::white);
         painter.drawEllipse(pieRect);
     }
@@ -4825,7 +5055,7 @@ static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
         legendY += 26;
     }
 
-    painter.setPen(QColor(QStringLiteral("#8a8a8a")));
+    painter.setPen(colorFromHex(0x8A8A8A));
     painter.setFont(footerFont);
     painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
                      QStringLiteral("AQUATEC - Rapport genere le %1").arg(exportStamp));
@@ -4950,8 +5180,8 @@ static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
         painter.setFont(headerFont);
 
         QLinearGradient headerGrad(0, y, 0, y + headerH);
-        headerGrad.setColorAt(0.0, QColor(QStringLiteral("#0b5ea8")));
-        headerGrad.setColorAt(1.0, QColor(QStringLiteral("#2e86c1")));
+        headerGrad.setColorAt(0.0, colorFromHex(0x0B5EA8));
+        headerGrad.setColorAt(1.0, colorFromHex(0x2E86C1));
 
         for (int i = 0; i < columns.size(); ++i) {
             const int c = columns[i];
@@ -5028,12 +5258,13 @@ static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
 
     if (totalVisibleRows > exportedRows) {
         painter.setFont(QFont(QStringLiteral("Arial"), 9, QFont::Normal));
-        painter.setPen(QColor(QStringLiteral("#8a8a8a")));
+        painter.setPen(colorFromHex(0x8A8A8A));
         painter.drawText(QRect(leftMargin, y + 24, contentW, 18), Qt::AlignCenter,
-                         QStringLiteral("(%1 lignes affichees sur %2 dans cette page)").arg(exportedRows).arg(totalVisibleRows));
+                         QStringLiteral("(%1 lignes affichees sur %2 dans cette page)")
+                             .arg(QString::number(exportedRows), QString::number(totalVisibleRows)));
     }
 
-    painter.setPen(QColor(QStringLiteral("#8a8a8a")));
+    painter.setPen(colorFromHex(0x8A8A8A));
     painter.setFont(footerFont);
     painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
                      QStringLiteral("AQUATEC - Rapport genere le %1").arg(exportStamp));
@@ -5079,10 +5310,10 @@ static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
 
     const QRect pieRect(blockX, blockY, pieSize, pieSize);
     const QVector<QPair<QString, QPair<int, QColor>>> slices = {
-        { QStringLiteral("Disponible"), { stats.disponible, QColor(QStringLiteral("#27ae60")) } },
-        { QStringLiteral("Disponible bientot"), { stats.bientot, QColor(QStringLiteral("#3498db")) } },
-        { QStringLiteral("Indisponible"), { stats.indisponible, QColor(QStringLiteral("#e74c3c")) } },
-        { QStringLiteral("En conge"), { stats.enConge, QColor(QStringLiteral("#9b59b6")) } }
+        { QStringLiteral("Disponible"), { stats.disponible, colorFromHex(0x27AE60) } },
+        { QStringLiteral("Disponible bientot"), { stats.bientot, colorFromHex(0x3498DB) } },
+        { QStringLiteral("Indisponible"), { stats.indisponible, colorFromHex(0xE74C3C) } },
+        { QStringLiteral("En conge"), { stats.enConge, colorFromHex(0x9B59B6) } }
     };
 
     painter.setRenderHint(QPainter::Antialiasing, true);
@@ -5098,7 +5329,7 @@ static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
             startAngle += span;
         }
     } else {
-        painter.setBrush(QColor(QStringLiteral("#dadada")));
+        painter.setBrush(colorFromHex(0xDADADA));
         painter.setPen(Qt::white);
         painter.drawEllipse(pieRect);
     }
@@ -5113,7 +5344,7 @@ static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
     const int legendRowH = 30;
 
     painter.setFont(QFont(QStringLiteral("Arial"), 10, QFont::Bold));
-    painter.setPen(QColor(QStringLiteral("#5a5a5a")));
+    painter.setPen(colorFromHex(0x5A5A5A));
     painter.drawText(QRect(legendX + 18, legendY, legendLabelW, legendRowH), Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("Statut"));
     painter.drawText(QRect(legendX + 18 + legendLabelW, legendY, legendValueW, legendRowH), Qt::AlignCenter, QStringLiteral("Nb"));
     painter.drawText(QRect(legendX + 18 + legendLabelW + legendValueW, legendY, legendPctW, legendRowH), Qt::AlignCenter, QStringLiteral("%"));
@@ -5136,7 +5367,7 @@ static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
         legendY += legendRowH;
     }
 
-    painter.setPen(QColor(QStringLiteral("#8a8a8a")));
+    painter.setPen(colorFromHex(0x8A8A8A));
     painter.setFont(footerFont);
     painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
                      QStringLiteral("AQUATEC - Rapport genere le %1").arg(exportStamp));
@@ -5599,7 +5830,8 @@ void MainWindow::updateStatsBateaux()
         if (!bar || !lbl) return;
         int pct = total > 0 ? qRound(100.0 * val / total) : 0;
         bar->setValue(pct);
-        lbl->setText(QString("%1/%2").arg(val).arg(total));
+        lbl->setText(QStringLiteral("%1/%2")
+                 .arg(QString::number(val), QString::number(total)));
     };
 
     setBar(ui->progressZoneNordb,  ui->value_zoneNordb,  enMer);
@@ -5627,15 +5859,20 @@ void MainWindow::updateStatsBateaux()
     if (ui->label_total_typesb)
         ui->label_total_typesb->setText(QString("Total: %1 bateaux").arg(total));
     if (ui->label_legend_chalutierb)
-        ui->label_legend_chalutierb->setText(QStringLiteral("\u2022 Chalutier: %1 (%2%)").arg(nChalutier).arg(pctStr(nChalutier)));
+        ui->label_legend_chalutierb->setText(QStringLiteral("\u2022 Chalutier: %1 (%2%)")
+                                                 .arg(QString::number(nChalutier), pctStr(nChalutier)));
     if (ui->label_legend_palangrierb)
-        ui->label_legend_palangrierb->setText(QStringLiteral("\u2022 Palangrier: %1 (%2%)").arg(nPalangrier).arg(pctStr(nPalangrier)));
+        ui->label_legend_palangrierb->setText(QStringLiteral("\u2022 Palangrier: %1 (%2%)")
+                                                  .arg(QString::number(nPalangrier), pctStr(nPalangrier)));
     if (ui->label_legend_caseyeurb)
-        ui->label_legend_caseyeurb->setText(QStringLiteral("\u2022 Caseyeur: %1 (%2%)").arg(nCaseyeur).arg(pctStr(nCaseyeur)));
+        ui->label_legend_caseyeurb->setText(QStringLiteral("\u2022 Caseyeur: %1 (%2%)")
+                                                .arg(QString::number(nCaseyeur), pctStr(nCaseyeur)));
     if (ui->label_legend_traditionalb)
-        ui->label_legend_traditionalb->setText(QStringLiteral("\u2022 Traditional: %1 (%2%)").arg(nTraditional).arg(pctStr(nTraditional)));
+        ui->label_legend_traditionalb->setText(QStringLiteral("\u2022 Traditional: %1 (%2%)")
+                                                   .arg(QString::number(nTraditional), pctStr(nTraditional)));
     if (ui->label_legend_otherb)
-        ui->label_legend_otherb->setText(QStringLiteral("\u2022 Autres: %1 (%2%)").arg(nAutres).arg(pctStr(nAutres)));
+        ui->label_legend_otherb->setText(QStringLiteral("\u2022 Autres: %1 (%2%)")
+                                             .arg(QString::number(nAutres), pctStr(nAutres)));
 
     // ΓöÇΓöÇ Draw solid pie chart on progressTypeCircleb ΓöÇΓöÇ
     if (ui->progressTypeCircleb && total > 0) {
@@ -5650,11 +5887,11 @@ void MainWindow::updateStatsBateaux()
 
         struct Slice { int count; QColor color; };
         QVector<Slice> slices = {
-            { nChalutier,   QColor("#4A90D9") },   // blue
-            { nPalangrier,  QColor("#27ae60") },   // green
-            { nCaseyeur,    QColor("#F5A623") },   // orange
-            { nTraditional, QColor("#9b59b6") },   // purple
-            { nAutres,      QColor("#D0021B") }    // red
+            { nChalutier,   colorFromHex(0x4A90D9) },   // blue
+            { nPalangrier,  colorFromHex(0x27AE60) },   // green
+            { nCaseyeur,    colorFromHex(0xF5A623) },   // orange
+            { nTraditional, colorFromHex(0x9B59B6) },   // purple
+            { nAutres,      colorFromHex(0xD0021B) }    // red
         };
 
         int margin = 6;
@@ -5972,9 +6209,27 @@ void MainWindow::refreshQuaiTable()
     };
 
     if (ui->tableWidgetQuai && ui->tableWidgetQuai->columnCount() >= 3) {
+        const int idCol = 0;   // "ID Quai"
         const int zoneCol = 2; // "Zone Port"
         QTableWidget *table = ui->tableWidgetQuai;
         for (int row = 0; row < table->rowCount(); ++row) {
+            QTableWidgetItem *idItem = table->item(row, idCol);
+            if (idItem) {
+                const QVariant displayValue = idItem->data(Qt::DisplayRole);
+                bool okLongLong = false;
+                const qlonglong idValue = displayValue.toLongLong(&okLongLong);
+                if (okLongLong) {
+                    idItem->setData(Qt::DisplayRole, QString::number(idValue));
+                } else {
+                    bool okDouble = false;
+                    const double idAsDouble = displayValue.toDouble(&okDouble);
+                    if (okDouble) {
+                        idItem->setData(Qt::DisplayRole,
+                                        QString::number(static_cast<qlonglong>(std::llround(idAsDouble))));
+                    }
+                }
+            }
+
             QTableWidgetItem *zoneItem = table->item(row, zoneCol);
             if (!zoneItem) continue;
             zoneItem->setText(zoneDbToLabel(zoneItem->text()));
@@ -6287,6 +6542,42 @@ void MainWindow::applyQuaiFilters()
     }
 
     QTableWidget *table = ui->tableWidgetQuai;
+
+    // --- LOGIQUE DE TRI D'ABORD ---
+    // On trie avant de filtrer pour que les index de lignes soient corrects.
+    QComboBox *comboTri = ui->page_3 ? ui->page_3->findChild<QComboBox*>(QStringLiteral("comboBox_sortQuais")) : nullptr;
+    if (comboTri) {
+        int sortIdx = comboTri->currentIndex();
+        int sortCol = -1;
+        Qt::SortOrder order = Qt::AscendingOrder;
+
+        if (sortIdx == 1) { // ID Croissant
+            sortCol = 0;
+            order = Qt::AscendingOrder;
+        } else if (sortIdx == 2) { // ID Décroissant
+            sortCol = 0;
+            order = Qt::DescendingOrder;
+        } else if (sortIdx == 3) { // Capacité Croissante
+            sortCol = 5;
+            order = Qt::AscendingOrder;
+        } else if (sortIdx == 4) { // Capacité Décroissante
+            sortCol = 5;
+            order = Qt::DescendingOrder;
+        } else if (sortIdx == 5) { // Longueur Croissante
+            sortCol = 4;
+            order = Qt::AscendingOrder;
+        } else if (sortIdx == 6) { // Longueur Décroissante
+            sortCol = 4;
+            order = Qt::DescendingOrder;
+        }
+
+        if (sortCol >= 0) {
+            table->setSortingEnabled(true);
+            table->sortItems(sortCol, order);
+            table->setSortingEnabled(false);
+        }
+    }
+
     const auto canonicalQuaiStatus = [](const QString &text) -> QString {
         const QString trimmed = text.trimmed();
         if (trimmed.isEmpty()) {
@@ -6547,8 +6838,8 @@ void MainWindow::on_pushButton_pdfb_clicked()
 
     // Header gradient style (more CSS-like)
     QLinearGradient headerGrad(0, yStart, 0, yStart + headerHeight);
-    headerGrad.setColorAt(0.0, QColor("#0b5ea8"));
-    headerGrad.setColorAt(1.0, QColor("#2e86c1"));
+    headerGrad.setColorAt(0.0, colorFromHex(0x0B5EA8));
+    headerGrad.setColorAt(1.0, colorFromHex(0x2E86C1));
 
     int x = xMargin;
     for (int c = 0; c < colCount; ++c) {
@@ -6704,10 +6995,10 @@ void MainWindow::on_pushButton_pdfb_clicked()
 
     struct StatutBar { QString label; int count; QColor color; };
     QVector<StatutBar> bars = {
-        { "En Mer",           sEnMer,      QColor("#3498db") },
-        { "En Maintenance",   sEnMaint,    QColor("#e67e22") },
-        { "Au Port",          sAuPort,     QColor("#2ecc71") },
-        { "Disponible",       sDisponible, QColor("#9b59b6") }
+        { "En Mer",           sEnMer,      colorFromHex(0x3498DB) },
+        { "En Maintenance",   sEnMaint,    colorFromHex(0xE67E22) },
+        { "Au Port",          sAuPort,     colorFromHex(0x2ECC71) },
+        { "Disponible",       sDisponible, colorFromHex(0x9B59B6) }
     };
 
     int labelW = 700;
@@ -6747,7 +7038,8 @@ void MainWindow::on_pushButton_pdfb_clicked()
         painter.setPen(Qt::black);
         painter.drawText(QRect(barX + barMaxW + 30, statsY, 500, barH),
                          Qt::AlignVCenter | Qt::AlignLeft,
-                         QString("%1 (%2%)").arg(b.count).arg(pct));
+                         QStringLiteral("%1 (%2%)")
+                             .arg(QString::number(b.count), QString::number(pct)));
 
         statsY += barSpacing;
     }
@@ -6769,11 +7061,11 @@ void MainWindow::on_pushButton_pdfb_clicked()
 
     struct TypeSlice { QString label; int count; QColor color; };
     QVector<TypeSlice> typeSlices = {
-        { "Chalutier",    nCh, QColor("#4A90D9") },
-        { "Palangrier",   nPa, QColor("#27ae60") },
-        { "Caseyeur",     nCa, QColor("#F5A623") },
-        { "Traditional",  nTr, QColor("#9b59b6") },
-        { "Autres",       nAu, QColor("#D0021B") }
+        { "Chalutier",    nCh, colorFromHex(0x4A90D9) },
+        { "Palangrier",   nPa, colorFromHex(0x27AE60) },
+        { "Caseyeur",     nCa, colorFromHex(0xF5A623) },
+        { "Traditional",  nTr, colorFromHex(0x9B59B6) },
+        { "Autres",       nAu, colorFromHex(0xD0021B) }
     };
 
     // Pie on the left, legend on the right
@@ -6825,7 +7117,10 @@ void MainWindow::on_pushButton_pdfb_clicked()
         painter.setPen(Qt::black);
         QRect textRect(legendX + colorBoxSize + gap, legendY, legendMaxW - colorBoxSize - gap, itemH);
         painter.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft,
-                         QString("%1: %2 (%3%)").arg(sl.label).arg(sl.count).arg(pct));
+                         QStringLiteral("%1: %2 (%3%)")
+                             .arg(sl.label,
+                                  QString::number(sl.count),
+                                  QString::number(pct)));
 
         legendY += itemH + 8;
     }
@@ -6874,30 +7169,27 @@ void MainWindow::on_pushButton_pdfb_2_clicked()
     const int pageW = writer.width();
     const int pageH = writer.height();
 
-    const int leftMargin = 50;
-    const int rightMargin = 50;
-    const int topMargin = 100;
+    const int leftMargin = 58;
+    const int rightMargin = 58;
+    const int topMargin = 70;
     const int bottomMargin = 80;
     const int contentW = pageW - leftMargin - rightMargin;
 
-    QFont titleFont("Arial", 20, QFont::Bold);
-    QFont dateFont("Arial", 9);
     QFont headerFont("Arial", 11, QFont::Bold);
-    QFont cellFont("Arial", 9);
-    QFont footerFont("Arial", 9);
+    QFont cellFont("Arial", 10);
+    QFont footerFont("Arial", 10);
+    const int yStart = drawQuaiPdfHeader(
+        painter,
+        pageW,
+        leftMargin,
+        rightMargin,
+        topMargin,
+        QStringLiteral("AQUATEC - Liste des quais"),
+        QStringLiteral("Vue detaillee des quais actuellement affiches"),
+        exportStamp);
 
-    painter.setFont(titleFont);
-    painter.setPen(QColor(0, 82, 155));
-    painter.drawText(QRect(leftMargin, topMargin - 40, contentW, 60), Qt::AlignCenter, "AQUATEC ΓÇô Liste des Quais");
-
-    painter.setFont(dateFont);
-    painter.setPen(Qt::darkGray);
-    painter.drawText(QRect(leftMargin, topMargin + 20, contentW, 30), Qt::AlignCenter,
-                     QString("Export├⌐ le %1").arg(exportStamp));
-
-    const int yStart = topMargin + 80;
     const QStringList headers = { "ID Quai", "Nom Quai", "Zone Port", "Zone Couverte", "Longueur Max", "Capacit├⌐", "Statut" };
-    const QVector<double> proportions = { 0.08, 0.30, 0.12, 0.12, 0.12, 0.10, 0.16 };
+    const QVector<double> proportions = { 0.09, 0.27, 0.15, 0.15, 0.12, 0.10, 0.12 };
     const int colCount = headers.size();
 
     QVector<int> colWidths(colCount, 0);
@@ -6910,22 +7202,33 @@ void MainWindow::on_pushButton_pdfb_2_clicked()
         colWidths[colCount - 1] += (contentW - usedW);
     }
 
-    const int headerHeight = 48;
-    const int rowHeight = 40;
+    const int cellPaddingX = 14;
+    const int cellPaddingY = 10;
+    const int footerReserve = 30;
+    const QFontMetrics headerMetrics(headerFont);
+    const QFontMetrics cellMetrics(cellFont);
+    int headerHeight = 52;
+    for (int c = 0; c < colCount; ++c) {
+        headerHeight = qMax(headerHeight,
+                            wrappedTextHeight(headerMetrics, headers[c], colWidths[c] - (2 * cellPaddingX), 0)
+                            + (2 * cellPaddingY));
+    }
     const int footerY = pageH - bottomMargin + 10;
 
     auto drawHeader = [&](int yHeader) {
         painter.setFont(headerFont);
         QLinearGradient headerGrad(0, yHeader, 0, yHeader + headerHeight);
-        headerGrad.setColorAt(0.0, QColor("#0b5ea8"));
-        headerGrad.setColorAt(1.0, QColor("#2e86c1"));
+        headerGrad.setColorAt(0.0, colorFromHex(0x0B5EA8));
+        headerGrad.setColorAt(1.0, colorFromHex(0x2E86C1));
 
         int x = leftMargin;
         for (int c = 0; c < colCount; ++c) {
             QRect cellRect(x, yHeader, colWidths[c], headerHeight);
             painter.fillRect(cellRect, headerGrad);
             painter.setPen(Qt::white);
-            painter.drawText(cellRect.adjusted(12, 0, -12, 0), Qt::AlignVCenter | Qt::AlignLeft, headers[c]);
+            painter.drawText(cellRect.adjusted(cellPaddingX, cellPaddingY, -cellPaddingX, -cellPaddingY),
+                             Qt::AlignVCenter | Qt::AlignLeft | Qt::TextWordWrap,
+                             headers[c]);
             painter.setPen(QPen(QColor(200, 210, 220), 1));
             painter.drawRect(cellRect);
             x += colWidths[c];
@@ -6947,15 +7250,33 @@ void MainWindow::on_pushButton_pdfb_2_clicked()
     painter.setFont(cellFont);
     for (int visibleIndex = 0; visibleIndex < visibleRows.size(); ++visibleIndex) {
         const int r = visibleRows[visibleIndex];
+        int rowHeight = 44;
 
-        if (y + rowHeight > pageH - bottomMargin - 30) {
-            painter.setPen(QColor("#8a8a8a"));
+        for (int c = 0; c < colCount; ++c) {
+            const QTableWidgetItem* item = table->item(r, c);
+            QString text = item ? item->text() : QString();
+            text.replace('\n', ' ');
+            text.replace('\r', ' ');
+            text = text.simplified();
+            rowHeight = qMax(rowHeight,
+                             wrappedTextHeight(cellMetrics, text, colWidths[c] - (2 * cellPaddingX), 0)
+                             + (2 * cellPaddingY));
+        }
+
+        if (y + rowHeight > pageH - bottomMargin - footerReserve) {
             painter.setFont(footerFont);
-            painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
-                             QString("AQUATEC - Rapport g├⌐n├⌐r├⌐ le %1").arg(exportStamp));
+            drawPdfReportFooter(painter, leftMargin, contentW, footerY, exportStamp);
 
             writer.newPage();
-            y = topMargin;
+            y = drawQuaiPdfHeader(
+                painter,
+                pageW,
+                leftMargin,
+                rightMargin,
+                topMargin,
+                QStringLiteral("AQUATEC - Liste des quais"),
+                QStringLiteral("Vue detaillee des quais actuellement affiches"),
+                exportStamp);
             drawHeader(y);
             y += headerHeight;
             painter.setFont(cellFont);
@@ -6970,9 +7291,14 @@ void MainWindow::on_pushButton_pdfb_2_clicked()
             painter.drawRect(cellRect);
 
             const QTableWidgetItem* item = table->item(r, c);
-            const QString text = item ? item->text().simplified() : QString();
+            QString text = item ? item->text() : QString();
+            text.replace('\n', ' ');
+            text.replace('\r', ' ');
+            text = text.simplified();
             painter.setPen(Qt::black);
-            painter.drawText(cellRect.adjusted(12, 6, -12, -6), Qt::AlignVCenter | Qt::AlignLeft | Qt::TextWordWrap, text);
+            painter.drawText(cellRect.adjusted(cellPaddingX, cellPaddingY, -cellPaddingX, -cellPaddingY),
+                             Qt::AlignVCenter | Qt::AlignLeft | Qt::TextWordWrap,
+                             text);
             x += colWidths[c];
         }
         y += rowHeight;
@@ -6983,10 +7309,8 @@ void MainWindow::on_pushButton_pdfb_2_clicked()
     painter.drawText(QRect(leftMargin, qMin(y + 8, footerY - 24), contentW, 22), Qt::AlignCenter,
                      QString("Total: %1 quais").arg(visibleRows.size()));
 
-    painter.setPen(QColor("#8a8a8a"));
     painter.setFont(footerFont);
-    painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
-                     QString("AQUATEC - Rapport g├⌐n├⌐r├⌐ le %1").arg(exportStamp));
+    drawPdfReportFooter(painter, leftMargin, contentW, footerY, exportStamp);
 
     painter.end();
 
@@ -7025,9 +7349,9 @@ void MainWindow::on_btnExportStatsPDF_2_clicked()
     const int pageW = writer.width();
     const int pageH = writer.height();
 
-    const int leftMargin = 50;
-    const int rightMargin = 50;
-    const int topMargin = 100;
+    const int leftMargin = 58;
+    const int rightMargin = 58;
+    const int topMargin = 70;
     const int bottomMargin = 80;
     const int contentW = pageW - leftMargin - rightMargin;
     const int footerY = pageH - bottomMargin + 10;
@@ -7040,7 +7364,7 @@ void MainWindow::on_btnExportStatsPDF_2_clicked()
 
     QMap<QString, int> zoneCounts;
     QMap<QString, int> statutCounts;
-    for (int r : visibleRows) {
+    for (int r : std::as_const(visibleRows)) {
         QString zone = table->item(r, 2) ? table->item(r, 2)->text().trimmed() : QString();
         QString statut = table->item(r, 6) ? table->item(r, 6)->text().trimmed() : QString();
         if (zone.isEmpty()) zone = QStringLiteral("Non d├⌐fini");
@@ -7050,116 +7374,171 @@ void MainWindow::on_btnExportStatsPDF_2_clicked()
     }
 
     const int totalQuais = visibleRows.size();
+    int statsY = drawQuaiPdfHeader(
+        painter,
+        pageW,
+        leftMargin,
+        rightMargin,
+        topMargin,
+        QStringLiteral("AQUATEC - Statistiques des quais"),
+        QStringLiteral("Synthese de la repartition par zone et par statut"),
+        exportStamp);
 
-    int statsY = topMargin - 10;
-    painter.setPen(QColor(0, 82, 155));
-    painter.setFont(QFont("Arial", 18, QFont::Bold));
-    painter.drawText(QRect(leftMargin, statsY, contentW, 44), Qt::AlignCenter,
-                     QString::fromUtf8("Statistiques des Quais"));
-    statsY += 50;
+    const int cardGap = 24;
+    const int cardW = (contentW - (2 * cardGap)) / 3;
+    const int cardH = 110;
+    drawQuaiStatCard(painter,
+                     QRect(leftMargin, statsY, cardW, cardH),
+                     QStringLiteral("Total des quais"),
+                     QString::number(totalQuais),
+                     colorFromHex(0x0B5EA8));
+    drawQuaiStatCard(painter,
+                     QRect(leftMargin + cardW + cardGap, statsY, cardW, cardH),
+                     QStringLiteral("Zones actives"),
+                     QString::number(zoneCounts.size()),
+                     colorFromHex(0x2ECC71));
+    drawQuaiStatCard(painter,
+                     QRect(leftMargin + (cardW + cardGap) * 2, statsY, cardW, cardH),
+                     QStringLiteral("Statuts suivis"),
+                     QString::number(statutCounts.size()),
+                     colorFromHex(0xE67E22));
+    statsY += cardH + 28;
 
-    painter.setPen(Qt::darkGray);
-    painter.setFont(QFont("Arial", 10, QFont::Bold));
-    painter.drawText(QRect(leftMargin, statsY, contentW, 22), Qt::AlignCenter,
-                     QString("Total: %1 quais").arg(totalQuais));
-    statsY += 34;
-
-    painter.setPen(QColor(0, 82, 155));
-    painter.setFont(QFont("Arial", 12, QFont::Bold));
-    painter.drawText(QRect(leftMargin, statsY, contentW, 28), Qt::AlignCenter,
-                     QString::fromUtf8("statistique par zone"));
-    statsY += 32;
-
-    const int pieSize = 180;
-    const int legendW = 420;
-    const int gap = 44;
+    const int pieSize = 240;
+    const int legendW = 600;
+    const int gap = 56;
+    const int zonePanelTopGap = 96;
+    const int zonePanelBottomGap = 48;
     const int blockW = pieSize + gap + legendW;
-    const int blockX = leftMargin + qMax(0, (contentW - blockW) / 2);
+    const int blockX = leftMargin + qMax(32, (contentW - blockW) / 2);
     const int pieX = blockX;
-    const int pieY = statsY;
-    const QRect pieRect(pieX, pieY, pieSize, pieSize);
+    int pieY = statsY + zonePanelTopGap;
+    QRect pieRect(pieX, pieY, pieSize, pieSize);
 
     const QVector<QColor> zoneColors = {
-        QColor("#3498db"), QColor("#2ecc71"), QColor("#e67e22"), QColor("#9b59b6"), QColor("#4A90D9")
+        colorFromHex(0x3498DB),
+        colorFromHex(0x2ECC71),
+        colorFromHex(0xE67E22),
+        colorFromHex(0x9B59B6),
+        colorFromHex(0x4A90D9)
     };
 
+    QFont legendFont("Arial", 10);
+    QFontMetrics legendMetrics(legendFont);
+    int legendY = pieY + 4;
+    const int legendX = pieRect.right() + gap;
+    int colorIndex = 0;
+    for (auto it = zoneCounts.constBegin(); it != zoneCounts.constEnd(); ++it) {
+        const int cnt = it.value();
+        const int pct = (totalQuais > 0) ? qRound(100.0 * cnt / totalQuais) : 0;
+        const QString legendText = QStringLiteral("%1 : %2 (%3%)")
+                                       .arg(it.key(),
+                                            QString::number(cnt),
+                                            QString::number(pct));
+        const int textHeight = wrappedTextHeight(legendMetrics, legendText, legendW - 30, 22);
+        const int itemH = qMax(26, textHeight + 6);
+        legendY += itemH + 8;
+        ++colorIndex;
+    }
+
+    const int zoneContentBottom = qMax(pieY + pieSize, legendY);
+    const int zonePanelH = qMax(420, (zoneContentBottom - statsY) + zonePanelBottomGap);
+    const QRect zonePanel(leftMargin, statsY, contentW, zonePanelH);
+    drawQuaiSectionPanel(painter, zonePanel, QStringLiteral("Repartition par zone"));
+
+    pieY = zonePanel.top() + zonePanelTopGap;
+    pieRect.moveTop(pieY);
+    legendY = pieY + 4;
+
+    painter.setFont(legendFont);
     painter.setRenderHint(QPainter::Antialiasing, true);
     if (totalQuais > 0) {
         int startAngle = 90 * 16;
-        int colorIndex = 0;
+        int zoneColorIndex = 0;
         for (auto it = zoneCounts.constBegin(); it != zoneCounts.constEnd(); ++it) {
             const int cnt = it.value();
             if (cnt <= 0) continue;
 
             const int span = -qRound((static_cast<double>(cnt) / static_cast<double>(totalQuais)) * 360.0 * 16.0);
-            painter.setBrush(zoneColors[colorIndex % zoneColors.size()]);
+            painter.setBrush(zoneColors[zoneColorIndex % zoneColors.size()]);
             painter.setPen(Qt::white);
             painter.drawPie(pieRect, startAngle, span);
             startAngle += span;
-            ++colorIndex;
+            ++zoneColorIndex;
         }
     } else {
-        painter.setBrush(QColor("#dadada"));
+        painter.setBrush(colorFromHex(0xDADADA));
         painter.setPen(Qt::white);
         painter.drawEllipse(pieRect);
     }
     painter.setRenderHint(QPainter::Antialiasing, false);
 
-    int legendY = pieY + 10;
-    const int legendX = pieRect.right() + gap;
-    painter.setFont(QFont("Arial", 10));
-    int colorIndex = 0;
+    colorIndex = 0;
     for (auto it = zoneCounts.constBegin(); it != zoneCounts.constEnd(); ++it) {
         const int cnt = it.value();
         const int pct = (totalQuais > 0) ? qRound(100.0 * cnt / totalQuais) : 0;
         const QColor color = zoneColors[colorIndex % zoneColors.size()];
+        const QString legendText = QStringLiteral("%1 : %2 (%3%)")
+                                       .arg(it.key(),
+                                            QString::number(cnt),
+                                            QString::number(pct));
+        const int textHeight = wrappedTextHeight(legendMetrics, legendText, legendW - 30, 22);
+        const int itemH = qMax(26, textHeight + 6);
 
-        painter.fillRect(QRect(legendX, legendY + 6, 10, 10), color);
+        painter.fillRect(QRect(legendX, legendY + qMax(6, (itemH - 10) / 2), 10, 10), color);
         painter.setPen(Qt::black);
-        painter.drawText(QRect(legendX + 18, legendY - 2, legendW - 24, 22),
-                         Qt::AlignLeft | Qt::AlignVCenter,
-                         QString("%1: %2 (%3%)").arg(it.key()).arg(cnt).arg(pct));
-        legendY += 24;
+        painter.drawText(QRect(legendX + 18, legendY, legendW - 24, itemH),
+                         Qt::AlignLeft | Qt::AlignVCenter | Qt::TextWordWrap,
+                         legendText);
+        legendY += itemH + 8;
         ++colorIndex;
     }
 
-    const int zoneBlockBottom = qMax(pieY + pieSize, legendY);
-    const int minStatusStartY = static_cast<int>(pageH * 0.58);
-    const int barsTitleY = qMax(zoneBlockBottom + 60, minStatusStartY);
+    statsY = zonePanel.bottom() + 28;
+    QFont statusLabelFont("Arial", 10);
+    QFontMetrics statusLabelMetrics(statusLabelFont);
+    const int minBarH = 30;
+    const int barSpacing = 16;
+    const int labelW = 260;
+    int statusContentH = 0;
+    for (auto it = statutCounts.constBegin(); it != statutCounts.constEnd(); ++it) {
+        const int labelHeight = wrappedTextHeight(statusLabelMetrics, it.key(), labelW, 0);
+        statusContentH += qMax(minBarH, labelHeight + 8) + barSpacing;
+    }
+    if (!statutCounts.isEmpty()) {
+        statusContentH -= barSpacing;
+    }
+    const int statusPanelH = qMax(230, 96 + statusContentH + 34);
+    const QRect statusPanel(leftMargin, statsY, contentW, statusPanelH);
+    drawQuaiSectionPanel(painter, statusPanel, QStringLiteral("Repartition par statut"));
 
-    painter.setPen(QPen(QColor(200, 210, 220), 2));
-    painter.drawLine(leftMargin + 60, barsTitleY - 12, leftMargin + contentW - 60, barsTitleY - 12);
+    int barsY = statusPanel.top() + 92;
 
-    painter.setPen(QColor(0, 82, 155));
-    painter.setFont(QFont("Arial", 13, QFont::Bold));
-    painter.drawText(QRect(leftMargin + 24, barsTitleY, contentW - 48, 34), Qt::AlignLeft,
-                     QString::fromUtf8("statistique par statut"));
-
-    int barsY = barsTitleY + 44;
-
-    const int labelX = leftMargin + 24;
-    const int labelW = 130;
+    const int labelX = statusPanel.left() + 28;
     const int barX = labelX + labelW + 14;
     const int valueW = 150;
-    const int barMaxW = qMax(320, contentW - (barX - leftMargin) - valueW - 24);
-    const int barH = 30;
-    const int barSpacing = 16;
+    const int barMaxW = qMax(320, statusPanel.right() - barX - valueW - 40);
 
     auto statusColorFor = [](const QString& raw) {
         const QString s = raw.trimmed().toLower();
-        if (s.contains(QStringLiteral("lib"))) return QColor("#2ecc71");
-        if (s.contains(QStringLiteral("occup"))) return QColor("#e74c3c");
-        if (s.contains(QStringLiteral("maint"))) return QColor("#e67e22");
-        return QColor("#90a4ae");
+        if (s.contains(QStringLiteral("lib"))) return colorFromHex(0x2ECC71);
+        if (s.contains(QStringLiteral("occup"))) return colorFromHex(0xE74C3C);
+        if (s.contains(QStringLiteral("maint"))) return colorFromHex(0xE67E22);
+        return colorFromHex(0x90A4AE);
     };
 
     for (auto it = statutCounts.constBegin(); it != statutCounts.constEnd(); ++it) {
         const int cnt = it.value();
         const int pct = (totalQuais > 0) ? qRound(100.0 * cnt / totalQuais) : 0;
         const QColor fillColor = statusColorFor(it.key());
+        const int labelHeight = wrappedTextHeight(statusLabelMetrics, it.key(), labelW, 0);
+        const int barH = qMax(minBarH, labelHeight + 8);
 
+        painter.setFont(statusLabelFont);
         painter.setPen(Qt::black);
-        painter.drawText(QRect(labelX, barsY, labelW, barH), Qt::AlignVCenter | Qt::AlignLeft, it.key());
+        painter.drawText(QRect(labelX, barsY, labelW, barH),
+                         Qt::AlignVCenter | Qt::AlignLeft | Qt::TextWordWrap,
+                         it.key());
 
         painter.setPen(Qt::NoPen);
         painter.setBrush(QColor(230, 235, 245));
@@ -7172,16 +7551,14 @@ void MainWindow::on_btnExportStatsPDF_2_clicked()
         }
 
         painter.setPen(Qt::black);
+        painter.setFont(QFont("Arial", 10));
         painter.drawText(QRect(barX + barMaxW + 12, barsY, valueW, barH), Qt::AlignVCenter | Qt::AlignLeft,
-                         QString("%1 (%2%)").arg(cnt).arg(pct));
+                         QStringLiteral("%1 (%2%)").arg(QString::number(cnt), QString::number(pct)));
 
         barsY += barH + barSpacing;
     }
 
-    painter.setPen(QColor("#8a8a8a"));
-    painter.setFont(QFont("Arial", 9));
-    painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
-                     QString("AQUATEC - Rapport g├⌐n├⌐r├⌐ le %1").arg(exportStamp));
+    drawPdfReportFooter(painter, leftMargin, contentW, footerY, exportStamp);
 
     painter.end();
 
@@ -7390,17 +7767,17 @@ void MainWindow::refreshStats_2()
     const auto ouestCounts = getZoneCounts(QStringLiteral("QuaiOuest"));
 
     const QString ttSudOcc   = QStringLiteral("Bassin central (Zone 3) : %1 % occup├⌐ (%2 / %3 quais)")
-                                   .arg(pctSud)
-                                   .arg(sudCounts.first)
-                                   .arg(sudCounts.second);
+                                .arg(QString::number(pctSud),
+                                    QString::number(sudCounts.first),
+                                    QString::number(sudCounts.second));
     const QString ttEstOcc   = QStringLiteral("Quai Est (Zone 2) : %1 % occup├⌐ (%2 / %3 quais)")
-                                   .arg(pctEst)
-                                   .arg(estCounts.first)
-                                   .arg(estCounts.second);
+                                .arg(QString::number(pctEst),
+                                    QString::number(estCounts.first),
+                                    QString::number(estCounts.second));
     const QString ttOuestOcc = QStringLiteral("Quai Ouest (Zone 1) : %1 % occup├⌐ (%2 / %3 quais)")
-                                   .arg(pctOuest)
-                                   .arg(ouestCounts.first)
-                                   .arg(ouestCounts.second);
+                                .arg(QString::number(pctOuest),
+                                    QString::number(ouestCounts.first),
+                                    QString::number(ouestCounts.second));
 
     // Occupation par zone pour la courbe (3 zones affich├⌐es)
     if (ui->curvePoint3_2) ui->curvePoint3_2->setToolTip(ttSudOcc);
@@ -7409,20 +7786,20 @@ void MainWindow::refreshStats_2()
 
     // R├⌐partition du nombre de quais pour les barres verticales
     const QString ttSudShare   = QStringLiteral("Bassin central (Zone 3) : %1 % des quais (%2 / %3, %4 % occup├⌐s)")
-                                     .arg(shareSud)
-                                     .arg(sudCounts.second)
-                                     .arg(totalQuais)
-                                     .arg(pctSud);
+                                      .arg(QString::number(shareSud),
+                                          QString::number(sudCounts.second),
+                                          QString::number(totalQuais),
+                                          QString::number(pctSud));
     const QString ttEstShare   = QStringLiteral("Quai Est (Zone 2) : %1 % des quais (%2 / %3, %4 % occup├⌐s)")
-                                     .arg(shareEst)
-                                     .arg(estCounts.second)
-                                     .arg(totalQuais)
-                                     .arg(pctEst);
+                                      .arg(QString::number(shareEst),
+                                          QString::number(estCounts.second),
+                                          QString::number(totalQuais),
+                                          QString::number(pctEst));
     const QString ttOuestShare = QStringLiteral("Quai Ouest (Zone 1) : %1 % des quais (%2 / %3, %4 % occup├⌐s)")
-                                     .arg(shareOuest)
-                                     .arg(ouestCounts.second)
-                                     .arg(totalQuais)
-                                     .arg(pctOuest);
+                                      .arg(QString::number(shareOuest),
+                                          QString::number(ouestCounts.second),
+                                          QString::number(totalQuais),
+                                          QString::number(pctOuest));
 
     if (ui->progressZoneSud_2)   ui->progressZoneSud_2->setToolTip(ttSudShare);
     if (ui->progressZoneEst_2)   ui->progressZoneEst_2->setToolTip(ttEstShare);
@@ -7464,9 +7841,9 @@ void MainWindow::refreshStats_2()
     // Animation simple de la courbe : on positionne verticalement
     // les points en fonction des pourcentages calcul├⌐s.
     if (ui->curveCanvas_2) {
-        const int yTop = 30;   // proche de 100 %
-        const int yBot = 145;  // proche de 0 %
-        auto yFromPct = [yTop, yBot](int pct) {
+        static const int yTop = 30;   // proche de 100 %
+        static const int yBot = 145;  // proche de 0 %
+        auto yFromPct = [](int pct) {
             if (pct < 0) pct = 0;
             if (pct > 100) pct = 100;
             return yBot - (pct * (yBot - yTop)) / 100;
@@ -7522,7 +7899,7 @@ void MainWindow::refreshStats_2()
         // Supprime les points nuls ├⌐ventuels
         QVector<QPoint> validPoints;
         validPoints.reserve(curvePoints.size());
-        for (const QPoint &pt : curvePoints) {
+        for (const QPoint &pt : std::as_const(curvePoints)) {
             if (!pt.isNull())
                 validPoints.append(pt);
         }
@@ -7611,7 +7988,7 @@ void MainWindow::refreshStats_2()
                         toDelete.append(w);
                     }
                 }
-                for (QWidget *w : toDelete) delete w;
+                for (QWidget *w : std::as_const(toDelete)) delete w;
 
                 // Conteneur principal de la zone
                 QWidget *placesWidget = new QWidget();
@@ -7645,7 +8022,7 @@ void MainWindow::refreshStats_2()
 
                 // Titre de la zone : badge color├⌐ avec ombre
                 const auto &list = quaisParZone.value(zone);
-                QLabel *zoneTitle = new QLabel(QStringLiteral("%1  %2").arg(zoneIcon).arg(zoneTitleText));
+                QLabel *zoneTitle = new QLabel(QStringLiteral("%1  %2").arg(zoneIcon, zoneTitleText));
                 zoneTitle->setAlignment(Qt::AlignCenter);
                 zoneTitle->setStyleSheet(QStringLiteral(
                     "color: white; font-weight: bold; font-size: 9px; "
@@ -7653,8 +8030,7 @@ void MainWindow::refreshStats_2()
                     "stop:0 %1, stop:1 %2); border: none; "
                     "border-radius: 10px; padding: 4px 14px; "
                     "letter-spacing: 0px;")
-                    .arg(zoneBadgeColor)
-                    .arg(QColor(zoneBadgeColor).lighter(130).name()));
+                    .arg(zoneBadgeColor, QColor(zoneBadgeColor).lighter(130).name()));
                 mainVLayout->addWidget(zoneTitle, 0, Qt::AlignCenter);
 
                 // Pour garder la partie haute de la mini‑carte visuellement vide,
@@ -7755,7 +8131,7 @@ void MainWindow::refreshStats_2()
                     tileWidget->setFixedSize(46, 50);
                     QString tooltip = QStringLiteral(
                         "Quai %1\nZone: %2\nStatut: %3")
-                        .arg(qid).arg(zone).arg(statut);
+                        .arg(QString::number(qid), zone, statut);
                     if (isWeatherLocked) {
                         tooltip += QStringLiteral("\nFerm\u00E9 (m\u00E9t\u00E9o dangereuse)");
                     }
@@ -7779,9 +8155,7 @@ void MainWindow::refreshStats_2()
                         "border-bottom-right-radius: 12px; "
                         "border: 2px solid transparent; "
                         "%3")
-                        .arg(bgStart)
-                        .arg(bgEnd)
-                        .arg(borderSides));
+                        .arg(bgStart, bgEnd, borderSides));
 
                     QVBoxLayout *tileLay = new QVBoxLayout(tileWidget);
                     tileLay->setSpacing(0);
@@ -7892,9 +8266,9 @@ void MainWindow::updateWeatherLabels(const QString& icon,
         QVector<MeteoMetric> all;
         all.reserve(16);
 
-        for (const QString &line : lines) {
+        for (const QString &line : std::as_const(lines)) {
             const QStringList parts = line.split(QStringLiteral(" • "), Qt::SkipEmptyParts);
-            for (const QString &p : parts) {
+            for (const QString &p : std::as_const(parts)) {
                 const MeteoMetric m = parseMetric(p);
                 if (m.label.isEmpty() && m.value.isEmpty()) continue;
                 all.push_back(m);
@@ -7976,7 +8350,7 @@ void MainWindow::updateWeatherLabels(const QString& icon,
             int col = 0;
             html += QStringLiteral("<table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:separate;border-spacing:8px 8px;\">");
             html += QStringLiteral("<tr>");
-            for (const QString &p : parts) {
+            for (const QString &p : std::as_const(parts)) {
                 if (col == chipsPerRow) {
                     html += QStringLiteral("</tr><tr>");
                     col = 0;
@@ -8065,11 +8439,15 @@ void MainWindow::updateWeatherLabels(const QString& icon,
 
             const bool selected = (i == m_selectedDailyIndex);
             const QString bg = selected
-                ? QStringLiteral("rgba(%1,%2,%3,0.22)").arg(ar).arg(ag).arg(ab)
-                : QStringLiteral("rgba(%1,%2,%3,0.10)").arg(ar).arg(ag).arg(ab);
+                ? QStringLiteral("rgba(%1,%2,%3,0.22)")
+                    .arg(QString::number(ar), QString::number(ag), QString::number(ab))
+                : QStringLiteral("rgba(%1,%2,%3,0.10)")
+                    .arg(QString::number(ar), QString::number(ag), QString::number(ab));
             const QString bd = selected
-                ? QStringLiteral("rgba(%1,%2,%3,0.55)").arg(ar).arg(ag).arg(ab)
-                : QStringLiteral("rgba(%1,%2,%3,0.22)").arg(ar).arg(ag).arg(ab);
+                ? QStringLiteral("rgba(%1,%2,%3,0.55)")
+                    .arg(QString::number(ar), QString::number(ag), QString::number(ab))
+                : QStringLiteral("rgba(%1,%2,%3,0.22)")
+                    .arg(QString::number(ar), QString::number(ag), QString::number(ab));
 
             const QString content = QStringLiteral(
                 "<div style=\"padding:10px 12px;border-radius:16px;background:%1;border:1px solid %2;\">"
@@ -8571,7 +8949,7 @@ void MainWindow::refreshWeatherForPage3()
             // D\u00E9terminer si les conditions m\u00E9t\u00E9o imposent la fermeture des quais
             // Seul le vent commande la fermeture des quais :
             // on ferme uniquement si la vitesse du vent d├⌐passe 20 km/h.
-            const bool strongWind = (wind >= 4.0); // km/h
+            const bool strongWind = (wind >= 10.0); // km/h
 
             const bool shouldClose = strongWind;
             const bool wasClosed = m_quaisFermeMeteo;
@@ -8732,8 +9110,8 @@ static void exportCapturesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
         painter.setFont(headerFont);
 
         QLinearGradient headerGrad(0, y, 0, y + headerH);
-        headerGrad.setColorAt(0.0, QColor(QStringLiteral("#0b5ea8")));
-        headerGrad.setColorAt(1.0, QColor(QStringLiteral("#2e86c1")));
+        headerGrad.setColorAt(0.0, colorFromHex(0x0B5EA8));
+        headerGrad.setColorAt(1.0, colorFromHex(0x2E86C1));
 
         for (int i = 0; i < columns.size(); ++i) {
             const int c = columns[i];
@@ -8810,9 +9188,10 @@ static void exportCapturesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
 
     if (totalVisibleRows > exportedRows) {
         painter.setFont(QFont(QStringLiteral("Arial"), 9, QFont::Normal));
-        painter.setPen(QColor(QStringLiteral("#8a8a8a")));
+        painter.setPen(colorFromHex(0x8A8A8A));
         painter.drawText(QRect(leftMargin, y + 24, contentW, 18), Qt::AlignCenter,
-                         QStringLiteral("(%1 lignes affichées sur %2 dans cette page)").arg(exportedRows).arg(totalVisibleRows));
+                         QStringLiteral("(%1 lignes affichées sur %2 dans cette page)")
+                             .arg(QString::number(exportedRows), QString::number(totalVisibleRows)));
     }
 
     // Section Statistiques - Top 5 Espèces
@@ -8846,8 +9225,8 @@ static void exportCapturesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
         // En-têtes du tableau
         painter.setFont(QFont(QStringLiteral("Arial"), 10, QFont::Bold));
         QLinearGradient statHeaderGrad(0, y, 0, y + statRowH);
-        statHeaderGrad.setColorAt(0.0, QColor(QStringLiteral("#0b5ea8")));
-        statHeaderGrad.setColorAt(1.0, QColor(QStringLiteral("#2e86c1")));
+        statHeaderGrad.setColorAt(0.0, colorFromHex(0x0B5EA8));
+        statHeaderGrad.setColorAt(1.0, colorFromHex(0x2E86C1));
         painter.fillRect(QRect(leftMargin, y, contentW, statRowH), statHeaderGrad);
 
         painter.setPen(Qt::white);
@@ -8896,7 +9275,7 @@ static void exportCapturesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
     }
 
     y += 20;
-    painter.setPen(QColor(QStringLiteral("#8a8a8a")));
+    painter.setPen(colorFromHex(0x8A8A8A));
     painter.setFont(footerFont);
     painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
                      QStringLiteral("AQUATEC - Rapport généré le %1").arg(exportStamp));
@@ -9232,207 +9611,203 @@ static QString weatherIconEmojiDayNight(int weatherCode, bool isDay)
     return weatherIconEmoji(weatherCode);
 }
 
-void MainWindow::setupArduino()
+void MainWindow::handleArduinoUid(const QString& uid)
 {
-#ifdef Q_OS_WIN
-    if (arduinoHandle != INVALID_HANDLE_VALUE) {
-        if (m_serialReconnectTimer && m_serialReconnectTimer->isActive()) {
-            m_serialReconnectTimer->stop();
+    qDebug() << "------------------------------------------";
+    qDebug() << "[MAINWINDOW] SIGNAL RECU :" << uid;
+    qDebug() << "------------------------------------------";
+
+    const QString cleanUid = uid.trimmed();
+    if (cleanUid.isEmpty()) {
+        if (statusBar()) {
+            statusBar()->showMessage(QStringLiteral("Badge RFID vide ignore."), 4000);
         }
         return;
     }
 
-    if (!m_serialReadTimer) {
-        m_serialReadTimer = new QTimer(this);
-        m_serialReadTimer->setInterval(100);
-        connect(m_serialReadTimer, &QTimer::timeout, this, &MainWindow::readSerial);
+    // Ne remplir le champ RFID que si l'utilisateur est en train de l'éditer.
+    if (auto rfidEdit = ui->pagee->findChild<QLineEdit*>(QStringLiteral("lineEdit_rfid"));
+        rfidEdit && rfidEdit->hasFocus()) {
+        rfidEdit->setText(cleanUid);
     }
 
-    serialBuffer.clear();
-    bool busyPortDetected = false;
+    QString nomEmploye;
+    QString denyReason;
+    const bool allowed = Employe::canAccessByRfid(cleanUid, &nomEmploye, &denyReason);
 
-    // Tentative d'ouverture de ports de COM1 à COM64
-    for (int i = 1; i <= 64; ++i) {
-        QString portName = QStringLiteral("\\\\.\\COM%1").arg(i);
-        arduinoHandle = CreateFileA(portName.toLocal8Bit().constData(),
-                                   GENERIC_READ | GENERIC_WRITE,
-                                   0,
-                                   NULL,
-                                   OPEN_EXISTING,
-                                   0,
-                                   NULL);
-
-        if (arduinoHandle != INVALID_HANDLE_VALUE) {
-            DCB dcbSerialParams;
-            ZeroMemory(&dcbSerialParams, sizeof(dcbSerialParams));
-            dcbSerialParams.DCBlength = sizeof(dcbSerialParams);
-            if (GetCommState(arduinoHandle, &dcbSerialParams)) {
-                dcbSerialParams.BaudRate = CBR_9600;
-                dcbSerialParams.ByteSize = 8;
-                dcbSerialParams.StopBits = ONESTOPBIT;
-                dcbSerialParams.Parity = NOPARITY;
-                if (SetCommState(arduinoHandle, &dcbSerialParams)) {
-                    COMMTIMEOUTS timeouts;
-                    ZeroMemory(&timeouts, sizeof(timeouts));
-                    timeouts.ReadIntervalTimeout = 50;
-                    timeouts.ReadTotalTimeoutConstant = 50;
-                    timeouts.ReadTotalTimeoutMultiplier = 10;
-                    timeouts.WriteTotalTimeoutConstant = 50;
-                    timeouts.WriteTotalTimeoutMultiplier = 10;
-                    if (SetCommTimeouts(arduinoHandle, &timeouts)) {
-                        qDebug() << "✅ Arduino connecté sur COM" << i;
-
-                        if (m_serialReconnectTimer && m_serialReconnectTimer->isActive()) {
-                            m_serialReconnectTimer->stop();
-                        }
-                        if (m_serialReadTimer && !m_serialReadTimer->isActive()) {
-                            m_serialReadTimer->start();
-                        }
-                        return;
-                    }
-                }
-            }
-            CloseHandle(arduinoHandle);
-            arduinoHandle = INVALID_HANDLE_VALUE;
-        } else {
-            DWORD err = GetLastError();
-            if (err == ERROR_ACCESS_DENIED) {
-                busyPortDetected = true;
-                qDebug() << "⚠️ Port COM" << i << "détecté mais OCCUPÉ (Accès refusé). Fermez l'IDE Arduino !";
-            }
+    if (m_arduino && m_arduino->isConnected()) {
+        if (!m_arduino->sendAccessDecision(cleanUid, allowed)) {
+            qDebug() << "[RFID-QT] echec envoi commande Arduino pour" << cleanUid;
         }
     }
 
-    if (busyPortDetected) {
-        qDebug() << "ℹ️ Port série occupé, nouvelle tentative automatique dans 2 secondes.";
-    } else {
-        qDebug() << "❌ Aucun port série (Arduino) disponible détecté de COM1 à COM64.";
+    if (statusBar()) {
+        if (allowed) {
+            const QString target = nomEmploye.isEmpty() ? cleanUid : nomEmploye;
+            statusBar()->showMessage(QStringLiteral("Acces autorise pour %1 (mode Qt).")
+                                         .arg(target),
+                                     5000);
+        } else {
+            const QString reason = denyReason.isEmpty()
+                ? QStringLiteral("Badge inconnu ou non autorise.")
+                : denyReason;
+            statusBar()->showMessage(reason, 5000);
+        }
     }
 
-    if (!m_serialReconnectTimer) {
-        m_serialReconnectTimer = new QTimer(this);
-        m_serialReconnectTimer->setInterval(2000);
-        connect(m_serialReconnectTimer, &QTimer::timeout, this, &MainWindow::setupArduino);
-    }
-    if (!m_serialReconnectTimer->isActive()) {
-        m_serialReconnectTimer->start();
-    }
-#else
-    qDebug() << "❌ Support série Win32 uniquement pour le moment.";
-#endif
+    qDebug() << "[RFID-QT]" << (allowed ? "ACCES AUTORISE" : "ACCES REFUSE")
+             << cleanUid << (allowed ? nomEmploye : denyReason);
+
+    // Afficher un message de scan reçu si on n'est pas en train d'éditer
+    // QMessageBox::information(this, "RFID", "Badge détecté : " + uid); // Trop intrusif ? On va le mettre dans applyRfidEmployeeToggle
+
+    // On ne bascule plus le statut ici, on attend l'ouverture de la porte
+    // applyRfidEmployeeToggle(uid);
 }
 
-void MainWindow::readSerial()
+void MainWindow::on_btnAnalyzeRfidQt_clicked()
 {
-#ifdef Q_OS_WIN
-    if (arduinoHandle == INVALID_HANDLE_VALUE) return;
+    if (!ui) return;
 
-    // Conserve le dernier badge lu jusqu'au message d'ouverture de porte.
-    static QString pendingUid;
-    static qint64 pendingUidMs = 0;
+    auto rfidEdit = ui->pagee ? ui->pagee->findChild<QLineEdit*>(QStringLiteral("lineEdit_rfid")) : nullptr;
+    const QString cleanUid = rfidEdit ? rfidEdit->text().trimmed() : QString();
 
-    const auto applyStatusToggle = [this](const QString& uid, const QString& source) {
-        const QString cleanUid = uid.trimmed();
-        if (cleanUid.isEmpty()) return;
+    if (cleanUid.isEmpty()) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Analyse RFID Qt"),
+                             QStringLiteral("Veuillez saisir ou scanner un UID RFID."));
+        return;
+    }
 
-        // Anti double-déclenchement très court pour éviter les répétitions matérielles
-        // du même scan, tout en autorisant un nouveau passage de carte juste après.
-        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-        if (cleanUid == m_lastAppliedUid && (nowMs - m_lastAppliedMs) < 800) {
-            qDebug() << "ℹ️ RFID ignoré (doublon rapide):" << cleanUid << "source:" << source;
-            return;
+    QString nomEmploye;
+    QString denyReason;
+    const bool allowed = Employe::canAccessByRfid(cleanUid, &nomEmploye, &denyReason);
+
+    if (m_arduino && m_arduino->isConnected()) {
+        if (!m_arduino->sendAccessDecision(cleanUid, allowed)) {
+            QMessageBox::warning(this,
+                                 QStringLiteral("Analyse RFID Qt"),
+                                 QStringLiteral("Qt a valide le badge, mais l'envoi vers l'Arduino a echoue.\nVérifiez que l'IDE Arduino/Serial Monitor est ferme."));
         }
+    }
 
-        if (Employe::updateStatutByRfid(cleanUid)) {
-            qDebug() << "✅ Statut employé mis à jour (" << source << ") pour UID:" << cleanUid;
-            loadEmployes();
+    if (allowed) {
+        const QString target = nomEmploye.isEmpty() ? cleanUid : nomEmploye;
+        QMessageBox::information(this,
+                                QStringLiteral("Analyse RFID Qt"),
+                                QStringLiteral("Acces autorise pour %1.\n\nAnalyse realisee directement par Qt via la base de donnees.")
+                                    .arg(target));
+    } else {
+        const QString reason = denyReason.isEmpty()
+            ? QStringLiteral("Badge inconnu ou non autorise.")
+            : denyReason;
+        QMessageBox::warning(this,
+                             QStringLiteral("Analyse RFID Qt"),
+                             QStringLiteral("Acces refuse.\n%1\n\nAnalyse realisee directement par Qt via la base de donnees.")
+                                 .arg(reason));
+    }
 
-            m_lastAppliedUid = cleanUid;
-            m_lastAppliedMs = nowMs;
-        } else {
-            qDebug() << "❌ Erreur RFID :" << Employe::lastError();
-        }
-    };
+    if (statusBar()) {
+        statusBar()->showMessage(
+            allowed
+                ? QStringLiteral("Analyse RFID Qt: acces autorise pour %1.").arg(nomEmploye.isEmpty() ? cleanUid : nomEmploye)
+                : QStringLiteral("Analyse RFID Qt: acces refuse pour %1.").arg(cleanUid),
+            5000);
+    }
 
-    DWORD bytesRead;
-    char buffer[128];
-    if (ReadFile(arduinoHandle, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0) {
-        buffer[bytesRead] = '\0';
-        serialBuffer += QString::fromLocal8Bit(buffer);
+    qDebug() << "[RFID-QT-ONLY]" << (allowed ? "ACCES AUTORISE" : "ACCES REFUSE")
+             << cleanUid << (allowed ? nomEmploye : denyReason);
+}
+
+void MainWindow::applyRfidEmployeeToggle(const QString& uid)
+{
+    const QString cleanUid = uid.trimmed();
+    const QString uidKey = normalizeRfidEventKey(cleanUid);
+    
+    if (uidKey.isEmpty()) {
+        qDebug() << "⚠️ UID RFID vide ignoré.";
+        return;
+    }
+
+    // Anti double-déclenchement très court pour éviter les répétitions matérielles.
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    constexpr qint64 kRfidCooldownMs = 1500;
+    if (uidKey == m_lastAppliedUid && (nowMs - m_lastAppliedMs) < kRfidCooldownMs) {
+        qDebug() << "ℹ️ RFID ignoré (doublon rapide):" << cleanUid;
+        return;
+    }
+
+    qDebug() << "🚀 Tentative de basculement statut pour UID :" << cleanUid;
+
+    QString nouveauStatut, nomEmploye;
+    if (Employe::updateStatutByRfid(cleanUid, QString(), &nouveauStatut, &nomEmploye)) {
+        qDebug() << "[RFID] REUSSITE : Le statut de" << nomEmploye << "est passe a" << nouveauStatut;
         
-        if (serialBuffer.contains('\n')) {
-            QStringList lines = serialBuffer.split('\n');
-            serialBuffer = lines.last();
-            lines.removeLast();
+        // Rafraîchissement de la vue
+        loadEmployes();
 
-            for (QString line : lines) {
-                line = line.trimmed();
-                if (line.isEmpty()) {
-                    continue;
-                }
+        m_lastAppliedUid = uidKey;
+        m_lastAppliedMs = nowMs;
+    } else {
+        const QString err = Employe::lastError();
+        qDebug() << "❌ Erreur RFID :" << err;
+    }
+}
 
-                QString uidFromLine;
-                if (line.startsWith(QStringLiteral("UID:"), Qt::CaseInsensitive)) {
-                    uidFromLine = line.mid(4).trimmed();
-                } else {
-                    // Fallback: récupère un UID hexadécimal même si le firmware change le préfixe.
-                    static const QRegularExpression uidRx(QStringLiteral("([0-9A-Fa-f]{2}(?:\\s+[0-9A-Fa-f]{2}){3,9})"));
-                    const QRegularExpressionMatch m = uidRx.match(line);
-                    if (m.hasMatch()) {
-                        uidFromLine = m.captured(1).trimmed().toUpper();
-                    }
-                }
+void MainWindow::handleArduinoDoorOpened(const QString& uid)
+{
+    qDebug() << "🔓 Événement porte Arduino reçu pour UID:" << uid;
 
-                if (!uidFromLine.isEmpty()) {
-                    pendingUid = uidFromLine;
-                    pendingUidMs = QDateTime::currentMSecsSinceEpoch();
-                    qDebug() << "📡 RFID reçu :" << uidFromLine;
+    const QString cleanUid = uid.trimmed();
+    if (cleanUid.isEmpty()) return;
 
-                    // Ne remplir le champ RFID que si l'utilisateur est en train de l'éditer.
-                    if (auto rfidEdit = ui->pagee->findChild<QLineEdit*>(QStringLiteral("lineEdit_rfid"));
-                        rfidEdit && rfidEdit->hasFocus()) {
-                        rfidEdit->setText(uidFromLine);
-                    }
-                }
+    QString nouveauStatut, nomEmploye;
+    // On laisse updateStatutByRfid gérer le basculement (Disponible <-> Indisponible)
+    if (Employe::updateStatutByRfid(cleanUid, QString(), &nouveauStatut, &nomEmploye)) {
+        qDebug() << "[ARDUINO-DOOR] REUSSITE : Le statut de" << nomEmploye << "est passé à" << nouveauStatut;
+        
+        loadEmployes(); // Rafraîchir la table
+    } else {
+        QString errorMsg = Employe::lastError();
+        qDebug() << "❌ Erreur lors de la mise à jour du statut (Porte ouverte) :" << errorMsg;
+    }
+}
 
-                const QString key = normalizeKey(line);
-                const bool doorOpened =
-                    key.contains(QStringLiteral("porteouverte")) ||
-                    key.contains(QStringLiteral("dooropen")) ||
-                    key.contains(QStringLiteral("accesautorise")) ||
-                    key.contains(QStringLiteral("accessgranted")) ||
-                    key.contains(QStringLiteral("unlock")) ||
-                    key.contains(QStringLiteral("serrureouverte")) ||
-                    key == QStringLiteral("open");
+void MainWindow::on_btnUploadArduino_clicked()
+{
+    QString hexPath = QFileDialog::getOpenFileName(this, 
+        QStringLiteral("Sélectionner le fichier compilé (.hex)"), 
+        QString(), 
+        QStringLiteral("Fichiers Intel Hex (*.hex)"));
+    
+    if (hexPath.isEmpty()) return;
 
-                if (!doorOpened) {
-                    continue;
-                }
+    // Chemins par défaut pour avrdude (à ajuster selon l'installation)
+    // On peut aussi les demander via un dialogue si besoin.
+    QString avrdudePath = QStringLiteral("C:\\Program Files (x86)\\Arduino\\hardware\\tools\\avr\\bin\\avrdude.exe");
+    QString configPath = QStringLiteral("C:\\Program Files (x86)\\Arduino\\hardware\\tools\\avr\\etc\\avrdude.conf");
 
-                const QString uidToApply = !uidFromLine.isEmpty() ? uidFromLine : pendingUid;
-                if (uidToApply.isEmpty()) {
-                    qDebug() << "⚠️ Porte ouverte détectée mais aucun UID en attente.";
-                    continue;
-                }
+    if (!QFileInfo::exists(avrdudePath)) {
+        avrdudePath = QFileDialog::getOpenFileName(this, QStringLiteral("Localiser avrdude.exe"), 
+                                                   QStringLiteral("C:\\"), QStringLiteral("Exécutables (avrdude.exe)"));
+    }
+    
+    if (avrdudePath.isEmpty()) return;
 
-                applyStatusToggle(uidToApply, QStringLiteral("Porte ouverte"));
-
-                // Évite une double bascule si le microcontrôleur répète l'événement d'ouverture.
-                pendingUid.clear();
-                pendingUidMs = 0;
-            }
-        }
+    if (!QFileInfo::exists(configPath)) {
+        configPath = QFileDialog::getOpenFileName(this, QStringLiteral("Localiser avrdude.conf"), 
+                                                  QFileInfo(avrdudePath).absolutePath(), QStringLiteral("Config (avrdude.conf)"));
     }
 
-    // Compatibilité avec les montages Arduino qui n'envoient que l'UID sans message "porte ouverte".
-    if (!pendingUid.isEmpty() && pendingUidMs > 0) {
-        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-        if ((nowMs - pendingUidMs) >= 1200) {
-            qDebug() << "ℹ️ Aucun événement porte reçu, bascule via UID seul :" << pendingUid;
-            applyStatusToggle(pendingUid, QStringLiteral("UID seul"));
-            pendingUid.clear();
-            pendingUidMs = 0;
-        }
+    if (configPath.isEmpty()) return;
+
+    m_arduino->uploadFirmware(hexPath, avrdudePath, configPath);
+}
+
+void MainWindow::handleArduinoUploadFinished(bool success, const QString& message)
+{
+    qDebug() << "[ARDUINO-UPLOAD]" << (success ? "SUCCÈS" : "ÉCHEC") << ":" << message;
+    if (statusBar()) {
+        statusBar()->showMessage(message, 10000);
     }
-#endif
 }
