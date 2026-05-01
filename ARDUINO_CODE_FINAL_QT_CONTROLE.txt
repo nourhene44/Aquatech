@@ -1,0 +1,191 @@
+// ============================================================================
+// AQUATECH - ARDUINO CODE CONTRÔLÉ PAR QT
+// Copier-coller ce code ENTIÈREMENT dans Arduino IDE
+// ============================================================================
+// LOGIQUE:
+// - Arduino démarre en STANDBY (capteur INACTIF)
+// - Qt envoie "START" → Arduino active le capteur
+// - Qt envoie "STOP" → Arduino désactive le capteur
+// - Qt reçoit temps brut (PULSE) et calcule la distance
+// - Afficheur LCD montre état "En attente" jusqu'à démarrage
+// ============================================================================
+
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// === PINS ===
+#define TRIG_PIN 9
+#define ECHO_PIN 10
+
+// === LCD ===
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// === TIMING ===
+const unsigned long PULSE_SEND_INTERVAL = 500;
+const unsigned long DISPLAY_UPDATE_INTERVAL = 100;
+
+// === STATE ===
+unsigned long lastPulseSendAt = 0;
+unsigned long lastDisplayUpdateAt = 0;
+bool sensorActive = false;  // Controlled by Qt (START/STOP)
+String line1 = "En attente";
+String line2 = "Qt démarre...";
+
+// ============================================================================
+// Read raw pulse time from ultrasonic sensor
+// Returns time in microseconds (Qt will calculate distance)
+// ============================================================================
+long readRawPulseMicros() {
+  if (!sensorActive) return -1;
+  
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  unsigned long duration = pulseIn(ECHO_PIN, HIGH, 30000);
+  return (duration == 0) ? -1 : (long)duration;
+}
+
+// ============================================================================
+// Update LCD display
+// ============================================================================
+void updateDisplay() {
+  if (millis() - lastDisplayUpdateAt < DISPLAY_UPDATE_INTERVAL) return;
+  lastDisplayUpdateAt = millis();
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print(line1);
+  if (line2.length() > 0) {
+    lcd.setCursor(0, 1);
+    lcd.print(line2);
+  }
+}
+
+// ============================================================================
+// Process incoming serial message from Qt
+// ============================================================================
+void handleMessage(const String& msg) {
+  String s = msg;
+  s.trim();
+  if (s.length() == 0) return;
+
+  String upper = s;
+  upper.toUpperCase();
+
+  // === CONTROL COMMANDS FROM QT ===
+  if (upper == "START") {
+    sensorActive = true;
+    line1 = "Port en attente";
+    line2 = "";
+    updateDisplay();
+    Serial.println("[ARDUINO] Sensor ACTIVE");
+    return;
+  }
+
+  if (upper == "STOP") {
+    sensorActive = false;
+    line1 = "En attente";
+    line2 = "Qt arrêt";
+    updateDisplay();
+    Serial.println("[ARDUINO] Sensor STOPPED");
+    return;
+  }
+
+  // === LCD DISPLAY COMMANDS (only if sensor active) ===
+  if (!sensorActive) return;
+
+  if (upper.startsWith("DISPLAY:")) {
+    line1 = s.substring(8);
+    line1.trim();
+    updateDisplay();
+    return;
+  }
+
+  if (upper.startsWith("QUAI:")) {
+    line1 = "Id quai:";
+    line2 = s.substring(5);
+    line2.trim();
+    updateDisplay();
+    return;
+  }
+
+  if (upper == "COMPLET") {
+    line1 = "PORT COMPLET";
+    line2 = "Aucun quai libre";
+    updateDisplay();
+    return;
+  }
+
+  if (upper == "BATEAU_DETECTE") {
+    line1 = "Bateau detecte!";
+    line2 = "Attente quai...";
+    updateDisplay();
+    return;
+  }
+
+  if (upper == "BATEAU_GARE") {
+    line1 = "Bateau gare";
+    line2 = "";
+    updateDisplay();
+    return;
+  }
+
+  if (upper == "BATEAU_PARTI") {
+    line1 = "Bateau parti";
+    line2 = "";
+    updateDisplay();
+    return;
+  }
+}
+
+// ============================================================================
+// SETUP
+// ============================================================================
+void setup() {
+  Serial.begin(9600);
+  Serial.setTimeout(50);
+
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+
+  line1 = "En attente";
+  line2 = "Qt démarre...";
+  updateDisplay();
+
+  Serial.println("[ARDUINO] Standby - waiting for Qt");
+}
+
+// ============================================================================
+// MAIN LOOP
+// ============================================================================
+void loop() {
+  unsigned long now = millis();
+
+  // === SEND RAW PULSE TIME TO QT (only if sensor active) ===
+  if (sensorActive && (now - lastPulseSendAt >= PULSE_SEND_INTERVAL)) {
+    long pulse = readRawPulseMicros();
+    Serial.print("PULSE:");
+    Serial.println(pulse);
+    lastPulseSendAt = now;
+  }
+
+  // === PROCESS INCOMING COMMANDS FROM QT ===
+  while (Serial.available()) {
+    String incoming = Serial.readStringUntil('\n');
+    incoming.trim();
+    if (incoming.length() > 0) {
+      handleMessage(incoming);
+    }
+  }
+
+  // === UPDATE LCD ===
+  updateDisplay();
+
+  delay(10);
+}
