@@ -133,7 +133,7 @@ border-radius:50PX}
 </string>
     </property>
     <property name="currentIndex">
-     <number>4</number>
+     <number>3</number>
     </property>
     <widget class="QWidget" name="loginb">
      <widget class="QLabel" name="label_b">
@@ -1395,9 +1395,9 @@ font-size:18px</string>
       <property name="geometry">
        <rect>
         <x>220</x>
-        <y>170</y>
+        <y>130</y>
         <width>271</width>
-        <height>501</height>
+        <height>621</height>
        </rect>
       </property>
       <property name="styleSheet">
@@ -1440,7 +1440,7 @@ font-weight:600;</string>
        <property name="geometry">
         <rect>
          <x>20</x>
-         <y>450</y>
+         <y>540</y>
          <width>101</width>
          <height>41</height>
         </rect>
@@ -1466,7 +1466,7 @@ font-weight:600;</string>
        <property name="geometry">
         <rect>
          <x>20</x>
-         <y>400</y>
+         <y>450</y>
          <width>231</width>
          <height>28</height>
         </rect>
@@ -1669,24 +1669,73 @@ font-weight:600;</string>
         </property>
        </item>
       </widget>
+      <widget class="QLabel" name="label_raison_banni">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>335</y>
+         <width>231</width>
+         <height>31</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">color: rgb(255, 85, 0);</string>
+       </property>
+       <property name="text">
+        <string>Raison du bannissement</string>
+       </property>
+      </widget>
+      <widget class="QLineEdit" name="lineEdit_raison_banni">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>365</y>
+         <width>231</width>
+         <height>41</height>
+        </rect>
+       </property>
+       <property name="placeholderText">
+        <string>Raison...</string>
+       </property>
+      </widget>
+      <widget class="QLineEdit" name="lineEdit_cv_path">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>490</y>
+         <width>231</width>
+         <height>31</height>
+        </rect>
+       </property>
+       <property name="readOnly">
+        <bool>true</bool>
+       </property>
+       <property name="placeholderText">
+        <string>Chemin du CV...</string>
+       </property>
+      </widget>
       <widget class="QPushButton" name="pushButton_5e_2">
        <property name="geometry">
         <rect>
          <x>140</x>
-         <y>450</y>
-         <width>101</width>
+         <y>540</y>
+         <width>121</width>
          <height>41</height>
         </rect>
        </property>
+       <property name="styleSheet">
+        <string notr="true">background-color: rgb(85, 255, 127);
+color: rgb(0, 0, 0);</string>
+       </property>
        <property name="text">
-        <string>📃CV</string>
+        <string>📄 Upload CV</string>
        </property>
       </widget>
       <widget class="QLineEdit" name="lineEdit_14e_2">
        <property name="geometry">
         <rect>
          <x>20</x>
-         <y>350</y>
+         <y>410</y>
          <width>231</width>
          <height>28</height>
         </rect>
@@ -1699,10 +1748,70 @@ font-weight:600;</string>
        </property>
       </widget>
      </widget>
+     <widget class="QFrame" name="frame_bannis">
+      <property name="geometry">
+       <rect>
+        <x>500</x>
+        <y>450</y>
+        <width>431</width>
+        <height>301</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">background-color: rgb(224, 238, 255);
+border:1PX solid  rgb(0, 0, 115);
+border-radius: 15px;</string>
+      </property>
+      <property name="frameShape">
+       <enum>QFrame::Shape::StyledPanel</enum>
+      </property>
+      <property name="frameShadow">
+       <enum>QFrame::Shadow::Raised</enum>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayout_bannis">
+       <item>
+        <widget class="QLabel" name="label_bannis">
+         <property name="styleSheet">
+          <string notr="true">font-weight: bold;
+font-size: 17px;
+padding: 10px;</string>
+         </property>
+         <property name="text">
+          <string>Éléments bannis</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignmentFlag::AlignCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QTableWidget" name="tableWidgetBannis">
+         <property name="styleSheet">
+          <string notr="true">font-size:14px;</string>
+         </property>
+         <column>
+          <property name="text">
+           <string>Nom</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>ID</string>
+          </property>
+         </column>
+         <column>
+          <property name="text">
+           <string>Raison</string>
+          </property>
+         </column>
+        </widget>
+       </item>
+      </layout>
+     </widget>
      <widget class="QFrame" name="frame_typese">
       <property name="geometry">
        <rect>
-        <x>740</x>
+        <x>950</x>
         <y>450</y>
         <width>441</width>
         <height>301</height>
@@ -1894,7 +2003,7 @@ background-color:transparent;
       <property name="geometry">
        <rect>
         <x>240</x>
-        <y>120</y>
+        <y>80</y>
         <width>231</width>
         <height>41</height>
        </rect>
@@ -2207,6 +2316,7 @@ font-size:18px</string>
        </property>
       </widget>
      </widget>
+     <zorder>frame_bannis</zorder>
      <zorder>frame_2e</zorder>
      <zorder>frame_typese</zorder>
      <zorder>label_8e</zorder>
@@ -9710,4 +9820,3 @@ background-color:transparent;
  <resources/>
  <connections/>
 </ui>
-

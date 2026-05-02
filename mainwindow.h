@@ -1,4 +1,4 @@
-﻿
+
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
@@ -158,6 +158,7 @@ private slots:
     void on_comboBoxc_2_currentTextChanged(const QString &text);
     void on_dateEdit_2c_dateChanged(const QDate &date);
     void on_pushButton_5e_clicked();
+    void on_pushButton_5e_2_clicked();
     void on_bap_clicked();
     void on_bep_clicked();
     void on_pushButton_5p_clicked();
@@ -183,6 +184,12 @@ public:
     void setAddButtonText(const QString& text);
     void deleteQuaiById(int id, const QString& css);
 
+    // Temperature status helpers
+    QString tempStatusText(double temperatureC);
+    QString tempStatusButtonText(double temperatureC);
+    QString tempStatusButtonCss(double temperatureC);
+    QString tempStatusCss(double temperatureC);
+
 protected:
     Quai m_quai;
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -191,6 +198,7 @@ private:
     Ui::MainWindow *ui;
     QString m_editingPecheurId;
     int m_editingEmployeId = -1;
+    QString m_currentCvPath;
     QString m_editingClientId;
     QString m_editingCaptureId;
     int m_captureQuantiteFiltre = 0;
@@ -243,6 +251,8 @@ private:
      QPlainTextEdit* m_arduinoTempHistory = nullptr;
      bool m_hasArduinoTemperature = false;
      double m_lastArduinoTemperatureC = 0.0;
+     double m_arduinoTempDangerThreshold = 29.0;
+     double m_arduinoTempCritiqueThreshold = 32.0;
 
     // --- Mot de passe oublie (OTP email) ---
     QString m_passwordResetCode;

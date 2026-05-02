@@ -1,4 +1,4 @@
-﻿#include "mainwindow.h"
+#include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "arduinoserial.h"
 #include <QStatusBar>
@@ -48,6 +48,9 @@
 #include <QFrame>
 #include <QSystemTrayIcon>
 #include <QEvent>
+#ifdef HAVE_ACTIVEQT
+#include <QAxObject>
+#endif
 #include <QGraphicsDropShadowEffect>
 #include <QLocale>
 #include <QStyle>
@@ -2587,7 +2590,7 @@ MainWindow::MainWindow(QWidget *parent)
         ui->lineEditp->setMinimumWidth(140);
     }
 
-    // IDs: champs modifiables selon demande utilisateur
+    // Page employés: IDs: champs modifiables selon demande utilisateur
     const auto unlockIdFields = [this]() {
         if (!ui) return;
         if (ui->lineEditp) { ui->lineEditp->setReadOnly(false); ui->lineEditp->setEnabled(true); }           // Pecheur
@@ -2598,6 +2601,35 @@ MainWindow::MainWindow(QWidget *parent)
         if (ui->cap_lineEdit_11) { ui->cap_lineEdit_11->setReadOnly(false); ui->cap_lineEdit_11->setEnabled(true); } // Capture
     };
     unlockIdFields();
+
+    // Initialisation Raison du bannissement (caché par défaut)
+    if (ui->label_raison_banni) ui->label_raison_banni->hide();
+    if (ui->lineEdit_raison_banni) ui->lineEdit_raison_banni->hide();
+
+    if (ui->comboBox_16e) {
+        connect(ui->comboBox_16e, &QComboBox::currentTextChanged, this, [this](const QString &text) {
+            const bool isBanni = (text == QStringLiteral("Banni"));
+            if (ui->label_raison_banni) ui->label_raison_banni->setVisible(isBanni);
+            if (ui->lineEdit_raison_banni) ui->lineEdit_raison_banni->setVisible(isBanni);
+        });
+    }
+
+    if (ui->lineEdit_raison_banni) {
+        connect(ui->lineEdit_raison_banni, &QLineEdit::textChanged, this, [this](const QString &text) {
+            if (!ui->tableWidgetBannis) return;
+            const QString currentId = ui->lineEdit_12e ? ui->lineEdit_12e->text().trimmed() : QString();
+            if (currentId.isEmpty()) return;
+
+            for (int i = 0; i < ui->tableWidgetBannis->rowCount(); ++i) {
+                QTableWidgetItem *idItem = ui->tableWidgetBannis->item(i, 1);
+                if (idItem && idItem->text() == currentId) {
+                    QTableWidgetItem *raisonItem = ui->tableWidgetBannis->item(i, 2);
+                    if (raisonItem) raisonItem->setText(text);
+                    break;
+                }
+            }
+        });
+    }
 
     if (ui->stackedWidget) {
         connect(ui->stackedWidget, &QStackedWidget::currentChanged, this, [unlockIdFields](int) {
@@ -3077,6 +3109,7 @@ void MainWindow::loadEmployes()
     const int colRole = findModelCol({QStringLiteral("Role")});
     const int colEtat = findModelCol({QStringLiteral("Etat")});
     const int colStatut = findModelCol({QStringLiteral("Statut")});
+    const int colRaison = findModelCol({QStringLiteral("Raison")});
 
     int countGardien = 0;
     int countTechnicien = 0;
@@ -3087,6 +3120,14 @@ void MainWindow::loadEmployes()
     table->setRowCount(0);
     table->setColumnCount(dataCols + 1);
 
+    // Initialisation du tableau des éléments bannis
+    if (ui->tableWidgetBannis) {
+        ui->tableWidgetBannis->setRowCount(0);
+        ui->tableWidgetBannis->setColumnCount(3);
+        ui->tableWidgetBannis->setHorizontalHeaderLabels({QStringLiteral("Nom"), QStringLiteral("ID"), QStringLiteral("Raison")});
+        ui->tableWidgetBannis->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    }
+
     // En-tetes
     for (int c = 0; c < dataCols; ++c) {
         auto *item = new QTableWidgetItem(model->headerData(c, Qt::Horizontal).toString());
@@ -3096,12 +3137,14 @@ void MainWindow::loadEmployes()
 
     // Donnees filtrees
     int visibleRow = 0;
+    const int colId = findModelCol({QStringLiteral("ID")});
     for (int r = 0; r < rowCount; ++r) {
         const QString nom = (colNom >= 0) ? model->data(model->index(r, colNom)).toString().trimmed() : QString();
         const QString prenom = (colPrenom >= 0) ? model->data(model->index(r, colPrenom)).toString().trimmed() : QString();
         const QString role = (colRole >= 0) ? model->data(model->index(r, colRole)).toString().trimmed() : QString();
         const QString etat = (colEtat >= 0) ? model->data(model->index(r, colEtat)).toString().trimmed() : QString();
         const QString statut = (colStatut >= 0) ? model->data(model->index(r, colStatut)).toString().trimmed() : QString();
+        const QString raison = (colRaison >= 0) ? model->data(model->index(r, colRaison)).toString().trimmed() : QString();
 
         bool matchRecherche = true;
         if (!recherche.isEmpty()) {
@@ -3137,6 +3180,17 @@ void MainWindow::loadEmployes()
             const QVariant value = model->data(model->index(r, c));
             auto *cellItem = new QTableWidgetItem(value.toString());
             table->setItem(visibleRow, c, cellItem);
+        }
+
+        // Ajouter aux éléments bannis si l'état est "Banni"
+        if (normalizeKey(etat) == normalizeKey(QStringLiteral("Banni"))) {
+            if (ui->tableWidgetBannis) {
+                int bannedRow = ui->tableWidgetBannis->rowCount();
+                ui->tableWidgetBannis->insertRow(bannedRow);
+                ui->tableWidgetBannis->setItem(bannedRow, 0, new QTableWidgetItem(nom));
+                ui->tableWidgetBannis->setItem(bannedRow, 1, new QTableWidgetItem(model->data(model->index(r, colId)).toString()));
+                ui->tableWidgetBannis->setItem(bannedRow, 2, new QTableWidgetItem(raison));
+            }
         }
 
         const QString roleCanonical = canonicalEmployeRole(role);
@@ -3327,6 +3381,8 @@ void MainWindow::editEmployeFromTable(int row)
     const int colEtat = colByNames({QStringLiteral("Etat")});
     const int colStatut = colByNames({QStringLiteral("Statut")});
     const int colSalaire = colByNames({QStringLiteral("Salaire")});
+    const int colRaison = colByNames({QStringLiteral("Raison")});
+    const int colCv = colByNames({QStringLiteral("CV")});
 
     const QString idText = (colId >= 0 && table->item(row, colId)) ? table->item(row, colId)->text().trimmed() : QString();
     const QString nom = (colNom >= 0 && table->item(row, colNom)) ? table->item(row, colNom)->text().trimmed() : QString();
@@ -3337,12 +3393,16 @@ void MainWindow::editEmployeFromTable(int row)
     const QString etat = (colEtat >= 0 && table->item(row, colEtat)) ? table->item(row, colEtat)->text().trimmed() : QString();
     const QString statut = (colStatut >= 0 && table->item(row, colStatut)) ? table->item(row, colStatut)->text().trimmed() : QString();
     const QString salaire = (colSalaire >= 0 && table->item(row, colSalaire)) ? table->item(row, colSalaire)->text().trimmed() : QString();
+    const QString raison = (colRaison >= 0 && table->item(row, colRaison)) ? table->item(row, colRaison)->text().trimmed() : QString();
+    const QString cvPath = (colCv >= 0 && table->item(row, colCv)) ? table->item(row, colCv)->text().trimmed() : QString();
 
     if (ui->lineEdit_12e) ui->lineEdit_12e->setText(idText);
     if (ui->lineEdit_13e) ui->lineEdit_13e->setText(nom);
     if (ui->lineEdit_16e) ui->lineEdit_16e->setText(prenom);
     if (ui->lineEdit_14e) ui->lineEdit_14e->setText(telephone);
     if (ui->lineEdit_14e_2) ui->lineEdit_14e_2->setText(salaire);
+    if (ui->lineEdit_raison_banni) ui->lineEdit_raison_banni->setText(raison);
+    if (ui->lineEdit_cv_path) ui->lineEdit_cv_path->setText(cvPath);
 
     if (ui->comboBox_15e) {
         int idx = ui->comboBox_15e->findText(equipe);
@@ -3359,6 +3419,13 @@ void MainWindow::editEmployeFromTable(int row)
     if (ui->comboBox_14e) {
         int idx = ui->comboBox_14e->findText(statut);
         if (idx >= 0) ui->comboBox_14e->setCurrentIndex(idx);
+    }
+
+    // Réinitialiser les champs spécifiques lors de l'édition
+    m_currentCvPath.clear();
+    if (ui->pushButton_5e_2) {
+        ui->pushButton_5e_2->setText(QStringLiteral("📄 Upload CV"));
+        ui->pushButton_5e_2->setToolTip(QString());
     }
 
     bool okInt = false;
@@ -3708,9 +3775,23 @@ void MainWindow::loadCaptures()
         table->setItem(row, 2, new QTableWidgetItem(record.typePoisson));
         table->setItem(row, 3, new QTableWidgetItem(QString::number(record.quantite)));
         table->setItem(row, 4, new QTableWidgetItem(QString::number(record.poids, 'f', 2)));
-        table->setItem(row, 5, new QTableWidgetItem(record.hasTemperature
+        QTableWidgetItem* tempItem = new QTableWidgetItem(record.hasTemperature
                                  ? QString::number(record.temperatureC, 'f', 1)
-                                 : QString()));
+                                 : QString());
+        if (record.hasTemperature) {
+            if (record.temperatureC < m_arduinoTempDangerThreshold) {
+                tempItem->setForeground(QColor(39, 174, 96)); // Vert
+            } else if (record.temperatureC <= m_arduinoTempCritiqueThreshold) {
+                tempItem->setForeground(QColor(243, 156, 18)); // Orange
+            } else {
+                tempItem->setForeground(QColor(231, 76, 60)); // Rouge
+            }
+            QFont f = tempItem->font();
+            f.setBold(true);
+            tempItem->setFont(f);
+            tempItem->setTextAlignment(Qt::AlignCenter);
+        }
+        table->setItem(row, 5, tempItem);
         table->setItem(row, 6, new QTableWidgetItem(record.dateCapture.isValid()
                                                      ? record.dateCapture.toString(QStringLiteral("yyyy-MM-dd"))
                                                      : QString()));
@@ -5322,9 +5403,6 @@ void MainWindow::setupArduinoTemperatureButton()
     connect(m_capArduinoTempButton, &QPushButton::clicked, this, &MainWindow::toggleCapturesArduinoTemperatureView);
 }
 
-// Forward declarations (used before definitions below)
-static QString tempStatusCss(double temperatureC);
-
 void MainWindow::toggleCapturesArduinoTemperatureView()
 {
     if (!ui || !ui->cap_pagecaptures) return;
@@ -5406,7 +5484,11 @@ void MainWindow::ensureCapturesArduinoTemperatureView()
     auto* cardsRow = new QHBoxLayout();
     cardsRow->setSpacing(12);
 
-    auto makeCard = [frame](const QString& cardTitle, const QString& initialValue, const QString& valueCss, QLabel** valueOut) {
+    QLabel* currentValueLabel = nullptr;
+    QDoubleSpinBox* dangerSpin = nullptr;
+    QDoubleSpinBox* critiqueSpin = nullptr;
+
+    auto makeCard = [frame](const QString& cardTitle, const QString& initialValue, const QString& valueCss, QLabel** valueOut, QDoubleSpinBox** spinOut = nullptr) {
         auto* card = new QFrame(frame);
         card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         card->setMinimumHeight(104);
@@ -5422,25 +5504,57 @@ void MainWindow::ensureCapturesArduinoTemperatureView()
         t->setFont(tf);
         layout->addWidget(t);
 
-        auto* v = new QLabel(initialValue, card);
-        QFont vf = v->font();
-        vf.setBold(true);
-        vf.setPointSize(qMax(14, vf.pointSize() + 10));
-        v->setFont(vf);
-        v->setStyleSheet(valueCss);
-        layout->addWidget(v);
+        if (spinOut) {
+            auto* s = new QDoubleSpinBox(card);
+            s->setRange(0.0, 100.0);
+            s->setSingleStep(0.5);
+            s->setValue(initialValue.split(' ')[0].toDouble());
+            s->setSuffix(QStringLiteral(" \u00B0C"));
+            s->setStyleSheet(QStringLiteral("font-size: 16pt; font-weight: bold; ") + valueCss);
+            layout->addWidget(s);
+            *spinOut = s;
+        } else {
+            auto* v = new QLabel(initialValue, card);
+            QFont vf = v->font();
+            vf.setBold(true);
+            vf.setPointSize(qMax(14, vf.pointSize() + 10));
+            v->setFont(vf);
+            v->setStyleSheet(valueCss);
+            layout->addWidget(v);
+            if (valueOut) *valueOut = v;
+        }
 
-        if (valueOut) *valueOut = v;
         return card;
     };
 
-    QLabel* currentValueLabel = nullptr;
     cardsRow->addWidget(makeCard(QStringLiteral("Temp\u00E9rature actuelle"), QStringLiteral("-- \u00B0C"), QString(), &currentValueLabel));
-    cardsRow->addWidget(makeCard(QStringLiteral("Seuil danger"), QStringLiteral("29.0 \u00B0C"), QStringLiteral("color: #f39c12;"), nullptr));
-    cardsRow->addWidget(makeCard(QStringLiteral("Seuil critique"), QStringLiteral("32.0 \u00B0C"), QStringLiteral("color: #e74c3c;"), nullptr));
+    cardsRow->addWidget(makeCard(QStringLiteral("Seuil danger"), QStringLiteral("29.0 \u00B0C"), QStringLiteral("color: #f39c12;"), nullptr, &dangerSpin));
+    cardsRow->addWidget(makeCard(QStringLiteral("Seuil critique"), QStringLiteral("32.0 \u00B0C"), QStringLiteral("color: #e74c3c;"), nullptr, &critiqueSpin));
     root->addLayout(cardsRow);
 
     m_arduinoTempValueLabel = currentValueLabel;
+
+    // Connect spinboxes to send data to Arduino
+    auto sendThresholds = [this, dangerSpin, critiqueSpin]() {
+        m_arduinoTempDangerThreshold = dangerSpin->value();
+        m_arduinoTempCritiqueThreshold = critiqueSpin->value();
+
+        if (m_hasArduinoTemperature) {
+            updateArduinoTemperatureDialog(m_lastArduinoTemperatureC, false);
+            updateCapturesTableLiveTemperature(m_lastArduinoTemperatureC);
+            if (m_capArduinoTempButton) {
+                m_capArduinoTempButton->setText(tempStatusButtonText(m_lastArduinoTemperatureC));
+                m_capArduinoTempButton->setStyleSheet(tempStatusButtonCss(m_lastArduinoTemperatureC));
+            }
+        }
+
+        if (!m_arduino || !m_arduino->isConnected()) return;
+        m_arduino->writeLine(QStringLiteral("D:%1").arg(m_arduinoTempDangerThreshold, 0, 'f', 1));
+        m_arduino->writeLine(QStringLiteral("C:%1").arg(m_arduinoTempCritiqueThreshold, 0, 'f', 1));
+    };
+
+    connect(dangerSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, sendThresholds);
+    connect(critiqueSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, sendThresholds);
 
     auto* histFrame = new QFrame(frame);
     auto* histLayout = new QVBoxLayout(histFrame);
@@ -5516,21 +5630,21 @@ static bool tryParseTemperatureC(const QString& line, double* outC)
     return true;
 }
 
-static QString tempStatusText(double temperatureC)
+QString MainWindow::tempStatusText(double temperatureC)
 {
-    if (temperatureC < 29.0) return QStringLiteral("Normal");
-    if (temperatureC <= 32.0) return QStringLiteral("Danger");
+    if (temperatureC < m_arduinoTempDangerThreshold) return QStringLiteral("Normal");
+    if (temperatureC <= m_arduinoTempCritiqueThreshold) return QStringLiteral("Danger");
     return QStringLiteral("Critique");
 }
 
-static QString tempStatusButtonText(double temperatureC)
+QString MainWindow::tempStatusButtonText(double temperatureC)
 {
-    if (temperatureC < 29.0) return QStringLiteral("Temperature normale");
-    if (temperatureC <= 32.0) return QStringLiteral("Temp danger");
+    if (temperatureC < m_arduinoTempDangerThreshold) return QStringLiteral("Temperature normale");
+    if (temperatureC <= m_arduinoTempCritiqueThreshold) return QStringLiteral("Temp danger");
     return QStringLiteral("Temp critique");
 }
 
-static QString tempStatusButtonCss(double temperatureC)
+QString MainWindow::tempStatusButtonCss(double temperatureC)
 {
     const QString common = QStringLiteral(
         "color: white;"
@@ -5539,16 +5653,16 @@ static QString tempStatusButtonCss(double temperatureC)
         "padding: 8px 16px;"
     );
 
-    if (temperatureC < 29.0) {
+    if (temperatureC < m_arduinoTempDangerThreshold) {
         return QStringLiteral("QPushButton { background-color: #27ae60; border: 2px solid #229954;") + common + QStringLiteral(" }");
     }
-    if (temperatureC <= 32.0) {
+    if (temperatureC <= m_arduinoTempCritiqueThreshold) {
         return QStringLiteral("QPushButton { background-color: #f39c12; border: 2px solid #d68910;") + common + QStringLiteral(" }");
     }
     return QStringLiteral("QPushButton { background-color: #e74c3c; border: 2px solid #c0392b;") + common + QStringLiteral(" }");
 }
 
-static QString tempStatusCss(double temperatureC)
+QString MainWindow::tempStatusCss(double temperatureC)
 {
     // Reuse palette already present in mainwindow.ui.
     const QString common = QStringLiteral(
@@ -5560,10 +5674,10 @@ static QString tempStatusCss(double temperatureC)
         "text-align: center;"
     );
 
-    if (temperatureC < 29.0) {
+    if (temperatureC < m_arduinoTempDangerThreshold) {
         return QStringLiteral("background-color: #27ae60; border: 2px solid #229954;") + common;
     }
-    if (temperatureC <= 32.0) {
+    if (temperatureC <= m_arduinoTempCritiqueThreshold) {
         return QStringLiteral("background-color: #f39c12; border: 2px solid #d68910;") + common;
     }
     return QStringLiteral("background-color: #e74c3c; border: 2px solid #c0392b;") + common;
@@ -5811,40 +5925,38 @@ void MainWindow::updateCapturesTableLiveTemperature(double temperatureC)
         }
     }
 
-    constexpr int kIdCol = 0;
     constexpr int kTempCol = 5;
 
-    int targetRow = -1;
-
-    // If a capture is being edited, update that row specifically.
-    if (!m_editingCaptureId.isEmpty()) {
-        for (int r = 0; r < table->rowCount(); ++r) {
-            const QTableWidgetItem* idItem = table->item(r, kIdCol);
-            if (!idItem) continue;
-            if (idItem->text().trimmed() == m_editingCaptureId) {
-                targetRow = r;
-                break;
-            }
+    // Update EVERY row in the table with the same temperature
+    for (int r = 0; r < table->rowCount(); ++r) {
+        QTableWidgetItem* tempItem = table->item(r, kTempCol);
+        if (!tempItem) {
+            tempItem = new QTableWidgetItem();
+            table->setItem(r, kTempCol, tempItem);
         }
 
-        // Keep the edit buffer synced too.
+        tempItem->setText(QString::number(temperatureC, 'f', 1));
+
+        // Apply color based on dynamic thresholds
+        if (temperatureC < m_arduinoTempDangerThreshold) {
+            tempItem->setForeground(QColor(39, 174, 96)); // Vert (Safe)
+        } else if (temperatureC <= m_arduinoTempCritiqueThreshold) {
+            tempItem->setForeground(QColor(243, 156, 18)); // Orange (Danger)
+        } else {
+            tempItem->setForeground(QColor(231, 76, 60)); // Rouge (Critique)
+        }
+        
+        QFont f = tempItem->font();
+        f.setBold(true);
+        tempItem->setFont(f);
+        tempItem->setTextAlignment(Qt::AlignCenter);
+    }
+
+    // Update the edit buffer too
+    if (!m_editingCaptureId.isEmpty()) {
         m_editingCaptureHasTemperature = true;
         m_editingCaptureTemperatureC = temperatureC;
     }
-
-    // Otherwise, update the most recent row (row 0, sorted DESC by date).
-    if (targetRow < 0) {
-        const int current = table->currentRow();
-        targetRow = (current >= 0) ? current : 0;
-    }
-
-    QTableWidgetItem* tempItem = table->item(targetRow, kTempCol);
-    if (!tempItem) {
-        tempItem = new QTableWidgetItem();
-        table->setItem(targetRow, kTempCol, tempItem);
-    }
-
-    tempItem->setText(QString::number(temperatureC, 'f', 1));
 }
 
 void MainWindow::updateArduinoTemperatureDialogConnectionState()
@@ -5871,9 +5983,9 @@ void MainWindow::updateArduinoTemperatureDialog(double temperatureC, bool append
     if (m_arduinoTempValueLabel) {
         m_arduinoTempValueLabel->setText(valueText);
 
-        const QString valueColor = (temperatureC < 29.0)
+        const QString valueColor = (temperatureC < m_arduinoTempDangerThreshold)
             ? QStringLiteral("color: #27ae60;")
-            : (temperatureC <= 32.0)
+            : (temperatureC <= m_arduinoTempCritiqueThreshold)
                 ? QStringLiteral("color: #f39c12;")
                 : QStringLiteral("color: #e74c3c;");
         m_arduinoTempValueLabel->setStyleSheet(valueColor);
@@ -6278,6 +6390,8 @@ void MainWindow::on_pushButton_5e_clicked()
     const QString etat = ui->comboBox_16e ? ui->comboBox_16e->currentText().trimmed() : QString();
     const QString role = ui->comboBox_11e ? ui->comboBox_11e->currentText().trimmed() : QString();
     const QString statut = ui->comboBox_14e ? ui->comboBox_14e->currentText().trimmed() : QString();
+    const QString raison = ui->lineEdit_raison_banni ? ui->lineEdit_raison_banni->text().trimmed() : QString();
+    const QString cvPath = ui->lineEdit_cv_path ? ui->lineEdit_cv_path->text().trimmed() : QString();
 
     if (!editingEmploye && id <= 0) {
         id = Employe::genererNouvelId(role);
@@ -6344,7 +6458,7 @@ void MainWindow::on_pushButton_5e_clicked()
         return;
     }
 
-    Employe emp(id, nom, prenom, role, equipe, etat, statut, salaire, telephone);
+    Employe emp(id, nom, prenom, role, equipe, etat, statut, salaire, telephone, raison, cvPath);
 
     if (editingEmploye) {
         if (!emp.modifierAvecAncienId(m_editingEmployeId)) {
@@ -6366,6 +6480,12 @@ void MainWindow::on_pushButton_5e_clicked()
 
     // Rafraichir la table et reinitialiser l'etat d'edition
     loadEmployes();
+
+    // Réinitialiser les champs spécifiques (CV, Raison)
+    m_currentCvPath.clear();
+    if (ui->pushButton_5e_2) ui->pushButton_5e_2->setText(QStringLiteral("📄 Upload CV"));
+    if (ui->lineEdit_raison_banni) ui->lineEdit_raison_banni->clear();
+    if (ui->lineEdit_cv_path) ui->lineEdit_cv_path->clear();
 
     if (editingEmploye) {
         m_editingEmployeId = -1;
@@ -12647,3 +12767,152 @@ void MainWindow::on_bmip_clicked()
                              QStringLiteral("Mission"),
                              QStringLiteral("E-mail d'affectation envoyé à %1 et mise à jour réussie.").arg(email));
 }
+
+void MainWindow::on_pushButton_5e_2_clicked()
+{
+    if (!ui) return;
+
+    QString fileName = QFileDialog::getOpenFileName(this,
+        tr("Sélectionner le CV"), "", tr("Documents (*.pdf *.doc *.docx *.txt);;Tous les fichiers (*)"));
+    
+    if (fileName.isEmpty()) return;
+
+    m_currentCvPath = fileName;
+    if (ui->lineEdit_cv_path) ui->lineEdit_cv_path->setText(fileName);
+    
+    ui->pushButton_5e_2->setText(QStringLiteral("📄 CV Sélectionné"));
+    ui->pushButton_5e_2->setToolTip(fileName);
+
+    QString content;
+    bool readSuccess = false;
+
+    // 1. Tentative de lecture selon l'extension
+    if (fileName.endsWith(".txt", Qt::CaseInsensitive)) {
+        QFile file(fileName);
+        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            content = QString::fromUtf8(file.readAll());
+            file.close();
+            readSuccess = true;
+        }
+    } 
+#ifdef HAVE_ACTIVEQT
+    else if (fileName.endsWith(".docx", Qt::CaseInsensitive) || fileName.endsWith(".doc", Qt::CaseInsensitive)) {
+        // Tentative d'extraction via Microsoft Word si installé
+        QAxObject* word = new QAxObject("Word.Application", this);
+        if (word && !word->isNull()) {
+            word->setProperty("Visible", false);
+            QAxObject* documents = word->querySubObject("Documents");
+            if (documents) {
+                QAxObject* document = documents->querySubObject("Open(const QString&, bool, bool)", fileName, true, true);
+                if (document) {
+                    QAxObject* range = document->querySubObject("Range()");
+                    if (range) {
+                        content = range->property("Text").toString();
+                        delete range;
+                        readSuccess = true;
+                    }
+                    document->dynamicCall("Close()");
+                    delete document;
+                }
+                delete documents;
+            }
+            word->dynamicCall("Quit()");
+            delete word;
+        }
+    }
+#endif
+
+    // 2. Extraction des valeurs via Regex
+    auto extractValue = [&](const QString &keyword) -> QString {
+        // Regex plus précise : s'arrête au prochain mot-clé ou à la fin de la ligne
+        // On définit la liste des mots-clés pour savoir où s'arrêter
+        static const QStringList keywords = {
+            "Id", "Nom", "Prenom", "Telephone", "Role", "Statut", "Equipe", "Etat", "Salaire"
+        };
+        
+        // On construit une regex qui cherche le mot-clé, puis capture tout jusqu'à :
+        // - un autre mot-clé (suivi de :)
+        // - ou la fin de la ligne ($)
+        // - ou un saut de ligne (\n)
+        
+        QString otherKeywords = keywords.join("|");
+        // Regex : keyword + separator + (capture tout ce qui n'est pas un saut de ligne et qui n'est pas suivi par un autre keyword:)
+        // Version simplifiée mais efficace : capture jusqu'au prochain mot-clé ou fin de ligne
+        QRegularExpression re(keyword + "\\s*[:=]\\s*(.*?)(?=(?:" + otherKeywords + ")\\s*[:=]|$|\\r|\\n)", 
+                             QRegularExpression::CaseInsensitiveOption);
+        
+        QRegularExpressionMatch match = re.match(content);
+        if (match.hasMatch()) {
+            return match.captured(1).trimmed();
+        }
+        return QString();
+    };
+
+    QString id = extractValue("Id");
+    QString nom = extractValue("Nom");
+    QString prenom = extractValue("Prenom");
+    QString tel = extractValue("Telephone");
+    QString role = extractValue("Role");
+    QString statut = extractValue("Statut");
+    QString equipe = extractValue("Equipe");
+    QString etat = extractValue("Etat");
+    QString salaire = extractValue("Salaire");
+
+    // 3. Fallback : Si rien n'a été trouvé (ex: fichier binaire sans Word), on essaie le nom du fichier
+    if (id.isEmpty() && nom.isEmpty() && prenom.isEmpty()) {
+        QString baseName = QFileInfo(fileName).baseName();
+        // On remplace les séparateurs par des espaces pour le découpage
+        QString cleanName = baseName.replace('_', ' ').replace('-', ' ');
+        QStringList parts = cleanName.split(' ', Qt::SkipEmptyParts);
+        
+        for (const QString &part : parts) {
+            QString upart = part.toUpper();
+            if (upart.length() >= 7 && upart.at(0).isDigit()) {
+                if (id.isEmpty()) id = part;
+                else if (tel.isEmpty()) tel = part;
+            } else if (upart == "GARDIEN" || upart == "TECHNICIEN" || upart == "RESPONSABLE" || upart == "OUVRIER") {
+                if (role.isEmpty()) role = part;
+            } else if (upart == "MISSION" || upart == "CONGE" || upart == "DISPONIBLE") {
+                if (statut.isEmpty()) statut = part;
+            } else if (nom.isEmpty()) {
+                nom = part;
+            } else if (prenom.isEmpty()) {
+                prenom = part;
+            }
+        }
+    }
+
+    // 4. Remplissage du formulaire
+    if (ui->lineEdit_12e && !id.isEmpty()) ui->lineEdit_12e->setText(id);
+    if (ui->lineEdit_13e && !nom.isEmpty()) ui->lineEdit_13e->setText(nom);
+    if (ui->lineEdit_16e && !prenom.isEmpty()) ui->lineEdit_16e->setText(prenom);
+    if (ui->lineEdit_14e && !tel.isEmpty()) ui->lineEdit_14e->setText(tel);
+    if (ui->lineEdit_14e_2 && !salaire.isEmpty()) ui->lineEdit_14e_2->setText(salaire);
+
+    if (ui->comboBox_11e && !role.isEmpty()) {
+        int idx = ui->comboBox_11e->findText(role, Qt::MatchContains | Qt::MatchFixedString);
+        if (idx >= 0) ui->comboBox_11e->setCurrentIndex(idx);
+    }
+    if (ui->comboBox_14e && !statut.isEmpty()) {
+        int idx = ui->comboBox_14e->findText(statut, Qt::MatchContains | Qt::MatchFixedString);
+        if (idx >= 0) ui->comboBox_14e->setCurrentIndex(idx);
+    }
+    if (ui->comboBox_15e && !equipe.isEmpty()) {
+        int idx = ui->comboBox_15e->findText(equipe, Qt::MatchContains | Qt::MatchFixedString);
+        if (idx >= 0) ui->comboBox_15e->setCurrentIndex(idx);
+    }
+    if (ui->comboBox_16e && !etat.isEmpty()) {
+        int idx = ui->comboBox_16e->findText(etat, Qt::MatchContains | Qt::MatchFixedString);
+        if (idx >= 0) ui->comboBox_16e->setCurrentIndex(idx);
+    }
+
+    if (readSuccess) {
+        QMessageBox::information(this, tr("Upload CV"), 
+            tr("Le CV a été lu et le formulaire a été pré-rempli automatiquement."));
+    } else {
+        QMessageBox::warning(this, tr("Upload CV"), 
+            tr("Le fichier a été sélectionné, mais son contenu n'a pas pu être lu directement (format .docx sans Word installé).\n\n"
+               "Certains champs ont été remplis à partir du nom du fichier. Pour un remplissage complet, utilisez un fichier .txt."));
+    }
+}
+

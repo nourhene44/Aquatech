@@ -30,8 +30,8 @@ Connection* Connection::getInstance() {
 bool Connection::createconnect() {
     try {
         // 🔧 PARAMÈTRES DE CONNEXION - À MODIFIER SELON VOTRE CONFIG
-        QString nomUtilisateur = "nour1";           // Nom d'utilisateur Oracle
-        QString motDePasse = "nour123";                  // Mot de passe Oracle
+        QString nomUtilisateur = "hr";           // Nom d'utilisateur Oracle
+        QString motDePasse = "hr123";                  // Mot de passe Oracle
         QString hote = "localhost";                  // Adresse du serveur
         int port = 1521;                             // Port Oracle
         QString sid = "XE";                          // SID de votre base (XE, ORCL, etc.)

@@ -161,6 +161,8 @@ struct EmployeDbMap
 	QString etat;
 	QString statut;
 	QString salaire;
+	QString raison;
+	QString cvPath;
 };
 
 static bool resolveEmployeDbMap(QSqlDatabase db, EmployeDbMap &map, QString &err)
@@ -187,6 +189,8 @@ static bool resolveEmployeDbMap(QSqlDatabase db, EmployeDbMap &map, QString &err
 	map.etat = matchColumn(cols, {QStringLiteral("ETAT"), QStringLiteral("STATE"), QStringLiteral("ETAT_EMPLOYE")});
 	map.statut = matchColumn(cols, {QStringLiteral("STATUT"), QStringLiteral("STATUS"), QStringLiteral("ZONE")});
 	map.salaire = matchColumn(cols, {QStringLiteral("SALAIRE"), QStringLiteral("SALARY")});
+	map.raison = matchColumn(cols, {QStringLiteral("RAISON"), QStringLiteral("RAISON_BANNI"), QStringLiteral("BAN_REASON")});
+	map.cvPath = matchColumn(cols, {QStringLiteral("CV_PATH"), QStringLiteral("CV"), QStringLiteral("CHEMIN_CV")});
 
 	if (map.id.isEmpty() || map.nom.isEmpty() || map.salaire.isEmpty()) {
 		err = QStringLiteral("Colonnes obligatoires employé introuvables dans %1.").arg(map.table);
@@ -248,7 +252,9 @@ Employe::Employe(int id,
 				 const QString &etat,
 				 const QString &statut,
 				 double salaire,
-				 const QString &telephoneUi)
+				 const QString &telephoneUi,
+				 const QString &raison,
+				 const QString &cvPath)
 	: m_id(id)
 	, m_nom(nom)
 	, m_prenom(prenom)
@@ -258,6 +264,8 @@ Employe::Employe(int id,
 	, m_statut(statut)
 	, m_salaire(salaire)
 	, m_telephoneUi(telephoneUi)
+	, m_raison(raison)
+	, m_cvPath(cvPath)
 {
 }
 
@@ -355,6 +363,8 @@ bool Employe::ajouter() const
 	if (!map.statut.isEmpty()) { cols << map.statut; bindValues << statutValue; }
 	if (!map.equipe.isEmpty()) { cols << map.equipe; bindValues << equipeValue; }
 	if (!map.etat.isEmpty()) { cols << map.etat; bindValues << etatValue; }
+	if (!map.raison.isEmpty()) { cols << map.raison; bindValues << m_raison.trimmed(); }
+	if (!map.cvPath.isEmpty()) { cols << map.cvPath; bindValues << m_cvPath.trimmed(); }
 
 	QStringList placeholders;
 	for (int i = 0; i < cols.size(); ++i) placeholders << QStringLiteral("?");
@@ -479,6 +489,8 @@ bool Employe::modifierAvecAncienId(int ancienId) const
 	if (!map.statut.isEmpty()) { sets << QStringLiteral("%1 = ?").arg(map.statut); bindValues << statutValue; }
 	if (!map.equipe.isEmpty()) { sets << QStringLiteral("%1 = ?").arg(map.equipe); bindValues << equipeValue; }
 	if (!map.etat.isEmpty()) { sets << QStringLiteral("%1 = ?").arg(map.etat); bindValues << etatValue; }
+	if (!map.raison.isEmpty()) { sets << QStringLiteral("%1 = ?").arg(map.raison); bindValues << m_raison.trimmed(); }
+	if (!map.cvPath.isEmpty()) { sets << QStringLiteral("%1 = ?").arg(map.cvPath); bindValues << m_cvPath.trimmed(); }
 
 	QSqlQuery query(db);
 	query.prepare(QStringLiteral("UPDATE %1 SET %2 WHERE %3 = ?")
@@ -564,6 +576,8 @@ QSqlQueryModel *Employe::afficher()
 	if (!map.statut.isEmpty()) selectCols << map.statut;
 	if (!map.equipe.isEmpty()) selectCols << map.equipe;
 	if (!map.etat.isEmpty()) selectCols << map.etat;
+	if (!map.raison.isEmpty()) selectCols << map.raison;
+	if (!map.cvPath.isEmpty()) selectCols << map.cvPath;
 	selectCols << map.salaire;
 
 	const QString sql = QStringLiteral("SELECT %1 FROM %2 ORDER BY %3")
@@ -584,6 +598,8 @@ QSqlQueryModel *Employe::afficher()
 	if (!map.statut.isEmpty()) model->setHeaderData(headerIdx++, Qt::Horizontal, QObject::tr("Statut"));
 	if (!map.equipe.isEmpty()) model->setHeaderData(headerIdx++, Qt::Horizontal, QObject::tr("Équipe"));
 	if (!map.etat.isEmpty()) model->setHeaderData(headerIdx++, Qt::Horizontal, QObject::tr("État"));
+	if (!map.raison.isEmpty()) model->setHeaderData(headerIdx++, Qt::Horizontal, QObject::tr("Raison"));
+	if (!map.cvPath.isEmpty()) model->setHeaderData(headerIdx++, Qt::Horizontal, QObject::tr("CV"));
 	model->setHeaderData(headerIdx, Qt::Horizontal, QObject::tr("Salaire"));
 
 	s_lastError.clear();

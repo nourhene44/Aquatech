@@ -18,7 +18,9 @@ public:
             const QString &etat,
             const QString &statut,
             double salaire,
-            const QString &telephoneUi = QString());
+            const QString &telephoneUi = QString(),
+            const QString &raison = QString(),
+            const QString &cvPath = QString());
 
     // CRUD de base
     bool ajouter() const;
@@ -58,6 +60,12 @@ public:
     QString statut() const { return m_statut; }
     void setStatut(const QString &statut) { m_statut = statut; }
 
+    QString raison() const { return m_raison; }
+    void setRaison(const QString &raison) { m_raison = raison; }
+
+    QString cvPath() const { return m_cvPath; }
+    void setCvPath(const QString &cvPath) { m_cvPath = cvPath; }
+
 private:
     int m_id = 0;
     QString m_nom;
@@ -68,6 +76,8 @@ private:
     QString m_statut;
     double m_salaire = 0.0;
     QString m_telephoneUi;
+    QString m_raison;
+    QString m_cvPath;
 
     static QString s_lastError;
 };
