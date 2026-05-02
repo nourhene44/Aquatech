@@ -88,6 +88,26 @@ static QString weatherIconEmojiDayNight(int weatherCode, bool isDay);
 static void exportEmployesPdfReport(MainWindow* parent, Ui::MainWindow* ui);
 static void updateCapturesStats(MainWindow* parent, Ui::MainWindow* ui);
 
+static const QString kRfidArduinoPortName = QStringLiteral("COM7");
+static const QString kBoatArduinoPortName = QStringLiteral("COM8");
+static const QString kTemperatureArduinoPortName = QStringLiteral("COM5");
+
+static QString matchingPortName(const QStringList& ports, const QString& candidate)
+{
+    const QString trimmed = candidate.trimmed();
+    if (trimmed.isEmpty()) {
+        return QString();
+    }
+
+    for (const QString& port : ports) {
+        if (port.compare(trimmed, Qt::CaseInsensitive) == 0) {
+            return port;
+        }
+    }
+
+    return QString();
+}
+
 static bool handleCrudDisabled(QWidget* parent)
 {
     Q_UNUSED(parent);
@@ -1315,6 +1335,13 @@ static QString normalizeKey(const QString& s)
     return out.toLower();
 }
 
+static QString normalizeRfidEventKey(QString uid)
+{
+    uid = uid.trimmed().toUpper();
+    uid.remove(QRegularExpression(QStringLiteral("[^0-9A-Z]+")));
+    return uid;
+}
+
 static QStringList dbTableNames(QSqlDatabase db)
 {
     if (!db.isValid()) return {};
@@ -2105,22 +2132,6 @@ static void ensureActionsColumnPopulated(QTableWidget* table, const QString& but
                 " }"
                 "QPushButton:hover { background-color: rgb(224, 238, 255); }"
                 "QPushButton:pressed { background-color: rgb(224, 238, 255); }"));
-
-            QFont deleteFont(QStringLiteral("Segoe UI Emoji"));
-            deleteFont.setPointSize(15);
-            deleteFont.setBold(true);
-            deleteBtn->setFont(deleteFont);
-            deleteBtn->setFlat(true);
-            deleteBtn->setStyleSheet(QStringLiteral(
-                "QPushButton {"
-                " border: 2px solid rgb(0, 0, 112);"
-                " border-radius: 6px;"
-                " background-color: rgb(224, 238, 255);"
-                " color: rgb(0, 0, 112);"
-                " padding: 0px;"
-                " }"
-                "QPushButton:hover { background-color: rgb(224, 238, 255); }"
-                "QPushButton:pressed { background-color: rgb(224, 238, 255); }"));
         } else {
             if (!buttonStyle.isEmpty()) {
                 // On garde la bordure et le rayon d├⌐finis dans buttonStyle,
@@ -2521,6 +2532,88 @@ void MainWindow::refreshClientsPage()
     updateOne(ui->progressc,    ui->value_c,    countRegul);
 }
 
+void MainWindow::refreshTopClientsStats()
+{
+    if (!ui || !ui->tableTopClients_4) return;
+
+    auto *table = ui->tableTopClients_4;
+    table->setRowCount(0);
+
+    Connection *conn = Connection::getInstance();
+    if (!conn->ensureOpen()) {
+        qWarning() << "refreshTopClientsStats: DB connection failed";
+        return;
+    }
+    QSqlDatabase db = conn->getDatabase();
+
+    // Résolution du nom de la table
+    const QString tableName = resolveTableName(db, {QStringLiteral("CLIENTS"), QStringLiteral("CLIENT"), QStringLiteral("TCLIENT")});
+    if (tableName.isEmpty()) {
+        qWarning() << "refreshTopClientsStats: clients table not found";
+        return;
+    }
+
+    const QStringList dbCols = getColumnNames(db, tableName);
+    
+    // Résolution des noms de colonnes
+    auto resolve = [&](const QStringList &syns) {
+        QString col = matchColumnBySynonyms(dbCols, syns);
+        return col.isEmpty() ? syns.first() : col;
+    };
+
+    const QString idCol     = resolve({QStringLiteral("ID_CLIENT"), QStringLiteral("ID"), QStringLiteral("IDCLIENT"), QStringLiteral("CLIENTID"), QStringLiteral("ID_CLIENT")});
+    const QString nomCol    = resolve({QStringLiteral("NOM_CLIENT"), QStringLiteral("NOM"), QStringLiteral("NOMCLIENT"), QStringLiteral("NAME"), QStringLiteral("LASTNAME")});
+    const QString prenomCol = resolve({QStringLiteral("PRENOM_CLIENT"), QStringLiteral("PRENOM"), QStringLiteral("PRENOMCLIENT"), QStringLiteral("FIRSTNAME")});
+    const QString telCol    = resolve({QStringLiteral("TELEPHONE"), QStringLiteral("TEL"), QStringLiteral("PHONE")});
+    const QString profCol   = resolve({QStringLiteral("PROFIL_CLIENT"), QStringLiteral("PROFIL"), QStringLiteral("PROFILCLIENT"), QStringLiteral("PROFILE"), QStringLiteral("PROFIL_CLIENT")});
+    const QString dateCol   = resolve({QStringLiteral("DATE_INSCRIPTION"), QStringLiteral("DATE"), QStringLiteral("DATEINSCRIPTION"), QStringLiteral("DATE_INSCRIPTION"), QStringLiteral("CREATEDAT")});
+
+    // Query: Top 5 clients fidèles les plus anciens
+    // On essaie d'abord les fidèles, si aucun n'est trouvé on prend tous les clients
+    QString sql = QStringLiteral("SELECT %1, %2, %3, %4, %5 FROM %6 "
+                                 "WHERE UPPER(%7) LIKE 'FIDELE%' "
+                                 "ORDER BY %8 ASC")
+                  .arg(idCol, nomCol, prenomCol, telCol, dateCol, tableName, profCol, dateCol);
+
+    QSqlQuery query(db);
+    bool hasData = false;
+    if (query.exec(sql) && query.next()) {
+        hasData = true;
+        // On revient au début manuellement en utilisant first() dans la boucle
+    } else {
+        // Fallback: Tous les clients par ancienneté
+        sql = QStringLiteral("SELECT %1, %2, %3, %4, %5 FROM %6 ORDER BY %7 ASC")
+              .arg(idCol, nomCol, prenomCol, telCol, dateCol, tableName, dateCol);
+        if (query.exec(sql) && query.next()) {
+            hasData = true;
+        }
+    }
+
+    if (!hasData) {
+        qWarning() << "refreshTopClientsStats: No clients found even with fallback";
+        return;
+    }
+
+    int row = 0;
+    // On traite le premier enregistrement déjà récupéré par next()
+    do {
+        table->insertRow(row);
+        for (int col = 0; col < 5; ++col) {
+            QString val;
+            if (col == 4) {
+                val = query.value(col).toDate().toString(QStringLiteral("dd/MM/yyyy"));
+                if (val.isEmpty()) val = QStringLiteral("-");
+            } else {
+                val = query.value(col).toString();
+            }
+            table->setItem(row, col, new QTableWidgetItem(val));
+        }
+        row++;
+    } while (query.next() && row < 5);
+
+    adjustTopClientsStatsColumns();
+}
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -2567,6 +2660,7 @@ MainWindow::MainWindow(QWidget *parent)
     normalizeUiTexts();
 
     setupArduinoIntegration();
+    ensureEmployeRfidUi();
 
     // Page employ├⌐s : masquer les anciens boutons flottants (├⌐dition/suppression/refresh)
     // et utiliser uniquement la colonne Actions de la table.
@@ -2752,8 +2846,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     QSqlDatabase db = Connection::getInstance()->getDatabase();
     if (ui->tableWidgetee) {
-        // Chargement initial des employ├⌐s via helper d├⌐di├⌐ (r├⌐solution de table + synonymes)
+        // Chargement initial des employés via helper dédié (résolution de table + synonymes)
         loadEmployes();
+        updateEmployeePageRfidStatus();
     }
     loadCaptures();
     loadQuotas(false);
@@ -3051,6 +3146,7 @@ void MainWindow::on_p6b_clicked()
     }
 
     loadEmployes();
+    updateEmployeePageRfidStatus();
 }
 
 // ----------------------
@@ -3383,6 +3479,7 @@ void MainWindow::editEmployeFromTable(int row)
     const int colSalaire = colByNames({QStringLiteral("Salaire")});
     const int colRaison = colByNames({QStringLiteral("Raison")});
     const int colCv = colByNames({QStringLiteral("CV")});
+    const int colRfid = colByNames({QStringLiteral("RFID")});
 
     const QString idText = (colId >= 0 && table->item(row, colId)) ? table->item(row, colId)->text().trimmed() : QString();
     const QString nom = (colNom >= 0 && table->item(row, colNom)) ? table->item(row, colNom)->text().trimmed() : QString();
@@ -3395,6 +3492,7 @@ void MainWindow::editEmployeFromTable(int row)
     const QString salaire = (colSalaire >= 0 && table->item(row, colSalaire)) ? table->item(row, colSalaire)->text().trimmed() : QString();
     const QString raison = (colRaison >= 0 && table->item(row, colRaison)) ? table->item(row, colRaison)->text().trimmed() : QString();
     const QString cvPath = (colCv >= 0 && table->item(row, colCv)) ? table->item(row, colCv)->text().trimmed() : QString();
+    const QString rfid = (colRfid >= 0 && table->item(row, colRfid)) ? table->item(row, colRfid)->text().trimmed() : QString();
 
     if (ui->lineEdit_12e) ui->lineEdit_12e->setText(idText);
     if (ui->lineEdit_13e) ui->lineEdit_13e->setText(nom);
@@ -3403,23 +3501,32 @@ void MainWindow::editEmployeFromTable(int row)
     if (ui->lineEdit_14e_2) ui->lineEdit_14e_2->setText(salaire);
     if (ui->lineEdit_raison_banni) ui->lineEdit_raison_banni->setText(raison);
     if (ui->lineEdit_cv_path) ui->lineEdit_cv_path->setText(cvPath);
+    if (auto *rfidEdit = ui->pagee ? ui->pagee->findChild<QLineEdit*>(QStringLiteral("lineEdit_rfid")) : nullptr) {
+        rfidEdit->setText(rfid);
+    }
 
-    if (ui->comboBox_15e) {
-        int idx = ui->comboBox_15e->findText(equipe);
-        if (idx >= 0) ui->comboBox_15e->setCurrentIndex(idx);
-    }
-    if (ui->comboBox_16e) {
-        int idx = ui->comboBox_16e->findText(etat);
-        if (idx >= 0) ui->comboBox_16e->setCurrentIndex(idx);
-    }
-    if (ui->comboBox_11e) {
-        int idx = ui->comboBox_11e->findText(role);
-        if (idx >= 0) ui->comboBox_11e->setCurrentIndex(idx);
-    }
-    if (ui->comboBox_14e) {
-        int idx = ui->comboBox_14e->findText(statut);
-        if (idx >= 0) ui->comboBox_14e->setCurrentIndex(idx);
-    }
+    const auto setComboValue = [](QComboBox* combo, const QString& value) {
+        if (!combo) return;
+        int idx = combo->findText(value, Qt::MatchFixedString);
+        if (idx < 0) {
+            const QString target = normalizeKey(value);
+            for (int i = 0; i < combo->count(); ++i) {
+                const QString itemKey = normalizeKey(combo->itemText(i));
+                if (itemKey == target || itemKey.startsWith(target) || target.startsWith(itemKey)) {
+                    idx = i;
+                    break;
+                }
+            }
+        }
+        if (idx >= 0) {
+            combo->setCurrentIndex(idx);
+        }
+    };
+
+    setComboValue(ui->comboBox_15e, equipe);
+    setComboValue(ui->comboBox_16e, etat);
+    setComboValue(ui->comboBox_11e, role);
+    setComboValue(ui->comboBox_14e, statut);
 
     // Réinitialiser les champs spécifiques lors de l'édition
     m_currentCvPath.clear();
@@ -3441,6 +3548,53 @@ void MainWindow::editEmployeFromTable(int row)
     QMessageBox::information(this,
                              QStringLiteral("Modification employe"),
                              QStringLiteral("Formulaire rempli. Cliquez sur Modifier pour sauvegarder les modifications."));
+}
+
+void MainWindow::ensureEmployeRfidUi()
+{
+    if (!ui || !ui->frame_2e) {
+        return;
+    }
+
+    if (ui->pushButton_5e) {
+        ui->pushButton_5e->move(20, 570);
+    }
+    if (ui->pushButton_5e_2) {
+        ui->pushButton_5e_2->move(140, 570);
+    }
+
+    QLineEdit* rfidEdit = ui->pagee ? ui->pagee->findChild<QLineEdit*>(QStringLiteral("lineEdit_rfid")) : nullptr;
+    if (!rfidEdit) {
+        rfidEdit = new QLineEdit(ui->frame_2e);
+        rfidEdit->setObjectName(QStringLiteral("lineEdit_rfid"));
+        rfidEdit->setGeometry(20, 530, 231, 28);
+        rfidEdit->setPlaceholderText(QStringLiteral("RFID UID (Scannez...)"));
+        if (ui->lineEdit_14e_2) {
+            rfidEdit->setStyleSheet(ui->lineEdit_14e_2->styleSheet());
+        }
+        connect(rfidEdit, &QLineEdit::returnPressed, this, &MainWindow::on_btnAnalyzeRfidQt_clicked);
+    }
+
+    // Add RFID status label
+    QLabel* rfidStatusLabel = ui->pagee ? ui->pagee->findChild<QLabel*>(QStringLiteral("label_rfid_status")) : nullptr;
+    if (!rfidStatusLabel && ui->frame_2e) {
+        rfidStatusLabel = new QLabel(ui->frame_2e);
+        rfidStatusLabel->setObjectName(QStringLiteral("label_rfid_status"));
+        rfidStatusLabel->setGeometry(20, 560, 231, 20);
+        rfidStatusLabel->setStyleSheet(QStringLiteral("color: red; font-weight: bold;"));
+        rfidStatusLabel->setText(QStringLiteral("⚠ Arduino: déconnecté"));
+        rfidStatusLabel->setAlignment(Qt::AlignCenter);
+    }
+
+    const auto ensureComboItem = [](QComboBox* combo, const QString& text) {
+        if (!combo) return;
+        if (combo->findText(text, Qt::MatchFixedString) < 0) {
+            combo->addItem(text);
+        }
+    };
+
+    ensureComboItem(ui->comboBox_14e, QStringLiteral("Indisponible"));
+    ensureComboItem(ui->comboBox_17e, QStringLiteral("Indisponible"));
 }
 
 void MainWindow::setQuotaTableEditable(bool editable)
@@ -4411,10 +4565,234 @@ void MainWindow::on_pushButton_8c_3_clicked()
 }
 void MainWindow::on_pushButton_8c_4_clicked()
 {
-    // Retour Menu depuis la page clients -> menu GBateau
+    // Aller à la page Top 5 Clients (page_7)
     if (ui && ui->stackedWidget && ui->page_7) {
         ui->stackedWidget->setCurrentWidget(ui->page_7);
+        refreshTopClientsStats();
     }
+}
+
+void MainWindow::on_btnRefresh_4_clicked()
+{
+    refreshTopClientsStats();
+}
+
+void MainWindow::on_btnTelegramRemise_clicked()
+{
+    Connection *conn = Connection::getInstance();
+    if (!conn || !conn->ensureOpen()) {
+        QMessageBox::critical(this, QStringLiteral("Telegram"), QStringLiteral("Échec de connexion à la base de données."));
+        return;
+    }
+    QSqlDatabase db = conn->getDatabase();
+
+    const QString tableName = resolveTableName(db, {QStringLiteral("CLIENTS"), QStringLiteral("CLIENT"), QStringLiteral("TCLIENT")});
+    if (tableName.isEmpty()) return;
+
+    const QStringList dbCols = getColumnNames(db, tableName);
+    auto resolve = [&](const QStringList &syns) {
+        QString col = matchColumnBySynonyms(dbCols, syns);
+        return col.isEmpty() ? syns.first() : col;
+    };
+
+    const QString nomCol  = resolve({QStringLiteral("NOM_CLIENT"), QStringLiteral("NOM")});
+    const QString preCol  = resolve({QStringLiteral("PRENOM_CLIENT"), QStringLiteral("PRENOM")});
+    const QString profCol = resolve({QStringLiteral("PROFIL_CLIENT"), QStringLiteral("PROFIL")});
+    const QString dateCol = resolve({QStringLiteral("DATE_INSCRIPTION"), QStringLiteral("DATE")});
+
+    // Query: Top 2 clients fidèles les plus anciens
+    QString sql = QStringLiteral("SELECT %1, %2, %3 FROM %4 WHERE UPPER(%5) LIKE 'FIDELE%' ORDER BY %3 ASC")
+                  .arg(nomCol, preCol, dateCol, tableName, profCol);
+
+    QSqlQuery query(db);
+    if (!query.exec(sql)) {
+        QMessageBox::warning(this, QStringLiteral("Telegram"), QStringLiteral("Erreur SQL lors de la récupération des clients."));
+        return;
+    }
+
+    int count = 0;
+    QStringList messages;
+    while (query.next() && count < 2) {
+        QString nom = query.value(0).toString();
+        QString prenom = query.value(1).toString();
+        QString dateStr = query.value(2).toDate().toString(QStringLiteral("dd/MM/yyyy"));
+        
+        QString msg = QStringLiteral("Bonjour %1 %2, vous avez une remise de 50% car vous êtes une cliente fidèle depuis le %3.")
+                      .arg(nom, prenom, dateStr);
+        messages << msg;
+        count++;
+    }
+
+    if (messages.isEmpty()) {
+        QMessageBox::information(this, QStringLiteral("Telegram"), QStringLiteral("Aucun client fidèle trouvé pour l'envoi."));
+        return;
+    }
+
+    // Paramètres Telegram
+    const QString botToken = QStringLiteral("8686167350:AAGePcTtzGEViaDxzhL87ZgG8VswSbqsPUw");
+    QStringList chatIds;
+    chatIds << QStringLiteral("6028362791") << QStringLiteral("8409556197");
+
+    for (int i = 0; i < messages.size(); ++i) {
+        QString currentChatId = (i < chatIds.size()) ? chatIds[i] : chatIds.last();
+        
+        QUrl url(QStringLiteral("https://api.telegram.org/bot%1/sendMessage").arg(botToken));
+        QUrlQuery queryUrl;
+        queryUrl.addQueryItem(QStringLiteral("chat_id"), currentChatId);
+        queryUrl.addQueryItem(QStringLiteral("text"), messages[i]);
+        url.setQuery(queryUrl);
+
+        QNetworkRequest request(url);
+        if (m_weatherNetwork) {
+            m_weatherNetwork->get(request);
+        } else {
+            QNetworkAccessManager *tempMgr = new QNetworkAccessManager(this);
+            tempMgr->get(request);
+            connect(tempMgr, &QNetworkAccessManager::finished, tempMgr, &QObject::deleteLater);
+        }
+    }
+
+    QMessageBox::information(this, QStringLiteral("Telegram"), 
+                             QStringLiteral("Message de remise envoyé avec succès aux %1 premiers clients fidèles !").arg(count));
+}
+
+void MainWindow::on_btnSend_4_clicked()
+{
+    if (!ui || !ui->lineEditMessage_4 || !ui->textEditConversation_4) return;
+
+    QString question = ui->lineEditMessage_4->text().trimmed();
+    if (question.isEmpty()) return;
+
+    ui->textEditConversation_4->append(QStringLiteral("<b>Vous :</b> %1").arg(question));
+    ui->lineEditMessage_4->clear();
+
+    QString response;
+    QString lowerQuestion = question.toLower();
+
+    Connection *conn = Connection::getInstance();
+    if (!conn->ensureOpen()) {
+        response = QStringLiteral("Désolé, je ne peux pas accéder à la base de données pour le moment.");
+    } else {
+        QSqlDatabase db = conn->getDatabase();
+
+        const QString captureTable = resolveTableName(db, {QStringLiteral("CAPTURES"), QStringLiteral("CAPTURE"), QStringLiteral("T_CAPTURES")});
+        const QString quotaTable = resolveTableName(db, {QStringLiteral("QUOTAS"), QStringLiteral("QUOTA"), QStringLiteral("T_QUOTAS")});
+
+        // Détection de l'espèce de poisson dans la question (prioritaire)
+        QString foundSpecies;
+        QStringList allAvailable;
+        if (!captureTable.isEmpty()) {
+            const QStringList dbCols = getColumnNames(db, captureTable);
+            const QString typeCol = matchColumnBySynonyms(dbCols, {QStringLiteral("TYPE_POISSON"), QStringLiteral("ESPECE"), QStringLiteral("TYPE")});
+            QSqlQuery querySpecies(db);
+            querySpecies.exec(QStringLiteral("SELECT DISTINCT %1 FROM %2").arg(typeCol, captureTable));
+            while (querySpecies.next()) {
+                QString s = querySpecies.value(0).toString();
+                allAvailable << s;
+                if (lowerQuestion.contains(s.toLower())) {
+                    foundSpecies = s;
+                }
+            }
+        }
+
+        if (!foundSpecies.isEmpty()) {
+            // Détails pour une espèce spécifique (ID Bateau, ID Capture, Date, etc.)
+            const QStringList cols = getColumnNames(db, captureTable);
+            const QString typeCol = matchColumnBySynonyms(cols, {QStringLiteral("TYPE_POISSON"), QStringLiteral("ESPECE"), QStringLiteral("TYPE")});
+            const QString qteCol = matchColumnBySynonyms(cols, {QStringLiteral("QUANTITE"), QStringLiteral("QTE")});
+            const QString poidsCol = matchColumnBySynonyms(cols, {QStringLiteral("POIDS"), QStringLiteral("POIDS_KG")});
+            const QString idCapCol = matchColumnBySynonyms(cols, {QStringLiteral("ID_CAPTURE"), QStringLiteral("IDCAPTURE"), QStringLiteral("ID")});
+            const QString idBatCol = matchColumnBySynonyms(cols, {QStringLiteral("ID_BATEAU"), QStringLiteral("IDBATEAU"), QStringLiteral("BATEAU_ID")});
+            const QString dateCol = matchColumnBySynonyms(cols, {QStringLiteral("DATE_CAPTURE"), QStringLiteral("DATECAPTURE"), QStringLiteral("DATE")});
+
+            QSqlQuery query(db);
+            QString sql = QStringLiteral("SELECT %1, %2, %3, %4, %5 FROM %6 WHERE UPPER(%7) = UPPER(?) ORDER BY %3 DESC")
+                          .arg(idCapCol, idBatCol, dateCol, qteCol, poidsCol, captureTable, typeCol);
+            query.prepare(sql);
+            query.addBindValue(foundSpecies);
+            if (query.exec() && query.next()) {
+                response = QStringLiteral("Détails de la dernière capture de <b>%1</b> :<br>"
+                                          "- ID Capture : <b>%2</b><br>"
+                                          "- ID Bateau : <b>%3</b><br>"
+                                          "- Date : <b>%4</b><br>"
+                                          "- Quantité : <b>%5</b><br>"
+                                          "- Poids : <b>%6 kg</b>")
+                           .arg(foundSpecies)
+                           .arg(query.value(0).toString())
+                           .arg(query.value(1).toString())
+                           .arg(query.value(2).toDate().toString(QStringLiteral("dd/MM/yyyy")))
+                           .arg(query.value(3).toString())
+                           .arg(query.value(4).toString());
+            } else {
+                response = QStringLiteral("Je n'ai pas trouvé de détails récents pour l'espèce %1.").arg(foundSpecies);
+            }
+        } else if (lowerQuestion.contains(QStringLiteral("capture")) || lowerQuestion.contains(QStringLiteral("espece")) || lowerQuestion.contains(QStringLiteral("poisson")) || lowerQuestion.contains(QStringLiteral("bateau")) || lowerQuestion.contains(QStringLiteral("date"))) {
+            // Informations générales sur les captures
+            if (captureTable.isEmpty()) {
+                response = QStringLiteral("La table des captures est introuvable.");
+            } else {
+                const QStringList cols = getColumnNames(db, captureTable);
+                const QString typeCol = matchColumnBySynonyms(cols, {QStringLiteral("TYPE_POISSON"), QStringLiteral("ESPECE"), QStringLiteral("TYPE")});
+                const QString qteCol = matchColumnBySynonyms(cols, {QStringLiteral("QUANTITE"), QStringLiteral("QTE")});
+                const QString poidsCol = matchColumnBySynonyms(cols, {QStringLiteral("POIDS"), QStringLiteral("POIDS_KG")});
+
+                if (lowerQuestion.contains(QStringLiteral("disponible")) || lowerQuestion.contains(QStringLiteral("liste")) || lowerQuestion.contains(QStringLiteral("quels types"))) {
+                    response = QStringLiteral("Les types de poissons disponibles dans la table de capture sont : <b>%1</b>.").arg(allAvailable.join(QStringLiteral(", ")));
+                } else if (lowerQuestion.contains(QStringLiteral("poids"))) {
+                    QSqlQuery query(db);
+                    QString sql = QStringLiteral("SELECT %1, SUM(%2) as total_poids FROM %3 GROUP BY %1 ORDER BY total_poids DESC").arg(typeCol, poidsCol, captureTable);
+                    if (query.exec(sql) && query.next()) {
+                        response = QStringLiteral("L'espèce ayant le poids total le plus élevé est <b>%1</b> avec un total de <b>%2 kg</b>.")
+                                   .arg(query.value(0).toString())
+                                   .arg(query.value(1).toString());
+                    } else {
+                        response = QStringLiteral("Je n'ai pas pu calculer les statistiques de poids.");
+                    }
+                } else if (lowerQuestion.contains(QStringLiteral("grande quantite")) || lowerQuestion.contains(QStringLiteral("plus")) || lowerQuestion.contains(QStringLiteral("top"))) {
+                    QSqlQuery query(db);
+                    QString sql = QStringLiteral("SELECT %1, SUM(%2) as total FROM %3 GROUP BY %1 ORDER BY total DESC").arg(typeCol, qteCol, captureTable);
+                    if (query.exec(sql) && query.next()) {
+                        response = QStringLiteral("L'espèce la plus capturée est <b>%1</b> avec un total de <b>%2</b> unités.")
+                                   .arg(query.value(0).toString())
+                                   .arg(query.value(1).toString());
+                    } else {
+                        response = QStringLiteral("Je n'ai pas pu calculer les statistiques de capture.");
+                    }
+                } else if (lowerQuestion.contains(QStringLiteral("id bateau")) || lowerQuestion.contains(QStringLiteral("id capture")) || lowerQuestion.contains(QStringLiteral("date"))) {
+                    response = QStringLiteral("Pour vous donner l'ID du bateau ou la date, précisez l'espèce de poisson (ex: sardine, loup, etc.). Les espèces disponibles sont : <b>%1</b>.").arg(allAvailable.join(QStringLiteral(", ")));
+                } else {
+                    QSqlQuery query(db);
+                    QString sql = QStringLiteral("SELECT COUNT(*), SUM(%1) FROM %2").arg(qteCol, captureTable);
+                    if (query.exec(sql) && query.next()) {
+                        response = QStringLiteral("Il y a au total <b>%1</b> enregistrements de captures pour une quantité globale de <b>%2</b> poissons.")
+                                   .arg(query.value(0).toString())
+                                   .arg(query.value(1).toString());
+                    } else {
+                        response = QStringLiteral("Je suis votre assistant AquaTech. Posez-moi des questions sur les captures, les espèces (ID, Bateau, Date) ou les quotas !");
+                    }
+                }
+            }
+        } else if (lowerQuestion.contains(QStringLiteral("quota"))) {
+            // Informations sur les quotas
+            if (quotaTable.isEmpty()) {
+                response = QStringLiteral("La table des quotas est introuvable. Cependant, je peux vous dire que les quotas sont essentiels pour la gestion durable de la pêche.");
+            } else {
+                QSqlQuery query(db);
+                if (query.exec(QStringLiteral("SELECT COUNT(*) FROM %1").arg(quotaTable)) && query.next()) {
+                    response = QStringLiteral("Il y a actuellement <b>%1</b> quotas définis dans le système pour réguler les captures.").arg(query.value(0).toString());
+                } else {
+                    response = QStringLiteral("Les quotas sont en place, mais je ne parviens pas à lire les détails pour le moment.");
+                }
+            }
+        } else if (lowerQuestion.contains(QStringLiteral("client"))) {
+            response = QStringLiteral("Ici, vous pouvez voir le Top 5 de nos clients les plus fidèles. Ils sont classés par leur date d'inscription la plus ancienne.");
+        } else {
+            response = QStringLiteral("Je suis votre assistant AquaTech. Posez-moi des questions sur les captures (ex: ID bateau sardine), les espèces ou les quotas !");
+        }
+    }
+
+    ui->textEditConversation_4->append(QStringLiteral("<b>Assistant :</b> %1<br>").arg(response));
+    ui->textEditConversation_4->ensureCursorVisible();
 }
     void MainWindow::on_pushButton_7c_5_clicked()
 {
@@ -4663,6 +5041,18 @@ void MainWindow::attemptPecheurFaceCapture()
         return;
     }
 
+    // Double vérification des champs obligatoires au moment de la capture réelle
+    const QString nom = ui->lineEdit_2p ? ui->lineEdit_2p->text().trimmed() : QString();
+    const QString prenom = ui->lineEdit_3p ? ui->lineEdit_3p->text().trimmed() : QString();
+    const QString role = ui->comboBoxp ? ui->comboBoxp->currentText().trimmed() : QString();
+
+    if (nom.isEmpty() || prenom.isEmpty() || role.isEmpty()) {
+        m_faceCapturePending = false;
+        m_faceCaptureRetryRemaining = 0;
+        setPecheurFaceStatus(ui, QStringLiteral("⚠️ Champs Nom/Prénom/Rôle requis."));
+        return;
+    }
+
     if (!m_faceCamera->isActive()) {
         m_faceCamera->start();
     }
@@ -4749,8 +5139,20 @@ bool MainWindow::persistCapturedPecheurPhoto()
 
 void MainWindow::on_btnFaceIDp_clicked()
 {
-    // Afficher FaceID, préremplir les champs et lancer la caméra
     if (!ui) return;
+
+    // Validation des champs Nom, Prenom et Role avant d'ouvrir l'interface de capture
+    const QString nom = ui->lineEdit_2p ? ui->lineEdit_2p->text().trimmed() : QString();
+    const QString prenom = ui->lineEdit_3p ? ui->lineEdit_3p->text().trimmed() : QString();
+    const QString role = ui->comboBoxp ? ui->comboBoxp->currentText().trimmed() : QString();
+
+    if (nom.isEmpty() || prenom.isEmpty() || role.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("Capture Photo"),
+                             QStringLiteral("Veuillez remplir le Nom, le Prénom et le Rôle du pêcheur avant de pouvoir enregistrer son visage."));
+        return;
+    }
+
+    // Afficher FaceID, préremplir les champs et lancer la caméra
     setPecheurMainWidgetsVisible(ui, false);
     syncPecheurFaceCaptureFields();
     setupPecheurFaceCapture();
@@ -5228,16 +5630,36 @@ void MainWindow::legacy_pushButton_7b_clicked()
 
 MainWindow::~MainWindow()
 {
+    if (m_arduinoBoat && m_arduinoBoat->isConnected()) {
+        m_arduinoBoat->writeLine(QStringLiteral("STOP"));
+        if (m_portConsole) {
+            m_portConsole->appendPlainText(QStringLiteral("[QT] Shutdown: STOP sent to boat Arduino"));
+        }
+    }
     delete ui;
 }
 
 void MainWindow::setupArduinoIntegration()
 {
-    if (m_arduino) return;
+    if (m_arduino || m_arduinoTemp || m_arduinoBoat) return;
 
     m_arduino = new ArduinoSerial(this);
+    m_arduinoTemp = new ArduinoSerial(this);
+    m_arduinoBoat = new ArduinoSerial(this);
 
-    m_arduinoStatusLabel = new QLabel(QStringLiteral("Arduino: disconnected"), this);
+    m_arduinoStatusLabel = new QLabel(QStringLiteral("RFID: disconnected"), this);
+    m_arduinoPortDetectionTimer = new QTimer(this);
+    m_arduinoPortDetectionTimer->setInterval(5000);
+    connect(m_arduinoPortDetectionTimer, &QTimer::timeout, this, &MainWindow::retryArduinoPortDetection);
+
+    m_arduinoTempPortDetectionTimer = new QTimer(this);
+    m_arduinoTempPortDetectionTimer->setInterval(5000);
+    connect(m_arduinoTempPortDetectionTimer, &QTimer::timeout, this, &MainWindow::retryArduinoTemperaturePortDetection);
+
+    m_arduinoBoatPortDetectionTimer = new QTimer(this);
+    m_arduinoBoatPortDetectionTimer->setInterval(5000);
+    connect(m_arduinoBoatPortDetectionTimer, &QTimer::timeout, this, &MainWindow::retryArduinoBoatPortDetection);
+
     m_arduinoPortCombo = new QComboBox(this);
     m_arduinoConnectButton = new QPushButton(QStringLiteral("Connect"), this);
     m_arduinoTxEdit = new QLineEdit(this);
@@ -5266,9 +5688,31 @@ void MainWindow::setupArduinoIntegration()
 
     setupArduinoTemperatureButton();
 
-    // Remember last selected port.
+    if (!m_portConsole) {
+        m_portConsole = new QPlainTextEdit(this);
+        m_portConsole->setReadOnly(true);
+        m_portConsole->setMaximumHeight(120);
+        m_portConsole->document()->setMaximumBlockCount(200);
+        m_portConsole->setStyleSheet(QStringLiteral(
+            "background-color: rgb(30, 30, 30);"
+            "color: rgb(0, 255, 0);"
+            "border: 1px solid rgb(100, 100, 100);"
+            "padding: 4px;"
+            "font-family: 'Courier New', monospace;"
+            "font-size: 9pt;"
+        ));
+        if (auto* sb = statusBar()) {
+            sb->addWidget(m_portConsole, 4);
+            m_portConsole->hide();
+        }
+    }
+
     QSettings settings(QStringLiteral("AquaTech"), QStringLiteral("AquaTech"));
-    const QString savedPort = settings.value(QStringLiteral("arduino/portName")).toString().trimmed();
+    settings.setValue(QStringLiteral("arduino/rfidPortName"), kRfidArduinoPortName);
+    settings.setValue(QStringLiteral("arduino/boatPortName"), kBoatArduinoPortName);
+    settings.setValue(QStringLiteral("arduino/tempPortName"), kTemperatureArduinoPortName);
+    settings.sync();
+    const QString savedPort = kRfidArduinoPortName;
 
     refreshArduinoPortList();
     if (!savedPort.isEmpty() && m_arduinoPortCombo) {
@@ -5278,7 +5722,7 @@ void MainWindow::setupArduinoIntegration()
 
     connect(m_arduinoPortCombo, &QComboBox::currentTextChanged, this, [](const QString& port) {
         QSettings s(QStringLiteral("AquaTech"), QStringLiteral("AquaTech"));
-        s.setValue(QStringLiteral("arduino/portName"), port.trimmed());
+        s.setValue(QStringLiteral("arduino/rfidPortName"), port.trimmed());
         s.sync();
     });
 
@@ -5292,8 +5736,9 @@ void MainWindow::setupArduinoIntegration()
 
         refreshArduinoPortList();
 
-        const QString portName = m_arduinoPortCombo ? m_arduinoPortCombo->currentText().trimmed() : QString();
-        if (portName.isEmpty() || portName == QStringLiteral("(no ports)")) {
+        const QStringList ports = m_arduino->availablePortNames();
+        const QString portName = preferredRfidPortName(ports, true);
+        if (portName.isEmpty()) {
             if (statusBar()) statusBar()->showMessage(QStringLiteral("Arduino: no serial ports found"), 4000);
             updateArduinoUiState();
             return;
@@ -5326,28 +5771,525 @@ void MainWindow::setupArduinoIntegration()
     connect(m_arduinoTxEdit, &QLineEdit::returnPressed, this, sendLine);
 
     connect(m_arduino, &ArduinoSerial::connected, this, [this](const QString& portName) {
-        if (m_arduinoStatusLabel) m_arduinoStatusLabel->setText(QStringLiteral("Arduino: %1").arg(portName));
+        if (m_arduinoStatusLabel) m_arduinoStatusLabel->setText(QStringLiteral("RFID: %1").arg(portName));
+        QSettings s(QStringLiteral("AquaTech"), QStringLiteral("AquaTech"));
+        s.setValue(QStringLiteral("arduino/rfidPortName"), portName.trimmed());
+        s.sync();
+        if (m_arduinoPortCombo) {
+            const int idx = m_arduinoPortCombo->findText(portName, Qt::MatchFixedString);
+            m_arduinoPortCombo->blockSignals(true);
+            if (idx >= 0) {
+                m_arduinoPortCombo->setCurrentIndex(idx);
+            }
+            m_arduinoPortCombo->blockSignals(false);
+        }
         updateArduinoUiState();
+        updateEmployeePageRfidStatus();
         updateArduinoTemperatureDialogConnectionState();
+        // Stop the auto-retry timer since we've successfully connected
+        if (m_arduinoPortDetectionTimer && m_arduinoPortDetectionTimer->isActive()) {
+            m_arduinoPortDetectionTimer->stop();
+        }
     });
 
     connect(m_arduino, &ArduinoSerial::disconnected, this, [this]() {
-        if (m_arduinoStatusLabel) m_arduinoStatusLabel->setText(QStringLiteral("Arduino: disconnected"));
+        if (m_arduinoStatusLabel) m_arduinoStatusLabel->setText(QStringLiteral("RFID: disconnected"));
         updateArduinoUiState();
+        updateEmployeePageRfidStatus();
         updateArduinoTemperatureDialogConnectionState();
+        // Restart the auto-retry timer to attempt reconnection
+        if (m_arduinoPortDetectionTimer && !m_arduinoPortDetectionTimer->isActive()) {
+            m_arduinoPortDetectionTimer->start();
+        }
     });
 
-    connect(m_arduino, &ArduinoSerial::lineReceived, this, [this](const QString& line) {
-        handleArduinoTemperatureLine(line);
+    connect(m_arduino, &ArduinoSerial::uidReceived, this, &MainWindow::handleArduinoUid);
+    connect(m_arduino, &ArduinoSerial::doorOpened, this, &MainWindow::handleArduinoDoorOpened);
+
+    connect(m_arduino, &ArduinoSerial::statusMessage, this, [this](const QString& message) {
+        if (statusBar()) statusBar()->showMessage(QStringLiteral("[RFID] %1").arg(message), 5000);
     });
 
     connect(m_arduino, &ArduinoSerial::errorOccurred, this, [this](const QString& message) {
-        if (statusBar()) statusBar()->showMessage(QStringLiteral("Arduino error: %1").arg(message), 8000);
+        if (statusBar()) statusBar()->showMessage(QStringLiteral("RFID Arduino error: %1").arg(message), 8000);
         updateArduinoUiState();
         updateArduinoTemperatureDialogConnectionState();
     });
 
+    connect(m_arduinoTemp, &ArduinoSerial::connected, this, [this](const QString& portName) {
+        QSettings s(QStringLiteral("AquaTech"), QStringLiteral("AquaTech"));
+        s.setValue(QStringLiteral("arduino/tempPortName"), portName.trimmed());
+        s.sync();
+        if (statusBar()) statusBar()->showMessage(QStringLiteral("Arduino temperature connected: %1").arg(portName), 5000);
+        updateArduinoTemperatureDialogConnectionState();
+        QTimer::singleShot(1500, this, [this, portName]() {
+            if (!m_arduinoTemp || !m_arduinoTemp->isConnected()) {
+                return;
+            }
+            if (m_arduinoTemp->connectedPortName().compare(portName, Qt::CaseInsensitive) != 0) {
+                return;
+            }
+            sendArduinoTemperatureSetup();
+        });
+        // Stop the auto-retry timer since we've successfully connected
+        if (m_arduinoTempPortDetectionTimer && m_arduinoTempPortDetectionTimer->isActive()) {
+            m_arduinoTempPortDetectionTimer->stop();
+        }
+    });
+
+    connect(m_arduinoTemp, &ArduinoSerial::disconnected, this, [this]() {
+        updateArduinoTemperatureDialogConnectionState();
+        // Restart the auto-retry timer to attempt reconnection
+        if (m_arduinoTempPortDetectionTimer && !m_arduinoTempPortDetectionTimer->isActive()) {
+            m_arduinoTempPortDetectionTimer->start();
+        }
+    });
+
+    connect(m_arduinoTemp, &ArduinoSerial::lineReceived, this, [this](const QString& line) {
+        handleArduinoTemperatureLine(line);
+    });
+
+    connect(m_arduinoTemp, &ArduinoSerial::statusMessage, this, [this](const QString& message) {
+        if (statusBar()) statusBar()->showMessage(QStringLiteral("[TEMP] %1").arg(message), 5000);
+    });
+
+    connect(m_arduinoTemp, &ArduinoSerial::errorOccurred, this, [this](const QString& message) {
+        if (statusBar()) statusBar()->showMessage(QStringLiteral("Temp Arduino error: %1").arg(message), 8000);
+        updateArduinoTemperatureDialogConnectionState();
+    });
+
+    connect(m_arduinoBoat, &ArduinoSerial::connected, this, [this](const QString& portName) {
+        QSettings s(QStringLiteral("AquaTech"), QStringLiteral("AquaTech"));
+        s.setValue(QStringLiteral("arduino/boatPortName"), portName.trimmed());
+        s.sync();
+
+        m_boatPresent = false;
+        m_boatDocked = false;
+        m_currentAssignedQuaiId = -1;
+        m_arrivalDetectedAtMs = 0;
+        m_lastKnownDistanceCm = -1;
+        m_lastRawPulseMicros = -1;
+        m_baselineDistanceCm = -1;
+        m_baselineSum = 0;
+        m_baselineSamples = 0;
+        m_consecutiveBelow = 0;
+        m_consecutiveAbove = 0;
+
+        if (statusBar()) {
+            statusBar()->showMessage(QStringLiteral("Arduino bateau connecte: %1").arg(portName), 5000);
+        }
+        if (m_portConsole) {
+            m_portConsole->appendPlainText(QStringLiteral("[BOAT] Connected on %1").arg(portName));
+            m_portConsole->appendPlainText(QStringLiteral("[STATE] Boat detection state reset"));
+        }
+        if (m_arduinoBoatPortDetectionTimer && m_arduinoBoatPortDetectionTimer->isActive()) {
+            m_arduinoBoatPortDetectionTimer->stop();
+        }
+
+        QTimer::singleShot(2000, this, [this]() {
+            if (!m_arduinoBoat || !m_arduinoBoat->isConnected()) {
+                return;
+            }
+
+            m_arduinoBoat->writeLine(QStringLiteral("START"));
+            if (m_portConsole) {
+                m_portConsole->appendPlainText(QStringLiteral("[QT] Command: START -> boat sensor ACTIVE"));
+            }
+
+            QTimer::singleShot(500, this, [this]() {
+                if (!m_arduinoBoat || !m_arduinoBoat->isConnected()) {
+                    return;
+                }
+                m_arduinoBoat->writeLine(QStringLiteral("DISPLAY:Port en attente"));
+                if (m_portConsole) {
+                    m_portConsole->appendPlainText(QStringLiteral("[QT] Command: DISPLAY:Port en attente"));
+                }
+            });
+        });
+    });
+
+    connect(m_arduinoBoat, &ArduinoSerial::disconnected, this, [this]() {
+        m_boatPresent = false;
+        m_boatDocked = false;
+        m_currentAssignedQuaiId = -1;
+        m_arrivalDetectedAtMs = 0;
+        if (statusBar()) {
+            statusBar()->showMessage(QStringLiteral("Arduino bateau deconnecte"), 5000);
+        }
+        if (m_portConsole) {
+            m_portConsole->appendPlainText(QStringLiteral("[BOAT] Disconnected"));
+        }
+        if (m_arduinoBoatPortDetectionTimer && !m_arduinoBoatPortDetectionTimer->isActive()) {
+            m_arduinoBoatPortDetectionTimer->start();
+        }
+    });
+
+    connect(m_arduinoBoat, &ArduinoSerial::lineReceived, this, [this](const QString& line) {
+        const QString trimmed = line.trimmed();
+        if (m_portConsole && trimmed.startsWith(QLatin1Char('['))) {
+            m_portConsole->appendPlainText(trimmed);
+        }
+        handleArduinoBoatLine(trimmed);
+    });
+
+    connect(m_arduinoBoat, &ArduinoSerial::statusMessage, this, [this](const QString& message) {
+        if (statusBar()) {
+            statusBar()->showMessage(QStringLiteral("[BOAT] %1").arg(message), 5000);
+        }
+    });
+
+    connect(m_arduinoBoat, &ArduinoSerial::errorOccurred, this, [this](const QString& message) {
+        if (message.contains(QStringLiteral("semaphore"), Qt::CaseInsensitive)) {
+            return;
+        }
+        if (statusBar()) {
+            statusBar()->showMessage(QStringLiteral("Boat Arduino error: %1").arg(message), 8000);
+        }
+        if (m_portConsole) {
+            m_portConsole->appendPlainText(QStringLiteral("[BOAT][ERR] %1").arg(message));
+        }
+    });
+
+    QTimer::singleShot(350, this, [this]() {
+        if (!m_arduino || m_arduino->isConnected()) {
+            return;
+        }
+
+        refreshArduinoPortList();
+
+        const QStringList allPorts = m_arduino->availablePortNames();
+        if (allPorts.isEmpty()) {
+            if (statusBar()) {
+                statusBar()->showMessage(QStringLiteral("Arduino: No serial ports available. Check USB connection."), 8000);
+            }
+            updateArduinoUiState();
+            // Start periodic retry to wait for Arduino to be plugged in
+            if (m_arduinoPortDetectionTimer && !m_arduinoPortDetectionTimer->isActive()) {
+                m_arduinoPortDetectionTimer->start();
+            }
+            return;
+        }
+
+        const QString portName = preferredRfidPortName(allPorts, true);
+        if (portName.isEmpty()) {
+            if (statusBar()) {
+                statusBar()->showMessage(
+                    QStringLiteral("RFID Arduino: %1 not found among available ports.").arg(kRfidArduinoPortName),
+                    6000);
+            }
+            if (m_arduinoPortDetectionTimer && !m_arduinoPortDetectionTimer->isActive()) {
+                m_arduinoPortDetectionTimer->start();
+            }
+            updateArduinoUiState();
+            return;
+        }
+
+        QString error;
+        if (!m_arduino->connectToPort(portName, 9600, &error)) {
+            if (statusBar()) {
+                statusBar()->showMessage(QStringLiteral("Arduino auto-connect failed on %1: %2").arg(portName, error), 6000);
+            }
+            if (m_arduinoPortDetectionTimer && !m_arduinoPortDetectionTimer->isActive()) {
+                m_arduinoPortDetectionTimer->start();
+            }
+            updateArduinoUiState();
+        }
+    });
+
+    QTimer::singleShot(700, this, [this]() {
+        if (statusBar() && m_arduino && !m_arduino->isConnected()) {
+            statusBar()->showMessage(QStringLiteral("RFID Arduino not connected. Check port and USB connection."), 5000);
+        }
+        ensureArduinoTemperatureConnected();
+        updateArduinoTemperatureDialogConnectionState();
+    });
+
+    QTimer::singleShot(1050, this, [this]() {
+        retryArduinoBoatPortDetection();
+    });
+
     updateArduinoUiState();
+}
+
+void MainWindow::handleArduinoUid(const QString& uid)
+{
+    const QString cleanUid = uid.trimmed();
+    if (cleanUid.isEmpty()) {
+        if (statusBar()) {
+            statusBar()->showMessage(QStringLiteral("Badge RFID vide ignore."), 4000);
+        }
+        return;
+    }
+
+    QLineEdit* rfidEdit = (ui && ui->pagee)
+        ? ui->pagee->findChild<QLineEdit*>(QStringLiteral("lineEdit_rfid"))
+        : nullptr;
+    if (rfidEdit && rfidEdit->hasFocus()) {
+        rfidEdit->setText(cleanUid);
+    }
+
+    QString nomEmploye;
+    QString denyReason;
+    const bool allowed = Employe::canAccessByRfid(cleanUid, &nomEmploye, &denyReason);
+
+    // Log the decision for debugging
+    {
+        QFile f(QStringLiteral("arduino_debug.log"));
+        if (f.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+            const QString line = QDateTime::currentDateTime().toString(Qt::ISODate)
+                + QStringLiteral(" - handleArduinoUid: uid=") + cleanUid
+                + QStringLiteral(" allowed=") + (allowed ? QStringLiteral("true") : QStringLiteral("false"))
+                + QStringLiteral(" employe=") + nomEmploye
+                + QStringLiteral(" reason=") + denyReason
+                + QLatin1Char('\n');
+            f.write(line.toUtf8());
+            f.close();
+        }
+    }
+
+    if (m_arduino && m_arduino->isConnected()) {
+        if (!m_arduino->sendAccessDecision(cleanUid, allowed) && statusBar()) {
+            statusBar()->showMessage(QStringLiteral("Envoi de la commande RFID vers l'Arduino a echoue."), 6000);
+        }
+    } else if (statusBar()) {
+        statusBar()->showMessage(QStringLiteral("Badge lu mais Arduino RFID non connecte."), 6000);
+    }
+
+    if (statusBar()) {
+        if (allowed) {
+            const QString target = nomEmploye.isEmpty() ? cleanUid : nomEmploye;
+            statusBar()->showMessage(QStringLiteral("Acces autorise pour %1 (mode Qt).").arg(target), 5000);
+        } else {
+            statusBar()->showMessage(
+                denyReason.isEmpty() ? QStringLiteral("Badge inconnu ou non autorise.") : denyReason,
+                5000);
+        }
+    }
+}
+
+void MainWindow::on_btnAnalyzeRfidQt_clicked()
+{
+    if (!ui) return;
+
+    QLineEdit* rfidEdit = ui->pagee ? ui->pagee->findChild<QLineEdit*>(QStringLiteral("lineEdit_rfid")) : nullptr;
+    const QString cleanUid = rfidEdit ? rfidEdit->text().trimmed() : QString();
+
+    if (cleanUid.isEmpty()) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Analyse RFID Qt"),
+                             QStringLiteral("Veuillez saisir ou scanner un UID RFID."));
+        return;
+    }
+
+    QString nomEmploye;
+    QString denyReason;
+    const bool allowed = Employe::canAccessByRfid(cleanUid, &nomEmploye, &denyReason);
+
+    if (m_arduino && m_arduino->isConnected() && !m_arduino->sendAccessDecision(cleanUid, allowed)) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Analyse RFID Qt"),
+                             QStringLiteral("Qt a valide le badge, mais l'envoi vers l'Arduino a echoue."));
+    }
+
+    if (allowed) {
+        const QString target = nomEmploye.isEmpty() ? cleanUid : nomEmploye;
+        QMessageBox::information(this,
+                                 QStringLiteral("Analyse RFID Qt"),
+                                 QStringLiteral("Acces autorise pour %1.\n\nAnalyse realisee directement par Qt via la base de donnees.")
+                                     .arg(target));
+    } else {
+        QMessageBox::warning(this,
+                             QStringLiteral("Analyse RFID Qt"),
+                             QStringLiteral("Acces refuse.\n%1\n\nAnalyse realisee directement par Qt via la base de donnees.")
+                                 .arg(denyReason.isEmpty()
+                                          ? QStringLiteral("Badge inconnu ou non autorise.")
+                                          : denyReason));
+    }
+
+    if (statusBar()) {
+        statusBar()->showMessage(
+            allowed
+                ? QStringLiteral("Analyse RFID Qt: acces autorise pour %1.").arg(nomEmploye.isEmpty() ? cleanUid : nomEmploye)
+                : QStringLiteral("Analyse RFID Qt: acces refuse pour %1.").arg(cleanUid),
+            5000);
+    }
+}
+
+void MainWindow::retryArduinoPortDetection()
+{
+    if (!m_arduino || m_arduino->isConnected()) {
+        return;
+    }
+
+    const QStringList ports = m_arduino->availablePortNames();
+    if (!ports.isEmpty()) {
+        const QString portName = preferredRfidPortName(ports, false);
+        if (portName.isEmpty()) {
+            if (statusBar()) {
+                statusBar()->showMessage(
+                    QStringLiteral("RFID Arduino: waiting for %1.").arg(kRfidArduinoPortName),
+                    5000);
+            }
+            updateArduinoUiState();
+            if (m_arduinoPortDetectionTimer && !m_arduinoPortDetectionTimer->isActive()) {
+                m_arduinoPortDetectionTimer->start();
+            }
+            return;
+        }
+
+        QString error;
+        if (!m_arduino->connectToPort(portName, 9600, &error)) {
+            if (statusBar()) {
+                statusBar()->showMessage(
+                    QStringLiteral("Arduino auto-reconnect failed on %1: %2").arg(portName, error),
+                    6000);
+            }
+            if (m_arduinoPortDetectionTimer && !m_arduinoPortDetectionTimer->isActive()) {
+                m_arduinoPortDetectionTimer->start();
+            }
+        }
+        updateArduinoUiState();
+    } else {
+        refreshArduinoPortList();
+    }
+}
+
+void MainWindow::retryArduinoTemperaturePortDetection()
+{
+    if (!m_arduinoTemp || m_arduinoTemp->isConnected()) {
+        return;
+    }
+
+    const QStringList ports = m_arduinoTemp->availablePortNames();
+    if (!ports.isEmpty()) {
+        const QString portName = preferredTemperaturePortName(ports);
+        if (portName.isEmpty()) {
+            if (statusBar()) {
+                statusBar()->showMessage(
+                    QStringLiteral("Temperature Arduino: waiting for %1.").arg(kTemperatureArduinoPortName),
+                    5000);
+            }
+            updateArduinoTemperatureDialogConnectionState();
+            if (m_arduinoTempPortDetectionTimer && !m_arduinoTempPortDetectionTimer->isActive()) {
+                m_arduinoTempPortDetectionTimer->start();
+            }
+            return;
+        }
+
+        QString error;
+        if (!m_arduinoTemp->connectToPort(portName, 9600, &error)) {
+            if (statusBar()) {
+                statusBar()->showMessage(
+                    QStringLiteral("Arduino temperature auto-reconnect failed on %1: %2").arg(portName, error),
+                    6000);
+            }
+            if (m_arduinoTempPortDetectionTimer && !m_arduinoTempPortDetectionTimer->isActive()) {
+                m_arduinoTempPortDetectionTimer->start();
+            }
+        }
+        updateArduinoTemperatureDialogConnectionState();
+    } else {
+        if (statusBar()) {
+            statusBar()->showMessage(QStringLiteral("Temperature sensor: No serial ports available"), 5000);
+        }
+    }
+}
+
+void MainWindow::retryArduinoBoatPortDetection()
+{
+    if (!m_arduinoBoat || m_arduinoBoat->isConnected()) {
+        return;
+    }
+    if (!m_arduinoBoat->serialPortAvailable()) {
+        return;
+    }
+
+    const QStringList ports = m_arduinoBoat->availablePortNames();
+    if (ports.isEmpty()) {
+        if (m_arduinoBoatPortDetectionTimer && !m_arduinoBoatPortDetectionTimer->isActive()) {
+            m_arduinoBoatPortDetectionTimer->start();
+        }
+        return;
+    }
+
+    const QString portName = preferredBoatPortName(ports);
+    if (portName.isEmpty()) {
+        if (statusBar()) {
+            statusBar()->showMessage(
+                QStringLiteral("Boat Arduino: waiting for %1.").arg(kBoatArduinoPortName),
+                5000);
+        }
+        if (m_arduinoBoatPortDetectionTimer && !m_arduinoBoatPortDetectionTimer->isActive()) {
+            m_arduinoBoatPortDetectionTimer->start();
+        }
+        return;
+    }
+
+    QString error;
+    if (!m_arduinoBoat->connectToPort(portName, 9600, &error)) {
+        if (statusBar()) {
+            statusBar()->showMessage(
+                QStringLiteral("Boat Arduino auto-connect failed on %1: %2").arg(portName, error),
+                6000);
+        }
+        if (m_portConsole) {
+            m_portConsole->appendPlainText(
+                QStringLiteral("[BOAT][ERR] Auto-connect failed on %1: %2").arg(portName, error));
+        }
+        if (m_arduinoBoatPortDetectionTimer && !m_arduinoBoatPortDetectionTimer->isActive()) {
+            m_arduinoBoatPortDetectionTimer->start();
+        }
+    }
+}
+
+void MainWindow::applyRfidEmployeeToggle(const QString& uid)
+{
+    const QString cleanUid = uid.trimmed();
+    const QString uidKey = normalizeRfidEventKey(cleanUid);
+    if (uidKey.isEmpty()) {
+        return;
+    }
+
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    constexpr qint64 kRfidCooldownMs = 1500;
+    if (uidKey == m_lastAppliedUid && (nowMs - m_lastAppliedMs) < kRfidCooldownMs) {
+        return;
+    }
+
+    QString nouveauStatut;
+    QString nomEmploye;
+    if (!Employe::updateStatutByRfid(cleanUid, QString(), &nouveauStatut, &nomEmploye)) {
+        if (statusBar()) {
+            const QString err = Employe::lastError().trimmed();
+            statusBar()->showMessage(
+                err.isEmpty()
+                    ? QStringLiteral("Echec de la mise a jour du statut RFID.")
+                    : QStringLiteral("Echec RFID: %1").arg(err),
+                7000);
+        }
+        return;
+    }
+
+    loadEmployes();
+    m_lastAppliedUid = uidKey;
+    m_lastAppliedMs = nowMs;
+
+    if (statusBar()) {
+        const QString target = nomEmploye.isEmpty() ? cleanUid : nomEmploye;
+        statusBar()->showMessage(
+            QStringLiteral("Statut RFID mis a jour: %1 -> %2.").arg(target, nouveauStatut),
+            5000);
+    }
+}
+
+void MainWindow::handleArduinoDoorOpened(const QString& uid)
+{
+    const QString cleanUid = uid.trimmed();
+    if (cleanUid.isEmpty()) {
+        return;
+    }
+
+    applyRfidEmployeeToggle(cleanUid);
 }
 
 void MainWindow::setupArduinoTemperatureButton()
@@ -5548,9 +6490,9 @@ void MainWindow::ensureCapturesArduinoTemperatureView()
             }
         }
 
-        if (!m_arduino || !m_arduino->isConnected()) return;
-        m_arduino->writeLine(QStringLiteral("D:%1").arg(m_arduinoTempDangerThreshold, 0, 'f', 1));
-        m_arduino->writeLine(QStringLiteral("C:%1").arg(m_arduinoTempCritiqueThreshold, 0, 'f', 1));
+        if (!m_arduinoTemp || !m_arduinoTemp->isConnected()) return;
+        m_arduinoTemp->writeLine(QStringLiteral("D:%1").arg(m_arduinoTempDangerThreshold, 0, 'f', 1));
+        m_arduinoTemp->writeLine(QStringLiteral("C:%1").arg(m_arduinoTempCritiqueThreshold, 0, 'f', 1));
     };
 
     connect(dangerSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, sendThresholds);
@@ -5590,10 +6532,10 @@ void MainWindow::ensureCapturesArduinoTemperatureView()
         if (!m_capArduinoTempFrame || !m_capArduinoTempFrame->isVisible()) return;
 
         updateArduinoTemperatureDialogConnectionState();
-        if (!m_arduino || m_arduino->isConnected()) return;
-        if (!m_arduino->serialPortAvailable()) return;
+        if (!m_arduinoTemp || m_arduinoTemp->isConnected()) return;
+        if (!m_arduinoTemp->serialPortAvailable()) return;
 
-        const QStringList ports = m_arduino->availablePortNames();
+        const QStringList ports = m_arduinoTemp->availablePortNames();
         if (ports.isEmpty()) return;
 
         const qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -5615,6 +6557,19 @@ static bool tryParseTemperatureC(const QString& line, double* outC)
     QString t = line.trimmed();
     if (t.isEmpty()) return false;
 
+    const QString key = normalizeKey(t);
+    if (key.contains(QStringLiteral("uid")) ||
+        key.contains(QStringLiteral("rfid")) ||
+        key.contains(QStringLiteral("badge")) ||
+        key.contains(QStringLiteral("door")) ||
+        key.contains(QStringLiteral("porte")) ||
+        key.contains(QStringLiteral("access")) ||
+        key.contains(QStringLiteral("acces")) ||
+        key == QStringLiteral("open") ||
+        key == QStringLiteral("deny")) {
+        return false;
+    }
+
     // Accept both decimal separators and optional units (e.g. "25.5", "25,5", "25.5 °C", "T=25.5").
     t.replace(QLatin1Char(','), QLatin1Char('.'));
 
@@ -5625,6 +6580,7 @@ static bool tryParseTemperatureC(const QString& line, double* outC)
     bool ok = false;
     const double v = m.captured(1).toDouble(&ok);
     if (!ok) return false;
+    if (v < -40.0 || v > 80.0) return false;
 
     *outC = v;
     return true;
@@ -5819,12 +6775,12 @@ void MainWindow::showArduinoTemperatureWindow()
     connect(refreshTimer, &QTimer::timeout, this, [this, lastAttemptMs = qint64(0)]() mutable {
         updateArduinoTemperatureDialogConnectionState();
 
-        if (!m_arduino || m_arduino->isConnected()) return;
-        if (!m_arduino->serialPortAvailable()) return;
+        if (!m_arduinoTemp || m_arduinoTemp->isConnected()) return;
+        if (!m_arduinoTemp->serialPortAvailable()) return;
 
         // Avoid spamming: only try auto-connect when ports exist,
         // and don't retry too often.
-        const QStringList ports = m_arduino->availablePortNames();
+        const QStringList ports = m_arduinoTemp->availablePortNames();
         if (ports.isEmpty()) return;
 
         const qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -5847,49 +6803,74 @@ void MainWindow::showArduinoTemperatureWindow()
 
 void MainWindow::ensureArduinoTemperatureConnected()
 {
-    if (!m_arduino) return;
-    if (m_arduino->isConnected()) return;
+    if (!m_arduinoTemp) return;
+    if (m_arduinoTemp->isConnected()) return;
 
-    if (!m_arduino->serialPortAvailable()) {
+    if (!m_arduinoTemp->serialPortAvailable()) {
         if (m_arduinoTempConnLabel) {
-            m_arduinoTempConnLabel->setText(QStringLiteral("Qt SerialPort indisponible (installez le module SerialPort de Qt)."));
+            m_arduinoTempConnLabel->setText(QStringLiteral("Port temperature indisponible."));
         }
         if (statusBar()) {
-            statusBar()->showMessage(QStringLiteral("Qt SerialPort module missing: install 'Qt Serial Port' then rebuild"), 8000);
+            statusBar()->showMessage(QStringLiteral("Arduino temperature: backend serie indisponible"), 8000);
         }
         return;
     }
 
-    const QStringList ports = m_arduino->availablePortNames();
+    const QStringList ports = m_arduinoTemp->availablePortNames();
     if (ports.isEmpty()) {
         if (m_arduinoTempConnLabel) {
-            m_arduinoTempConnLabel->setText(QStringLiteral("Port: aucun port detecte (branchez l'Arduino / driver)."));
+            m_arduinoTempConnLabel->setText(QStringLiteral("Port temperature: aucun port detecte."));
         }
-        if (statusBar()) statusBar()->showMessage(QStringLiteral("Arduino: no serial ports detected"), 6000);
+        if (statusBar()) statusBar()->showMessage(QStringLiteral("Arduino temperature: aucun port detecte"), 6000);
+        // Start periodic retry timer for temperature port
+        if (m_arduinoTempPortDetectionTimer && !m_arduinoTempPortDetectionTimer->isActive()) {
+            m_arduinoTempPortDetectionTimer->start();
+        }
         return;
     }
 
-    const QString selectedPort = (m_arduinoPortCombo ? m_arduinoPortCombo->currentText().trimmed() : QString());
-
-    QSettings settings(QStringLiteral("AquaTech"), QStringLiteral("AquaTech"));
-    const QString savedPort = settings.value(QStringLiteral("arduino/portName")).toString().trimmed();
-
-    QString chosen;
-    if (!selectedPort.isEmpty() && selectedPort != QStringLiteral("(no ports)") && ports.contains(selectedPort)) {
-        chosen = selectedPort;
-    } else if (!savedPort.isEmpty() && ports.contains(savedPort)) {
-        chosen = savedPort;
-    } else if (ports.contains(QStringLiteral("COM3"))) {
-        chosen = QStringLiteral("COM3");
-    } else {
-        chosen = ports.first();
+    const QString chosen = preferredTemperaturePortName(ports);
+    if (chosen.isEmpty()) {
+        if (m_arduinoTempConnLabel) {
+            m_arduinoTempConnLabel->setText(
+                QStringLiteral("Port temperature: %1 introuvable.").arg(kTemperatureArduinoPortName));
+        }
+        if (m_arduinoTempPortDetectionTimer && !m_arduinoTempPortDetectionTimer->isActive()) {
+            m_arduinoTempPortDetectionTimer->start();
+        }
+        return;
     }
 
     QString error;
-    if (!m_arduino->connectToPort(chosen, 9600, &error)) {
+    if (!m_arduinoTemp->connectToPort(chosen, 9600, &error)) {
         if (m_arduinoTempConnLabel) {
-            m_arduinoTempConnLabel->setText(QStringLiteral("Port: %1 (erreur: %2)").arg(chosen, error));
+            m_arduinoTempConnLabel->setText(QStringLiteral("Port temperature: %1 (erreur: %2)").arg(chosen, error));
         }
+        if (m_arduinoTempPortDetectionTimer && !m_arduinoTempPortDetectionTimer->isActive()) {
+            m_arduinoTempPortDetectionTimer->start();
+        }
+        return;
+    }
+
+    if (m_arduinoTempPortDetectionTimer && m_arduinoTempPortDetectionTimer->isActive()) {
+        m_arduinoTempPortDetectionTimer->stop();
+    }
+}
+
+void MainWindow::sendArduinoTemperatureSetup()
+{
+    if (!m_arduinoTemp || !m_arduinoTemp->isConnected()) {
+        return;
+    }
+
+    m_arduinoTemp->writeLine(QStringLiteral("D:%1").arg(m_arduinoTempDangerThreshold, 0, 'f', 1));
+    m_arduinoTemp->writeLine(QStringLiteral("C:%1").arg(m_arduinoTempCritiqueThreshold, 0, 'f', 1));
+
+    if (statusBar()) {
+        statusBar()->showMessage(
+            QStringLiteral("Arduino temperature initialise sur %1.")
+                .arg(m_arduinoTemp->connectedPortName()),
+            4000);
     }
 }
 
@@ -5910,6 +6891,335 @@ void MainWindow::handleArduinoTemperatureLine(const QString& line)
 
     // Live sync into the captures list.
     updateCapturesTableLiveTemperature(temperatureC);
+}
+
+void MainWindow::handleArduinoBoatLine(const QString& line)
+{
+    const QString msg = line.trimmed();
+    if (msg.isEmpty()) {
+        return;
+    }
+
+    int distCm = -1;
+    bool validReading = false;
+
+    if (msg.startsWith(QStringLiteral("PULSE:"), Qt::CaseInsensitive)) {
+        bool ok = false;
+        const int pulseMicros = msg.mid(6).trimmed().toInt(&ok);
+        if (!ok || pulseMicros < -1) {
+            return;
+        }
+
+        m_lastRawPulseMicros = pulseMicros;
+        if (pulseMicros > 0) {
+            distCm = static_cast<int>((pulseMicros * 0.034) / 2.0);
+            validReading = true;
+            if (m_portConsole) {
+                m_portConsole->appendPlainText(
+                    QStringLiteral("[QT CALC] PULSE=%1us -> DISTANCE=%2cm").arg(pulseMicros).arg(distCm));
+            }
+        } else {
+            if (m_portConsole) {
+                m_portConsole->appendPlainText(QStringLiteral("[SENSOR] Invalid pulse reading"));
+            }
+            return;
+        }
+    } else if (msg.startsWith(QStringLiteral("DISTANCE:"), Qt::CaseInsensitive)) {
+        bool ok = false;
+        distCm = msg.mid(9).trimmed().toInt(&ok);
+        if (!ok || distCm < 0) {
+            return;
+        }
+        validReading = true;
+    }
+
+    if (!validReading) {
+        return;
+    }
+
+    m_lastKnownDistanceCm = distCm;
+
+    if (m_portConsole) {
+        m_portConsole->appendPlainText(QStringLiteral("[SENSOR] Distance=%1cm").arg(distCm));
+    }
+
+    constexpr int kDockCm = 100;
+    constexpr int kBaselineSamplesRequired = 5;
+    constexpr int kBaselineDeltaCm = 20;
+    constexpr int kDepartMarginCm = 20;
+    constexpr int kRequiredConsecutiveBelow = 3;
+    constexpr int kRequiredConsecutiveAbove = 3;
+    constexpr qint64 kDockConfirmMs = 800;
+
+    if (m_baselineDistanceCm <= 0) {
+        m_baselineSum += distCm;
+        ++m_baselineSamples;
+        if (m_baselineSamples >= kBaselineSamplesRequired) {
+            m_baselineDistanceCm = static_cast<int>(m_baselineSum / qMax(1, m_baselineSamples));
+            if (m_portConsole) {
+                m_portConsole->appendPlainText(
+                    QStringLiteral("[STATE] Baseline ready: %1cm from %2 samples")
+                        .arg(m_baselineDistanceCm)
+                        .arg(m_baselineSamples));
+            }
+        } else if (m_portConsole) {
+            m_portConsole->appendPlainText(
+                QStringLiteral("[STATE] Baseline sampling: %1/%2")
+                    .arg(m_baselineSamples)
+                    .arg(kBaselineSamplesRequired));
+        }
+    }
+
+    bool isBelow = false;
+    bool isBackToIdle = false;
+    if (m_baselineDistanceCm > 0) {
+        isBelow = distCm < (m_baselineDistanceCm - kBaselineDeltaCm);
+        isBackToIdle = distCm >= (m_baselineDistanceCm - kDepartMarginCm);
+    }
+
+    m_consecutiveBelow = isBelow ? (m_consecutiveBelow + 1) : 0;
+    m_consecutiveAbove = isBackToIdle ? (m_consecutiveAbove + 1) : 0;
+
+    if (m_portConsole) {
+        m_portConsole->appendPlainText(
+            QStringLiteral("[STATE] Arrival check: distance=%1 baseline=%2 below=%3 count=%4 present=%5")
+                .arg(distCm)
+                .arg(m_baselineDistanceCm)
+                .arg(isBelow ? QStringLiteral("yes") : QStringLiteral("no"))
+                .arg(m_consecutiveBelow)
+                .arg(m_boatPresent ? QStringLiteral("yes") : QStringLiteral("no")));
+    }
+
+    if (m_consecutiveBelow >= kRequiredConsecutiveBelow && !m_boatPresent) {
+        m_boatPresent = true;
+        m_boatDocked = false;
+        m_currentAssignedQuaiId = -1;
+        m_arrivalDetectedAtMs = QDateTime::currentMSecsSinceEpoch();
+
+        if (m_portConsole) {
+            m_portConsole->appendPlainText(QStringLiteral("[STATE] Arrival detected -> findAndReserveFreeQuai()"));
+        }
+        if (m_arduinoBoat && m_arduinoBoat->isConnected()) {
+            m_arduinoBoat->writeLine(QStringLiteral("BATEAU_DETECTE"));
+        }
+
+        QTimer::singleShot(700, this, [this]() {
+            if (!m_boatPresent) {
+                return;
+            }
+
+            const int quaiId = findAndReserveFreeQuai();
+            if (m_portConsole) {
+                m_portConsole->appendPlainText(
+                    QStringLiteral("[DECISION] findAndReserveFreeQuai() -> %1").arg(quaiId));
+            }
+
+            if (quaiId > 0) {
+                m_currentAssignedQuaiId = quaiId;
+                if (m_arduinoBoat && m_arduinoBoat->isConnected()) {
+                    m_arduinoBoat->writeLine(QStringLiteral("QUAI:%1").arg(quaiId));
+                }
+                if (m_portConsole) {
+                    m_portConsole->appendPlainText(QStringLiteral("[COMMAND] QUAI:%1").arg(quaiId));
+                }
+            } else {
+                if (m_arduinoBoat && m_arduinoBoat->isConnected()) {
+                    m_arduinoBoat->writeLine(QStringLiteral("COMPLET"));
+                }
+                if (m_portConsole) {
+                    m_portConsole->appendPlainText(QStringLiteral("[COMMAND] COMPLET"));
+                }
+            }
+        });
+        return;
+    }
+
+    if (distCm <= kDockCm && m_boatPresent && !m_boatDocked) {
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        const qint64 sinceArrival = (m_arrivalDetectedAtMs > 0) ? (nowMs - m_arrivalDetectedAtMs) : kDockConfirmMs;
+        if (sinceArrival < kDockConfirmMs) {
+            if (m_portConsole) {
+                m_portConsole->appendPlainText(
+                    QStringLiteral("[STATE] Dock check skipped (%1ms < %2ms)")
+                        .arg(sinceArrival)
+                        .arg(kDockConfirmMs));
+            }
+            return;
+        }
+
+        m_boatDocked = true;
+        if (m_portConsole) {
+            m_portConsole->appendPlainText(QStringLiteral("[STATE] Docked"));
+        }
+        return;
+    }
+
+    if (m_boatPresent && m_consecutiveAbove >= kRequiredConsecutiveAbove) {
+        m_boatPresent = false;
+        m_boatDocked = false;
+        m_arrivalDetectedAtMs = 0;
+
+        if (m_portConsole) {
+            m_portConsole->appendPlainText(QStringLiteral("[STATE] Departed"));
+        }
+        if (m_arduinoBoat && m_arduinoBoat->isConnected()) {
+            m_arduinoBoat->writeLine(QStringLiteral("BATEAU_PARTI"));
+            m_arduinoBoat->writeLine(QStringLiteral("DISPLAY:Bateau parti"));
+        }
+
+        if (m_currentAssignedQuaiId > 0) {
+            if (m_portConsole) {
+                m_portConsole->appendPlainText(
+                    QStringLiteral("[STATE] Free assigned quai: %1").arg(m_currentAssignedQuaiId));
+            }
+            markQuaiFree(m_currentAssignedQuaiId);
+            m_currentAssignedQuaiId = -1;
+        } else if (m_portConsole) {
+            m_portConsole->appendPlainText(QStringLiteral("[STATE] No assigned quai to free"));
+        }
+
+        refreshQuaiTable();
+
+        QTimer::singleShot(2000, this, [this]() {
+            if (m_arduinoBoat && m_arduinoBoat->isConnected()) {
+                m_arduinoBoat->writeLine(QStringLiteral("DISPLAY:Port en attente"));
+            }
+        });
+    }
+}
+
+void MainWindow::debugAfficherTousLesQuais()
+{
+    Connection* conn = Connection::getInstance();
+    if (!conn || !conn->ensureOpen()) {
+        if (m_portConsole) {
+            m_portConsole->appendPlainText(QStringLiteral("[DB] Cannot open database for quai debug"));
+        }
+        return;
+    }
+
+    const QSqlDatabase db = conn->getDatabase();
+
+    QSqlQuery cleanup(db);
+    const QString cleanupSql = QStringLiteral(
+        "UPDATE QUAIS SET ID_BATEAU = NULL "
+        "WHERE TRIM(UPPER(STATUT)) = 'LIBRE' AND NVL(ID_BATEAU, 0) != 0");
+    if (cleanup.exec(cleanupSql) && m_portConsole) {
+        m_portConsole->appendPlainText(
+            QStringLiteral("[DB] Cleanup rows: %1").arg(cleanup.numRowsAffected()));
+    }
+
+    QSqlQuery q(db);
+    if (!q.exec(QStringLiteral("SELECT ID_QUAI, STATUT, ID_BATEAU, NOM_QUAI FROM QUAIS ORDER BY ID_QUAI"))) {
+        if (m_portConsole) {
+            m_portConsole->appendPlainText(QStringLiteral("[DB] Quai debug query failed: %1").arg(q.lastError().text()));
+        }
+        return;
+    }
+
+    while (q.next()) {
+        if (!m_portConsole) {
+            continue;
+        }
+        const int id = q.value(0).toInt();
+        const QString statut = q.value(1).toString().trimmed();
+        const QString idBateau = q.value(2).isNull() ? QStringLiteral("NULL") : q.value(2).toString();
+        const QString nom = q.value(3).toString().trimmed();
+        m_portConsole->appendPlainText(
+            QStringLiteral("[QUAI] id=%1 statut=%2 bateau=%3 nom=%4")
+                .arg(id)
+                .arg(statut)
+                .arg(idBateau)
+                .arg(nom));
+    }
+}
+
+int MainWindow::findAndReserveFreeQuai()
+{
+    if (m_portConsole) {
+        m_portConsole->appendPlainText(QStringLiteral("[DB] Searching free quai"));
+    }
+
+    debugAfficherTousLesQuais();
+
+    Connection* conn = Connection::getInstance();
+    if (!conn || !conn->ensureOpen()) {
+        if (m_portConsole) {
+            m_portConsole->appendPlainText(QStringLiteral("[DB] Database not available"));
+        }
+        return -1;
+    }
+
+    const QSqlDatabase db = conn->getDatabase();
+    QSqlQuery q(db);
+    const QString selectSql = QStringLiteral(
+        "SELECT ID_QUAI FROM QUAIS "
+        "WHERE NVL(ID_BATEAU, 0) = 0 "
+        "AND TRIM(UPPER(STATUT)) = 'LIBRE' "
+        "AND ROWNUM <= 1");
+
+    if (!q.exec(selectSql)) {
+        if (m_portConsole) {
+            m_portConsole->appendPlainText(QStringLiteral("[DB] Free quai query failed: %1").arg(q.lastError().text()));
+        }
+        return -1;
+    }
+
+    if (!q.next()) {
+        if (m_portConsole) {
+            m_portConsole->appendPlainText(QStringLiteral("[DB] No free quai found"));
+        }
+        return -1;
+    }
+
+    const int id = q.value(0).toInt();
+
+    QSqlQuery up(db);
+    up.prepare(QStringLiteral("UPDATE QUAIS SET STATUT = :statut WHERE ID_QUAI = :id"));
+    up.bindValue(QStringLiteral(":statut"), QStringLiteral("Occupe"));
+    up.bindValue(QStringLiteral(":id"), id);
+    if (!up.exec()) {
+        if (m_portConsole) {
+            m_portConsole->appendPlainText(QStringLiteral("[DB] Reserve quai failed: %1").arg(up.lastError().text()));
+        }
+        return -1;
+    }
+
+    if (m_portConsole) {
+        m_portConsole->appendPlainText(QStringLiteral("[DB] Quai reserved: %1").arg(id));
+    }
+    refreshQuaiTable();
+    return id;
+}
+
+void MainWindow::markQuaiFree(int idQuai)
+{
+    if (idQuai <= 0) {
+        return;
+    }
+
+    Connection* conn = Connection::getInstance();
+    if (!conn || !conn->ensureOpen()) {
+        return;
+    }
+
+    const QSqlDatabase db = conn->getDatabase();
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral("UPDATE QUAIS SET STATUT = :statut, ID_BATEAU = NULL WHERE ID_QUAI = :id"));
+    q.bindValue(QStringLiteral(":statut"), QStringLiteral("Libre"));
+    q.bindValue(QStringLiteral(":id"), idQuai);
+    if (!q.exec()) {
+        if (m_portConsole) {
+            m_portConsole->appendPlainText(
+                QStringLiteral("[DB] Free quai %1 failed: %2").arg(idQuai).arg(q.lastError().text()));
+        }
+        return;
+    }
+
+    if (m_portConsole) {
+        m_portConsole->appendPlainText(QStringLiteral("[DB] Quai freed: %1").arg(idQuai));
+    }
+    refreshQuaiTable();
 }
 
 void MainWindow::updateCapturesTableLiveTemperature(double temperatureC)
@@ -5962,16 +7272,16 @@ void MainWindow::updateCapturesTableLiveTemperature(double temperatureC)
 void MainWindow::updateArduinoTemperatureDialogConnectionState()
 {
     if (!m_arduinoTempConnLabel) return;
-    if (!m_arduino) {
-        m_arduinoTempConnLabel->setText(QStringLiteral("Port: disconnected"));
+    if (!m_arduinoTemp) {
+        m_arduinoTempConnLabel->setText(QStringLiteral("Port temperature: disconnected"));
         return;
     }
 
-    const QString port = m_arduino->connectedPortName();
+    const QString port = m_arduinoTemp->connectedPortName();
     if (port.isEmpty()) {
-        m_arduinoTempConnLabel->setText(QStringLiteral("Port: disconnected"));
+        m_arduinoTempConnLabel->setText(QStringLiteral("Port temperature: disconnected"));
     } else {
-        m_arduinoTempConnLabel->setText(QStringLiteral("Port: %1 (connecte)").arg(port));
+        m_arduinoTempConnLabel->setText(QStringLiteral("Port temperature: %1 (connecte)").arg(port));
     }
 }
 
@@ -6002,12 +7312,192 @@ void MainWindow::updateArduinoTemperatureDialog(double temperatureC, bool append
     }
 }
 
+QString MainWindow::preferredRfidPortName(const QStringList& ports, bool honorCurrentSelection) const
+{
+    if (ports.isEmpty()) {
+        return QString();
+    }
+
+    const QString tempPort = (m_arduinoTemp && m_arduinoTemp->isConnected())
+        ? m_arduinoTemp->connectedPortName().trimmed()
+        : QString();
+    const QString boatPort = (m_arduinoBoat && m_arduinoBoat->isConnected())
+        ? m_arduinoBoat->connectedPortName().trimmed()
+        : QString();
+
+    const auto chooseIfValid = [&](const QString& candidate) -> QString {
+        const QString trimmed = candidate.trimmed();
+        if (trimmed.isEmpty() || trimmed == QStringLiteral("(no ports)")) {
+            return QString();
+        }
+        const QString matched = matchingPortName(ports, trimmed);
+        if (matched.isEmpty()) {
+            return QString();
+        }
+        if (!tempPort.isEmpty() && matched.compare(tempPort, Qt::CaseInsensitive) == 0 && ports.size() > 1) {
+            return QString();
+        }
+        if (!boatPort.isEmpty() && matched.compare(boatPort, Qt::CaseInsensitive) == 0 && ports.size() > 1) {
+            return QString();
+        }
+        return matched;
+    };
+
+    const auto isOtherScenarioFixedPort = [](const QString& candidate) -> bool {
+        return candidate.compare(kBoatArduinoPortName, Qt::CaseInsensitive) == 0
+            || candidate.compare(kTemperatureArduinoPortName, Qt::CaseInsensitive) == 0;
+    };
+
+    if (const QString com4 = chooseIfValid(kRfidArduinoPortName); !com4.isEmpty()) {
+        return com4;
+    }
+
+    if (honorCurrentSelection) {
+        const QString currentSelection = m_arduinoPortCombo ? m_arduinoPortCombo->currentText() : QString();
+        if (currentSelection.compare(kRfidArduinoPortName, Qt::CaseInsensitive) == 0) {
+            if (const QString current = chooseIfValid(currentSelection); !current.isEmpty()) {
+                return current;
+            }
+        }
+    }
+
+    QSettings settings(QStringLiteral("AquaTech"), QStringLiteral("AquaTech"));
+    const QString savedValue = settings.value(QStringLiteral("arduino/rfidPortName")).toString().trimmed();
+    if (const QString saved = chooseIfValid(savedValue); !saved.isEmpty()) {
+        return saved;
+    }
+
+    for (const QString& port : ports) {
+        if (isOtherScenarioFixedPort(port)) {
+            continue;
+        }
+        if (const QString chosen = chooseIfValid(port); !chosen.isEmpty()) {
+            return chosen;
+        }
+    }
+
+    return QString();
+}
+
+QString MainWindow::preferredTemperaturePortName(const QStringList& ports) const
+{
+    if (ports.isEmpty()) {
+        return QString();
+    }
+
+    const QString rfidPort = (m_arduino && m_arduino->isConnected())
+        ? m_arduino->connectedPortName().trimmed()
+        : preferredRfidPortName(ports, true);
+    const QString boatPort = (m_arduinoBoat && m_arduinoBoat->isConnected())
+        ? m_arduinoBoat->connectedPortName().trimmed()
+        : QString();
+
+    const auto chooseIfValid = [&](const QString& candidate) -> QString {
+        const QString trimmed = candidate.trimmed();
+        const QString matched = matchingPortName(ports, trimmed);
+        if (matched.isEmpty()) {
+            return QString();
+        }
+        if (!rfidPort.isEmpty() && matched.compare(rfidPort, Qt::CaseInsensitive) == 0 && ports.size() > 1) {
+            return QString();
+        }
+        if (!boatPort.isEmpty() && matched.compare(boatPort, Qt::CaseInsensitive) == 0 && ports.size() > 1) {
+            return QString();
+        }
+        return matched;
+    };
+
+    const auto isOtherScenarioFixedPort = [](const QString& candidate) -> bool {
+        return candidate.compare(kRfidArduinoPortName, Qt::CaseInsensitive) == 0
+            || candidate.compare(kBoatArduinoPortName, Qt::CaseInsensitive) == 0;
+    };
+
+    if (const QString com7 = chooseIfValid(kTemperatureArduinoPortName); !com7.isEmpty()) {
+        return com7;
+    }
+
+    QSettings settings(QStringLiteral("AquaTech"), QStringLiteral("AquaTech"));
+    const QString savedValue = settings.value(QStringLiteral("arduino/tempPortName")).toString().trimmed();
+    if (const QString saved = chooseIfValid(savedValue); !saved.isEmpty()) {
+        return saved;
+    }
+
+    for (const QString& port : ports) {
+        if (isOtherScenarioFixedPort(port)) {
+            continue;
+        }
+        if (const QString chosen = chooseIfValid(port); !chosen.isEmpty()) {
+            return chosen;
+        }
+    }
+
+    return QString();
+}
+
+QString MainWindow::preferredBoatPortName(const QStringList& ports) const
+{
+    if (ports.isEmpty()) {
+        return QString();
+    }
+
+    const QString rfidPort = (m_arduino && m_arduino->isConnected())
+        ? m_arduino->connectedPortName().trimmed()
+        : QString();
+    const QString tempPort = (m_arduinoTemp && m_arduinoTemp->isConnected())
+        ? m_arduinoTemp->connectedPortName().trimmed()
+        : QString();
+
+    const auto isReserved = [&](const QString& candidate) -> bool {
+        return (!rfidPort.isEmpty() && candidate.compare(rfidPort, Qt::CaseInsensitive) == 0)
+            || (!tempPort.isEmpty() && candidate.compare(tempPort, Qt::CaseInsensitive) == 0);
+    };
+
+    const auto chooseIfValid = [&](const QString& candidate) -> QString {
+        const QString matched = matchingPortName(ports, candidate);
+        if (matched.isEmpty()) {
+            return QString();
+        }
+        if (isReserved(matched) && ports.size() > 1) {
+            return QString();
+        }
+        return matched;
+    };
+
+    const auto isOtherScenarioFixedPort = [](const QString& candidate) -> bool {
+        return candidate.compare(kRfidArduinoPortName, Qt::CaseInsensitive) == 0
+            || candidate.compare(kTemperatureArduinoPortName, Qt::CaseInsensitive) == 0;
+    };
+
+    if (const QString com6 = chooseIfValid(kBoatArduinoPortName); !com6.isEmpty()) {
+        return com6;
+    }
+
+    QSettings settings(QStringLiteral("AquaTech"), QStringLiteral("AquaTech"));
+    const QString savedValue = settings.value(QStringLiteral("arduino/boatPortName")).toString().trimmed();
+    if (const QString saved = chooseIfValid(savedValue); !saved.isEmpty()) {
+        return saved;
+    }
+
+    for (const QString& port : ports) {
+        if (isOtherScenarioFixedPort(port)) {
+            continue;
+        }
+        if (const QString chosen = chooseIfValid(port); !chosen.isEmpty()) {
+            return chosen;
+        }
+    }
+
+    return QString();
+}
+
 void MainWindow::refreshArduinoPortList()
 {
-    if (!m_arduinoPortCombo || !m_arduino) return;
+    if (!m_arduinoPortCombo || (!m_arduino && !m_arduinoTemp)) return;
 
     const QString previous = m_arduinoPortCombo->currentText().trimmed();
-    const QStringList ports = m_arduino->availablePortNames();
+    const QStringList ports = m_arduino
+        ? m_arduino->availablePortNames()
+        : m_arduinoTemp->availablePortNames();
 
     m_arduinoPortCombo->blockSignals(true);
     m_arduinoPortCombo->clear();
@@ -6019,6 +7509,9 @@ void MainWindow::refreshArduinoPortList()
         m_arduinoPortCombo->addItems(ports);
 
         int idx = m_arduinoPortCombo->findText(previous);
+        if (idx < 0) {
+            idx = m_arduinoPortCombo->findText(preferredRfidPortName(ports, false));
+        }
         if (idx >= 0) m_arduinoPortCombo->setCurrentIndex(idx);
 
         // Enabled/disabled is handled by updateArduinoUiState.
@@ -6045,7 +7538,26 @@ void MainWindow::updateArduinoUiState()
     if (m_arduinoSendButton) m_arduinoSendButton->setEnabled(connected);
 
     if (m_arduinoStatusLabel && !connected) {
-        m_arduinoStatusLabel->setText(QStringLiteral("Arduino: disconnected"));
+        m_arduinoStatusLabel->setText(QStringLiteral("RFID: disconnected"));
+    }
+}
+
+void MainWindow::updateEmployeePageRfidStatus()
+{
+    if (!ui || !ui->pagee) return;
+
+    QLabel* rfidStatusLabel = ui->pagee->findChild<QLabel*>(QStringLiteral("label_rfid_status"));
+    if (!rfidStatusLabel) return;
+
+    const bool connected = m_arduino && m_arduino->isConnected();
+    
+    if (connected) {
+        const QString portName = m_arduino->connectedPortName();
+        rfidStatusLabel->setText(QStringLiteral("✓ Arduino: %1").arg(portName));
+        rfidStatusLabel->setStyleSheet(QStringLiteral("color: green; font-weight: bold;"));
+    } else {
+        rfidStatusLabel->setText(QStringLiteral("⚠ Arduino: déconnecté"));
+        rfidStatusLabel->setStyleSheet(QStringLiteral("color: red; font-weight: bold;"));
     }
 }
 
@@ -6392,6 +7904,8 @@ void MainWindow::on_pushButton_5e_clicked()
     const QString statut = ui->comboBox_14e ? ui->comboBox_14e->currentText().trimmed() : QString();
     const QString raison = ui->lineEdit_raison_banni ? ui->lineEdit_raison_banni->text().trimmed() : QString();
     const QString cvPath = ui->lineEdit_cv_path ? ui->lineEdit_cv_path->text().trimmed() : QString();
+    QLineEdit* rfidEdit = ui->pagee ? ui->pagee->findChild<QLineEdit*>(QStringLiteral("lineEdit_rfid")) : nullptr;
+    const QString rfid = rfidEdit ? rfidEdit->text().trimmed() : QString();
 
     if (!editingEmploye && id <= 0) {
         id = Employe::genererNouvelId(role);
@@ -6458,7 +7972,7 @@ void MainWindow::on_pushButton_5e_clicked()
         return;
     }
 
-    Employe emp(id, nom, prenom, role, equipe, etat, statut, salaire, telephone, raison, cvPath);
+    Employe emp(id, nom, prenom, role, equipe, etat, statut, salaire, telephone, raison, cvPath, rfid);
 
     if (editingEmploye) {
         if (!emp.modifierAvecAncienId(m_editingEmployeId)) {
@@ -12660,6 +14174,18 @@ static QString weatherIconEmojiDayNight(int weatherCode, bool isDay)
 void MainWindow::on_btnCapturep_clicked()
 {
     if (!ui) return;
+
+    // Validation Nom, Prenom et Role avant capture simulation
+    const QString nom = ui->lineEdit_2p ? ui->lineEdit_2p->text().trimmed() : QString();
+    const QString prenom = ui->lineEdit_3p ? ui->lineEdit_3p->text().trimmed() : QString();
+    const QString role = ui->comboBoxp ? ui->comboBoxp->currentText().trimmed() : QString();
+
+    if (nom.isEmpty() || prenom.isEmpty() || role.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("Capture"),
+                             QStringLiteral("Veuillez remplir le Nom, le Prénom et le Rôle avant la capture."));
+        return;
+    }
+
     if (ui->labelCamerap) {
         ui->labelCamerap->setText(QStringLiteral("Capture en cours..."));
         ui->labelCamerap->setStyleSheet(QStringLiteral("background-color: black; color: white; font-size: 20px;"));
@@ -12915,4 +14441,3 @@ void MainWindow::on_pushButton_5e_2_clicked()
                "Certains champs ont été remplis à partir du nom du fichier. Pour un remplissage complet, utilisez un fichier .txt."));
     }
 }
-

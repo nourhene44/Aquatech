@@ -129,6 +129,9 @@ private slots:
     void on_pushButton_pdfb_5_clicked();
     void on_pushButton_7c_5_clicked();
     void on_pushButton_8c_4_clicked();
+    void on_btnRefresh_4_clicked();
+    void on_btnTelegramRemise_clicked();
+    void on_btnSend_4_clicked();
     void on_pushButton_8c_3_clicked();
     void on_p5b_clicked();
     void on_cap_btnBackMenu_clicked();
@@ -175,6 +178,12 @@ private slots:
     void on_cap_deDebut_dateChanged(const QDate &date);
     void on_cap_btnExporter_clicked();
     void on_cap_btnValiider_4_clicked();
+    void handleArduinoUid(const QString& uid);
+    void handleArduinoDoorOpened(const QString& uid);
+    void on_btnAnalyzeRfidQt_clicked();
+    void retryArduinoPortDetection();
+    void retryArduinoTemperaturePortDetection();
+    void retryArduinoBoatPortDetection();
 
 public:
     // Ajout des m├⌐thodes manquantes pour la gestion des quais
@@ -196,6 +205,18 @@ protected:
 
 private:
     Ui::MainWindow *ui;
+    QPlainTextEdit* m_portConsole = nullptr;
+    int m_lastKnownDistanceCm = -1;
+    int m_lastRawPulseMicros = -1;
+    int m_currentAssignedQuaiId = -1;
+    bool m_boatPresent = false;
+    bool m_boatDocked = false;
+    qint64 m_arrivalDetectedAtMs = 0;
+    int m_baselineDistanceCm = -1;
+    qint64 m_baselineSum = 0;
+    int m_baselineSamples = 0;
+    int m_consecutiveBelow = 0;
+    int m_consecutiveAbove = 0;
     QString m_editingPecheurId;
     int m_editingEmployeId = -1;
     QString m_currentCvPath;
@@ -235,14 +256,19 @@ private:
     bool m_lastWeatherIsDay = true;
     bool m_hasLastWeather = false;
 
-    // --- Arduino / Serial integration (Qt SerialPort) ---
+    // --- Arduino / Serial integration ---
     ArduinoSerial* m_arduino = nullptr;
+    ArduinoSerial* m_arduinoTemp = nullptr;
+    ArduinoSerial* m_arduinoBoat = nullptr;
     QComboBox* m_arduinoPortCombo = nullptr;
     QPushButton* m_arduinoConnectButton = nullptr;
     QLineEdit* m_arduinoTxEdit = nullptr;
     QPushButton* m_arduinoSendButton = nullptr;
     QLabel* m_arduinoStatusLabel = nullptr;
-     QPushButton* m_capArduinoTempButton = nullptr;
+    QTimer* m_arduinoPortDetectionTimer = nullptr;
+    QTimer* m_arduinoTempPortDetectionTimer = nullptr;
+    QTimer* m_arduinoBoatPortDetectionTimer = nullptr;
+    QPushButton* m_capArduinoTempButton = nullptr;
     QFrame* m_capArduinoTempFrame = nullptr;
      QDialog* m_arduinoTempDialog = nullptr;
      QLabel* m_arduinoTempValueLabel = nullptr;
@@ -253,6 +279,8 @@ private:
      double m_lastArduinoTemperatureC = 0.0;
      double m_arduinoTempDangerThreshold = 29.0;
      double m_arduinoTempCritiqueThreshold = 32.0;
+     QString m_lastAppliedUid;
+     qint64 m_lastAppliedMs = 0;
 
     // --- Mot de passe oublie (OTP email) ---
     QString m_passwordResetCode;
@@ -300,23 +328,33 @@ private:
     void loadEmployes();
     void editEmployeFromTable(int row);
     void ensureEmployeActionsColumn(const QString& css);
+    void ensureEmployeRfidUi();
 
     void showFrame(QWidget* frameToShow);
     void setupFrames();
     void normalizeUiTexts();
     void setupArduinoIntegration();
+    QString preferredRfidPortName(const QStringList& ports, bool honorCurrentSelection = true) const;
+    QString preferredTemperaturePortName(const QStringList& ports) const;
+    QString preferredBoatPortName(const QStringList& ports) const;
     void refreshArduinoPortList();
     void updateArduinoUiState();
+    void updateEmployeePageRfidStatus();
     void setupArduinoTemperatureButton();
     void toggleCapturesArduinoTemperatureView();
     void ensureCapturesArduinoTemperatureView();
     void setCapturesArduinoTemperatureViewVisible(bool visible);
     void showArduinoTemperatureWindow();
     void ensureArduinoTemperatureConnected();
+    void sendArduinoTemperatureSetup();
     void handleArduinoTemperatureLine(const QString& line);
+    void handleArduinoBoatLine(const QString& line);
     void updateArduinoTemperatureDialogConnectionState();
      void updateArduinoTemperatureDialog(double temperatureC, bool appendHistory = true);
     void updateCapturesTableLiveTemperature(double temperatureC);
+    void debugAfficherTousLesQuais();
+    int findAndReserveFreeQuai();
+    void markQuaiFree(int idQuai);
     void applyQuaiFilters();
     void refreshWeatherForPage3();
     void lockQuaisForWeather();
@@ -340,6 +378,7 @@ private:
 
     // Gestion des clients (recherche + statistiques)
     void refreshClientsPage();
+    void refreshTopClientsStats();
 
     // --- Alertes automatiques de maintenance préventive (Bateaux) ---
     void setupBateauMaintenanceAlertSystem();
@@ -387,5 +426,6 @@ private:
     void syncPecheurFaceCaptureFields();
     bool persistCapturedPecheurPhoto();
     void updatePecheurFacePreviewGeometry();
+    void applyRfidEmployeeToggle(const QString& uid);
 };
 #endif // MAINWINDOW_H

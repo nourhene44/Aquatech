@@ -1,10 +1,8 @@
 #ifndef EMPLOYE_H
 #define EMPLOYE_H
 
-#include <QString>
 #include <QSqlQueryModel>
-
-// Classe métier Employe suivant l'architecture de l'atelier CRUD Qt
+#include <QString>
 
 class Employe
 {
@@ -20,22 +18,27 @@ public:
             double salaire,
             const QString &telephoneUi = QString(),
             const QString &raison = QString(),
-            const QString &cvPath = QString());
+            const QString &cvPath = QString(),
+            const QString &rfidId = QString());
 
-    // CRUD de base
     bool ajouter() const;
     bool modifier() const;
     bool modifierAvecAncienId(int ancienId) const;
     static bool supprimer(int id);
 
-    // Affichage (modèle pour QTableView / remplissage de QTableWidget)
     static QSqlQueryModel *afficher();
     static int genererNouvelId(const QString &role);
 
-    // Dernière erreur rencontrée
+    static bool canAccessByRfid(const QString &rfidId,
+                                QString *nomEmployeOut = nullptr,
+                                QString *reasonOut = nullptr);
+    static bool updateStatutByRfid(const QString &rfidId,
+                                   const QString &forcedStatut = QString(),
+                                   QString *nouveauStatutOut = nullptr,
+                                   QString *nomEmployeOut = nullptr);
+
     static QString lastError();
 
-    // Getters / setters simples (style atelier)
     int id() const { return m_id; }
     void setId(int id) { m_id = id; }
 
@@ -66,6 +69,9 @@ public:
     QString cvPath() const { return m_cvPath; }
     void setCvPath(const QString &cvPath) { m_cvPath = cvPath; }
 
+    QString rfidId() const { return m_rfidId; }
+    void setRfidId(const QString &rfidId) { m_rfidId = rfidId; }
+
 private:
     int m_id = 0;
     QString m_nom;
@@ -78,6 +84,7 @@ private:
     QString m_telephoneUi;
     QString m_raison;
     QString m_cvPath;
+    QString m_rfidId;
 
     static QString s_lastError;
 };

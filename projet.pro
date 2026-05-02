@@ -51,6 +51,7 @@ RESOURCES += \
     img.qrc
 
 DEFINES += QT_DEPRECATED_WARNINGS
+win32: LIBS += -lsetupapi
 
 # Export Excel réel (.xlsx) via ActiveQt/COM (nécessite Excel installé)
 win32:qtHaveModule(axcontainer) {
