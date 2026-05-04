@@ -3,6 +3,7 @@
 #include "arduinoserial.h"
 #include <QStatusBar>
 #include <QDialog>
+#include <QDialogButtonBox>
 #include <QPlainTextEdit>
 #include <QAbstractButton>
 #include <QComboBox>
@@ -80,7 +81,7 @@
 #include <QDir>
 #include <QBuffer>
 
-// Helpers g├⌐n├⌐riques pour la base de donn├⌐es et le texte UI
+// Helpers gâ”œâŒnâ”œâŒriques pour la base de donnâ”œâŒes et le texte UI
 
 static QString weatherDescriptionFr(int weatherCode);
 static QString weatherIconEmoji(int weatherCode);
@@ -111,7 +112,7 @@ static QString matchingPortName(const QStringList& ports, const QString& candida
 static bool handleCrudDisabled(QWidget* parent)
 {
     Q_UNUSED(parent);
-    // Point central pour d├⌐sactiver temporairement les op├⌐rations CRUD si besoin.
+    // Point central pour dâ”œâŒsactiver temporairement les opâ”œâŒrations CRUD si besoin.
     return true;
 }
 
@@ -294,7 +295,7 @@ static void showPecheurPhotoPreviewDialog(QWidget* parent, const QPixmap& source
 
     auto* dialog = new QDialog(parent);
     dialog->setAttribute(Qt::WA_DeleteOnClose, true);
-    dialog->setWindowTitle(QStringLiteral("Photo du pêcheur"));
+    dialog->setWindowTitle(QStringLiteral("Photo du pÃªcheur"));
     dialog->setModal(true);
     dialog->resize(760, 760);
 
@@ -458,10 +459,10 @@ static bool sendMissionMailSmtp(const QString& recipient,
     const QString subject = QStringLiteral("Affectation a une mission");
     const QString body = QStringLiteral(
         "Bonjour %1 %2,\n\n"
-        "Nous vous informons que vous avez été affecté(e) à une mission.\n\n"
-        "Date d’affectation : %3 à %4h\n"
+        "Nous vous informons que vous avez Ã©tÃ© affectÃ©(e) Ã  une mission.\n\n"
+        "Date dâ€™affectation : %3 Ã  %4h\n"
         "ID du bateau : %5\n\n"
-        "Nous vous remercions de bien vouloir prendre les dispositions nécessaires.\n\n"
+        "Nous vous remercions de bien vouloir prendre les dispositions nÃ©cessaires.\n\n"
         "Cordialement, ")
             .arg(nom.trimmed(),
                  prenom.trimmed(),
@@ -935,6 +936,71 @@ static bool parseQuotaKg(const QString& text, double* outKg)
     return true;
 }
 
+static QString normalizeKey(const QString& s);
+
+struct CaptureLineUi {
+    QString species;
+    int quantite = 0;
+    double poidsKg = 0.0;
+};
+
+static QVector<CaptureLineUi> captureLinesFromTable(QTableWidget* table)
+{
+    QVector<CaptureLineUi> lines;
+    if (!table) {
+        return lines;
+    }
+
+    for (int r = 0; r < table->rowCount(); ++r) {
+        CaptureLineUi line;
+        if (auto* item = table->item(r, 0)) {
+            line.species = item->text().trimmed();
+        }
+        if (auto* item = table->item(r, 1)) {
+            line.quantite = toIntOrZero(item->text());
+        }
+        if (auto* item = table->item(r, 2)) {
+            line.poidsKg = item->text().trimmed().toDouble();
+        }
+
+        if (line.species.isEmpty() || line.quantite <= 0 || line.poidsKg <= 0.0) {
+            continue;
+        }
+        lines.push_back(line);
+    }
+
+    return lines;
+}
+
+static void clearCaptureLinesTable(QTableWidget* table)
+{
+    if (!table) {
+        return;
+    }
+    table->clearContents();
+    table->setRowCount(0);
+}
+
+static bool hasSpeciesInLinesTable(QTableWidget* table, const QString& species)
+{
+    if (!table) {
+        return false;
+    }
+
+    const QString key = normalizeKey(species);
+    for (int r = 0; r < table->rowCount(); ++r) {
+        auto* item = table->item(r, 0);
+        if (!item) {
+            continue;
+        }
+        if (normalizeKey(item->text()) == key) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 
 bool MainWindow::sendEmail(const QString& to,
                            const QString& content,
@@ -1062,11 +1128,11 @@ bool MainWindow::sendEmail(const QString& to,
 static QString cleanFilterLabel(QString text)
 {
     text = text.trimmed();
-    text.replace(QStringLiteral("Γ£à"), QString());
-    text.replace(QStringLiteral("Γ¥î"), QString());
-    text.replace(QStringLiteral("ΓÅ│"), QString());
-    text.replace(QStringLiteral("≡ƒÅû∩╕Å"), QString());
-    text.replace(QStringLiteral("ΓÇó"), QString());
+    text.replace(QStringLiteral("Î“Â£Ã "), QString());
+    text.replace(QStringLiteral("Î“Â¥Ã®"), QString());
+    text.replace(QStringLiteral("Î“Ã…â”‚"), QString());
+    text.replace(QStringLiteral("â‰¡Æ’Ã…Ã»âˆ©â••Ã…"), QString());
+    text.replace(QStringLiteral("Î“Ã‡Ã³"), QString());
     return text.simplified();
 }
 
@@ -1137,14 +1203,14 @@ static QPixmap buildDisponibiliteCirclePixmap(int disponible, int bientot, int i
 static QString canonicalEmployeRole(const QString& raw)
 {
     QString key = raw.trimmed().toLower();
-    key.replace(QStringLiteral("├⌐"), QStringLiteral("e"));
-    key.replace(QStringLiteral("├¿"), QStringLiteral("e"));
-    key.replace(QStringLiteral("├¬"), QStringLiteral("e"));
-    key.replace(QStringLiteral("├á"), QStringLiteral("a"));
-    key.replace(QStringLiteral("├╣"), QStringLiteral("u"));
-    key.replace(QStringLiteral("├«"), QStringLiteral("i"));
-    key.replace(QStringLiteral("├┤"), QStringLiteral("o"));
-    key.replace(QStringLiteral("├º"), QStringLiteral("c"));
+    key.replace(QStringLiteral("â”œâŒ"), QStringLiteral("e"));
+    key.replace(QStringLiteral("â”œÂ¿"), QStringLiteral("e"));
+    key.replace(QStringLiteral("â”œÂ¬"), QStringLiteral("e"));
+    key.replace(QStringLiteral("â”œÃ¡"), QStringLiteral("a"));
+    key.replace(QStringLiteral("â”œâ•£"), QStringLiteral("u"));
+    key.replace(QStringLiteral("â”œÂ«"), QStringLiteral("i"));
+    key.replace(QStringLiteral("â”œâ”¤"), QStringLiteral("o"));
+    key.replace(QStringLiteral("â”œÂº"), QStringLiteral("c"));
     key.remove(QLatin1Char('_'));
     key.remove(QLatin1Char(' '));
 
@@ -1318,11 +1384,11 @@ static bool isSaisieConstraintError(const QString& error)
     const QString e = error.toLower();
     return e.contains(QStringLiteral("obligatoire"))
         || e.contains(QStringLiteral("invalide"))
-        || e.contains(QStringLiteral("d├⌐j├á utilis├⌐"))
+        || e.contains(QStringLiteral("dâ”œâŒjâ”œÃ¡ utilisâ”œâŒ"))
         || e.contains(QStringLiteral("deja utilise"))
         || e.contains(QStringLiteral("veuillez saisir"))
         || e.contains(QStringLiteral("format attendu"))
-        || e.contains(QStringLiteral("doit ├¬tre"))
+        || e.contains(QStringLiteral("doit â”œÂ¬tre"))
         || e.contains(QStringLiteral("doit etre"));
 }
 
@@ -1370,7 +1436,7 @@ static QString matchColumnBySynonyms(const QStringList& dbCols,
 {
     if (dbCols.isEmpty() || syns.isEmpty()) return QString();
 
-    // D'abord, tentative de correspondance exacte sur la cl├⌐ normalis├⌐e
+    // D'abord, tentative de correspondance exacte sur la clâ”œâŒ normalisâ”œâŒe
     for (const QString& syn : syns) {
         const QString key = normalizeKey(syn);
         for (const QString& col : dbCols) {
@@ -1380,7 +1446,7 @@ static QString matchColumnBySynonyms(const QStringList& dbCols,
         }
     }
 
-    // Ensuite, tentative de correspondance par pr├⌐fixe
+    // Ensuite, tentative de correspondance par prâ”œâŒfixe
     for (const QString& syn : syns) {
         const QString key = normalizeKey(syn);
         for (const QString& col : dbCols) {
@@ -1400,7 +1466,7 @@ static QString resolveTableName(QSqlDatabase db, const QStringList& candidates)
     const QStringList tables = dbTableNames(db);
     if (tables.isEmpty()) return QString();
 
-    // Correspondance exacte sur le nom normalis├⌐
+    // Correspondance exacte sur le nom normalisâ”œâŒ
     for (const QString& cand : candidates) {
         const QString key = normalizeKey(cand);
         for (const QString& tbl : tables) {
@@ -1410,7 +1476,7 @@ static QString resolveTableName(QSqlDatabase db, const QStringList& candidates)
         }
     }
 
-    // Sinon, correspondance par pr├⌐fixe
+    // Sinon, correspondance par prâ”œâŒfixe
     for (const QString& cand : candidates) {
         const QString key = normalizeKey(cand);
         for (const QString& tbl : tables) {
@@ -1454,13 +1520,13 @@ static bool insertRowByMapping(QWidget* parent,
                                QString* errorOut)
 {
     if (!db.isValid() || tableName.isEmpty()) {
-        if (errorOut) *errorOut = QStringLiteral("Base de donn├⌐es ou table invalide");
+        if (errorOut) *errorOut = QStringLiteral("Base de donnâ”œâŒes ou table invalide");
         return false;
     }
 
     const QStringList dbCols = getColumnNames(db, tableName);
     if (dbCols.isEmpty()) {
-        if (errorOut) *errorOut = QStringLiteral("Impossible de r├⌐cup├⌐rer les colonnes de la table %1").arg(tableName);
+        if (errorOut) *errorOut = QStringLiteral("Impossible de râ”œâŒcupâ”œâŒrer les colonnes de la table %1").arg(tableName);
         return false;
     }
 
@@ -1475,7 +1541,7 @@ static bool insertRowByMapping(QWidget* parent,
 
         const QString col = matchColumnBySynonyms(dbCols, syns);
         if (col.isEmpty()) {
-            // Colonne non trouv├⌐e: on ignore ce champ
+            // Colonne non trouvâ”œâŒe: on ignore ce champ
             continue;
         }
 
@@ -1485,7 +1551,7 @@ static bool insertRowByMapping(QWidget* parent,
     }
 
     if (columnNames.isEmpty()) {
-        if (errorOut) *errorOut = QStringLiteral("Aucune colonne valide trouv├⌐e pour l'insertion dans %1").arg(tableName);
+        if (errorOut) *errorOut = QStringLiteral("Aucune colonne valide trouvâ”œâŒe pour l'insertion dans %1").arg(tableName);
         return false;
     }
 
@@ -1525,13 +1591,13 @@ static bool updateRowByMapping(QWidget* parent,
                                QString* errorOut)
 {
     if (!db.isValid() || tableName.isEmpty()) {
-        if (errorOut) *errorOut = QStringLiteral("Base de donn├⌐es ou table invalide");
+        if (errorOut) *errorOut = QStringLiteral("Base de donnâ”œâŒes ou table invalide");
         return false;
     }
 
     const QStringList dbCols = getColumnNames(db, tableName);
     if (dbCols.isEmpty()) {
-        if (errorOut) *errorOut = QStringLiteral("Impossible de r├⌐cup├⌐rer les colonnes de la table %1").arg(tableName);
+        if (errorOut) *errorOut = QStringLiteral("Impossible de râ”œâŒcupâ”œâŒrer les colonnes de la table %1").arg(tableName);
         return false;
     }
 
@@ -1549,7 +1615,7 @@ static bool updateRowByMapping(QWidget* parent,
     for (auto it = values.constBegin(); it != values.constEnd(); ++it) {
         const QString logical = it.key();
         if (!allowUpdatingId && normalizeKey(logical) == normalizeKey(idLogicalKey)) {
-            continue; // ne pas modifier la cl├⌐
+            continue; // ne pas modifier la clâ”œâŒ
         }
 
         QStringList syns = synonyms.value(logical);
@@ -1564,7 +1630,7 @@ static bool updateRowByMapping(QWidget* parent,
     }
 
     if (setParts.isEmpty()) {
-        if (errorOut) *errorOut = QStringLiteral("Aucune colonne valide trouv├⌐e pour la modification dans %1").arg(tableName);
+        if (errorOut) *errorOut = QStringLiteral("Aucune colonne valide trouvâ”œâŒe pour la modification dans %1").arg(tableName);
         return false;
     }
 
@@ -1601,13 +1667,13 @@ static bool deleteRowByMapping(QWidget* parent,
                                QString* errorOut)
 {
     if (!db.isValid() || tableName.isEmpty()) {
-        if (errorOut) *errorOut = QStringLiteral("Base de donn├⌐es ou table invalide");
+        if (errorOut) *errorOut = QStringLiteral("Base de donnâ”œâŒes ou table invalide");
         return false;
     }
 
     const QStringList dbCols = getColumnNames(db, tableName);
     if (dbCols.isEmpty()) {
-        if (errorOut) *errorOut = QStringLiteral("Impossible de r├⌐cup├⌐rer les colonnes de la table %1").arg(tableName);
+        if (errorOut) *errorOut = QStringLiteral("Impossible de râ”œâŒcupâ”œâŒrer les colonnes de la table %1").arg(tableName);
         return false;
     }
 
@@ -1646,7 +1712,7 @@ static QString generateNextNumericIdWithPrefix(QSqlDatabase db,
                                                QString* errorOut)
 {
     if (!db.isValid() || !db.isOpen() || tableName.isEmpty() || idCol.isEmpty()) {
-        if (errorOut) *errorOut = QStringLiteral("Base de données/table/colonne invalide");
+        if (errorOut) *errorOut = QStringLiteral("Base de donnÃ©es/table/colonne invalide");
         return QString();
     }
     if (suffixDigits <= 0 || suffixDigits > 9) {
@@ -1684,7 +1750,7 @@ static QString generateNextNumericIdWithPrefix(QSqlDatabase db,
 
     const int nextId = (currentMax > 0) ? (currentMax + 1) : (minId + 1);
     if (nextId > maxId) {
-        if (errorOut) *errorOut = QStringLiteral("Limite atteinte pour le préfixe %1").arg(prefix);
+        if (errorOut) *errorOut = QStringLiteral("Limite atteinte pour le prÃ©fixe %1").arg(prefix);
         return QString();
     }
 
@@ -1731,7 +1797,7 @@ static void reloadTableWidgetFromDb(QTableWidget* table,
     const int dataColumnCount = physicalColumns.size();
     table->setColumnCount(dataColumnCount + 1); // +1 pour la colonne Actions
 
-    // En-t├¬tes: on affiche les noms logiques plus lisibles
+    // En-tâ”œÂ¬tes: on affiche les noms logiques plus lisibles
     for (int i = 0; i < logicalColumns.size(); ++i) {
         auto *item = new QTableWidgetItem(logicalColumns.at(i));
         table->setHorizontalHeaderItem(i, item);
@@ -1916,7 +1982,7 @@ static bool authenticateLoginFromDb(QSqlDatabase db,
 
     if (userCol.isEmpty() || passCol.isEmpty()) {
         if (errorOut) {
-            *errorOut = QStringLiteral("Colonnes login/mot de passe non trouv├⌐es.");
+            *errorOut = QStringLiteral("Colonnes login/mot de passe non trouvâ”œâŒes.");
         }
         return false;
     }
@@ -2077,7 +2143,7 @@ bool MainWindow::resetAdminPassword(const QString& adminEmail,
     return true;
 }
 
-// Ajoute une colonne d'actions avec des boutons styl├⌐s (sans logique m├⌐tier sp├⌐cifique)
+// Ajoute une colonne d'actions avec des boutons stylâ”œâŒs (sans logique mâ”œâŒtier spâ”œâŒcifique)
 
 static void ensureActionsColumnPopulated(QTableWidget* table, const QString& buttonStyle)
 {
@@ -2088,7 +2154,7 @@ static void ensureActionsColumnPopulated(QTableWidget* table, const QString& but
 
     for (int row = 0; row < table->rowCount(); ++row) {
         if (table->cellWidget(row, actionsCol)) {
-            continue; // d├⌐j├á peupl├⌐
+            continue; // dâ”œâŒjâ”œÃ¡ peuplâ”œâŒ
         }
 
         QWidget* container = new QWidget(table);
@@ -2099,13 +2165,13 @@ static void ensureActionsColumnPopulated(QTableWidget* table, const QString& but
         layout->setContentsMargins(0, 0, 0, 0);
         layout->setSpacing(4);
 
-        auto *editBtn = new QPushButton(QStringLiteral("\u270F\uFE0F"), container); // ✏️
-        auto *deleteBtn = new QPushButton(QStringLiteral("\u274C"), container);    // ❌
+        auto *editBtn = new QPushButton(QStringLiteral("\u270F\uFE0F"), container); // âœï¸
+        auto *deleteBtn = new QPushButton(QStringLiteral("\u274C"), container);    // âŒ
 
         editBtn->setToolTip(QStringLiteral("Modifier"));
         deleteBtn->setToolTip(QStringLiteral("Supprimer"));
 
-        // Hauteur minimale des boutons (un peu plus petite que pr├⌐c├⌐demment)
+        // Hauteur minimale des boutons (un peu plus petite que prâ”œâŒcâ”œâŒdemment)
         const int buttonMinHeight = 34;
         editBtn->setMinimumHeight(buttonMinHeight);
         deleteBtn->setMinimumHeight(buttonMinHeight);
@@ -2134,9 +2200,9 @@ static void ensureActionsColumnPopulated(QTableWidget* table, const QString& but
                 "QPushButton:pressed { background-color: rgb(224, 238, 255); }"));
         } else {
             if (!buttonStyle.isEmpty()) {
-                // On garde la bordure et le rayon d├⌐finis dans buttonStyle,
-                // mais on force juste le fond ├á ├¬tre transparent pour
-                // tous les ├⌐tats.
+                // On garde la bordure et le rayon dâ”œâŒfinis dans buttonStyle,
+                // mais on force juste le fond â”œÃ¡ â”œÂ¬tre transparent pour
+                // tous les â”œâŒtats.
                 const QString finalStyle = buttonStyle +
                         QStringLiteral(
                             " QPushButton {"
@@ -2161,7 +2227,7 @@ static void ensureActionsColumnPopulated(QTableWidget* table, const QString& but
         table->setCellWidget(row, actionsCol, container);
         // Assurer une hauteur de ligne suffisante pour les gros boutons
         table->setRowHeight(row, qMax(table->rowHeight(row), buttonMinHeight + 8));
-        // Les connexions sp├⌐cifiques (├⌐dition/suppression) sont g├⌐r├⌐es ailleurs si n├⌐cessaire.
+        // Les connexions spâ”œâŒcifiques (â”œâŒdition/suppression) sont gâ”œâŒrâ”œâŒes ailleurs si nâ”œâŒcessaire.
     }
 }
 
@@ -2173,34 +2239,54 @@ void MainWindow::normalizeUiTexts()
         if (s.isEmpty()) return s;
 
         // Common mojibake seen in this project (typically UTF-8 bytes mis-decoded).
-        s.replace(QStringLiteral("├⌐"), QStringLiteral("é"));
-        s.replace(QStringLiteral("├¿"), QStringLiteral("è"));
-        s.replace(QStringLiteral("├¬"), QStringLiteral("ê"));
-        s.replace(QStringLiteral("├á"), QStringLiteral("à"));
-        s.replace(QStringLiteral("├«"), QStringLiteral("î"));
-        s.replace(QStringLiteral("├┤"), QStringLiteral("ô"));
-        s.replace(QStringLiteral("├ë"), QStringLiteral("É"));
+        s.replace(QStringLiteral("Ã©"), QStringLiteral("\u00e9"));
+        s.replace(QStringLiteral("Ã¨"), QStringLiteral("\u00e8"));
+        s.replace(QStringLiteral("Ãª"), QStringLiteral("\u00ea"));
+        s.replace(QStringLiteral("Ã«"), QStringLiteral("\u00eb"));
+        s.replace(QStringLiteral("Ã‰"), QStringLiteral("\u00c9"));
+        s.replace(QStringLiteral("Ã€"), QStringLiteral("\u00c0"));
+        s.replace(QStringLiteral("Ã "), QStringLiteral("\u00e0"));
+        s.replace(QStringLiteral("Ã¢"), QStringLiteral("\u00e2"));
+        s.replace(QStringLiteral("Ã®"), QStringLiteral("\u00ee"));
+        s.replace(QStringLiteral("Ã¯"), QStringLiteral("\u00ef"));
+        s.replace(QStringLiteral("Ã´"), QStringLiteral("\u00f4"));
+        s.replace(QStringLiteral("Ã¶"), QStringLiteral("\u00f6"));
+        s.replace(QStringLiteral("Ã¹"), QStringLiteral("\u00f9"));
+        s.replace(QStringLiteral("Ã»"), QStringLiteral("\u00fb"));
+        s.replace(QStringLiteral("Ã§"), QStringLiteral("\u00e7"));
+
+        // Secondary mojibake sequences that sometimes appear in comments or labels.
+        s.replace(QStringLiteral("â”œâŒ"), QStringLiteral("\u00e9"));
+        s.replace(QStringLiteral("â”œÂ¿"), QStringLiteral("\u00e8"));
+        s.replace(QStringLiteral("â”œÂ¬"), QStringLiteral("\u00ea"));
+        s.replace(QStringLiteral("â”œÃ¡"), QStringLiteral("\u00e0"));
+        s.replace(QStringLiteral("â”œÂ«"), QStringLiteral("\u00ee"));
+        s.replace(QStringLiteral("â”œâ”¤"), QStringLiteral("\u00f4"));
+        s.replace(QStringLiteral("â”œÃ«"), QStringLiteral("\u00c9"));
 
         // Bullets / punctuation mojibake.
-        s.replace(QStringLiteral("ΓÇó"), QStringLiteral("•"));
-        s.replace(QStringLiteral("Γçó"), QStringLiteral("•"));
-        s.replace(QStringLiteral("ΓÇô"), QStringLiteral("–"));
-        s.replace(QStringLiteral("ΓùÅ"), QStringLiteral("•"));
+        s.replace(QStringLiteral("â€¢"), QStringLiteral("\u2022"));
+        s.replace(QStringLiteral("â€“"), QStringLiteral("-"));
+        s.replace(QStringLiteral("Î“Ã‡Ã³"), QStringLiteral("\u2022"));
+        s.replace(QStringLiteral("Î“Ã§Ã³"), QStringLiteral("\u2022"));
+        s.replace(QStringLiteral("Î“Ã‡Ã´"), QStringLiteral("-"));
+        s.replace(QStringLiteral("Î“Ã¹Ã…"), QStringLiteral("\u2022"));
 
         // Corrupted icon glyphs seen in this project (map/status/tooltips).
-        s.replace(QStringLiteral("Γ£à"), QStringLiteral("✓"));
-        s.replace(QStringLiteral("≡ƒÜ½"), QStringLiteral("⛔"));
-        s.replace(QStringLiteral("≡ƒ¢á∩╕Å"), QStringLiteral("⚙"));
-        s.replace(QStringLiteral("Γ¼å∩╕Å"), QStringLiteral("↑"));
-        s.replace(QStringLiteral("Γ¼ç∩╕Å"), QStringLiteral("↓"));
-        s.replace(QStringLiteral("Γ₧í∩╕Å"), QStringLiteral("→"));
-        s.replace(QStringLiteral("Γ¼à∩╕Å"), QStringLiteral("←"));
-        s.replace(QStringLiteral("≡ƒÜó"), QString());
-        s.replace(QStringLiteral("≡ƒôì"), QString());
-        s.replace(QStringLiteral("≡ƒôè"), QString());
+        s.replace(QStringLiteral("Î“Â£Ã "), QStringLiteral("âœ“"));
+        s.replace(QStringLiteral("â‰¡Æ’ÃœÂ½"), QStringLiteral("â›”"));
+        s.replace(QStringLiteral("â‰¡Æ’Â¢Ã¡âˆ©â••Ã…"), QStringLiteral("âš™"));
+        s.replace(QStringLiteral("Î“Â¼Ã¥âˆ©â••Ã…"), QStringLiteral("â†‘"));
+        s.replace(QStringLiteral("Î“Â¼Ã§âˆ©â••Ã…"), QStringLiteral("â†“"));
+        s.replace(QStringLiteral("Î“â‚§Ã­âˆ©â••Ã…"), QStringLiteral("â†’"));
+        s.replace(QStringLiteral("Î“Â¼Ã âˆ©â••Ã…"), QStringLiteral("â†"));
+        s.replace(QStringLiteral("â‰¡Æ’ÃœÃ³"), QString());
+        s.replace(QStringLiteral("â‰¡Æ’Ã´Ã¬"), QString());
+        s.replace(QStringLiteral("â‰¡Æ’Ã´Ã¨"), QString());
 
         // Degree sign mojibake (common in this repo).
-        s.replace(QStringLiteral("┬░"), QStringLiteral("°"));
+        s.replace(QStringLiteral("Â°"), QStringLiteral("\u00b0"));
+        s.replace(QStringLiteral("â”¬â–‘"), QStringLiteral("\u00b0"));
 
         return s;
     };
@@ -2289,6 +2375,450 @@ void MainWindow::normalizeUiTexts()
     }
 }
 
+void MainWindow::setupCapturePageVisuals()
+{
+    if (!ui || !ui->cap_pagecaptures) {
+        return;
+    }
+
+    const QString frameStyle = QStringLiteral(
+        "QFrame {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 1px solid rgb(0, 0, 115);"
+        " border-radius: 18px;"
+        " color: rgb(0, 0, 90);"
+        " }");
+    const QString titleCardStyle = QStringLiteral(
+        "QLabel {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 1px solid rgb(0, 0, 115);"
+        " border-radius: 18px;"
+        " padding: 8px 18px;"
+        " font-size: 17px;"
+        " font-weight: 700;"
+        " color: rgb(0, 0, 90);"
+        " }");
+    const QString primaryButtonStyle = QStringLiteral(
+        "QPushButton {"
+        " border: 2px solid rgb(0, 0, 112);"
+        " border-radius: 8px;"
+        " background-color: rgba(58, 61, 171, 0.92);"
+        " color: white;"
+        " padding: 8px 14px;"
+        " font-size: 14px;"
+        " font-weight: 700;"
+        " font-family: \"Segoe UI Emoji\", \"Segoe UI\", sans-serif;"
+        " }"
+        "QPushButton:hover {"
+        " background-color: rgba(68, 71, 181, 0.98);"
+        " border-color: rgb(0, 0, 90);"
+        " }"
+        "QPushButton:pressed {"
+        " background-color: rgba(44, 47, 145, 1.0);"
+        " }"
+        "QPushButton:disabled {"
+        " background-color: rgb(160, 172, 214);"
+        " color: white;"
+        " }");
+    const QString tableStyle = QStringLiteral(
+        "QTableWidget {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 1px solid rgb(0, 0, 115);"
+        " border-radius: 16px;"
+        " gridline-color: rgba(0, 0, 115, 0.35);"
+        " selection-background-color: rgba(89, 171, 200, 0.25);"
+        " selection-color: rgb(0, 0, 90);"
+        " }"
+        "QTableWidget::item {"
+        " padding: 5px;"
+        " }"
+        "QHeaderView::section {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 1px solid rgb(0, 0, 115);"
+        " padding: 6px;"
+        " font-size: 15px;"
+        " font-weight: 700;"
+        " color: rgb(0, 0, 90);"
+        " }");
+    const QString formLinesTableStyle = QStringLiteral(
+        "QTableWidget {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 1px solid rgb(0, 0, 115);"
+        " border-radius: 16px;"
+        " gridline-color: rgba(0, 0, 115, 0.45);"
+        " selection-background-color: rgba(89, 171, 200, 0.22);"
+        " selection-color: rgb(0, 0, 90);"
+        " }"
+        "QTableWidget::item {"
+        " padding: 4px;"
+        " border: none;"
+        " }"
+        "QHeaderView::section {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 1px solid rgb(0, 0, 115);"
+        " padding: 5px;"
+        " font-size: 15px;"
+        " font-weight: 700;"
+        " color: rgb(0, 0, 90);"
+        " }");
+    const QString quotaTableStyle = QStringLiteral(
+        "QTableWidget {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 1px solid rgb(0, 0, 115);"
+        " border-radius: 16px;"
+        " gridline-color: rgba(128, 140, 160, 0.55);"
+        " selection-background-color: rgba(89, 171, 200, 0.18);"
+        " selection-color: rgb(0, 0, 90);"
+        " }"
+        "QTableWidget::item {"
+        " padding: 4px 6px;"
+        " border: none;"
+        " }"
+        "QHeaderView::section {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 1px solid rgb(0, 0, 115);"
+        " padding: 5px;"
+        " font-size: 15px;"
+        " font-weight: 700;"
+        " color: rgb(0, 0, 90);"
+        " }"
+        "QTableCornerButton::section {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 1px solid rgb(0, 0, 115);"
+        " }");
+
+    auto applyPrimaryButton = [&](QPushButton* button, const QString& text) {
+        if (!button) {
+            return;
+        }
+        button->setText(text);
+        button->setStyleSheet(primaryButtonStyle);
+        button->setCursor(Qt::PointingHandCursor);
+    };
+    auto applyPlainLabel = [](QLabel* label, const QString& text = QString()) {
+        if (!label) {
+            return;
+        }
+        if (!text.isEmpty()) {
+            label->setText(text);
+        }
+        label->setStyleSheet(QStringLiteral(
+            "QLabel {"
+            " background-color: transparent;"
+            " border: none;"
+            " font-size: 16px;"
+            " font-weight: 700;"
+            " color: rgb(0, 0, 90);"
+            " }"));
+    };
+
+    
+
+    if (ui->cap_lblTitle) {
+        ui->cap_lblTitle->setGeometry(500, 20, 601, 51);
+        ui->cap_lblTitle->setText(QStringLiteral("Gestion Des Captures"));
+        ui->cap_lblTitle->setAlignment(Qt::AlignCenter);
+        ui->cap_lblTitle->setStyleSheet(QStringLiteral(
+            "QLabel {"
+            " font: 24pt \"Castellar\";"
+            " color: rgb(19, 30, 148);"
+            " background-color: transparent;"
+            " border: none;"
+            " }"));
+    }
+
+    if (ui->cap_frame) {
+        ui->cap_frame->setGeometry(1100, 10, 391, 121);
+        ui->cap_frame->setStyleSheet(frameStyle);
+    }
+    if (ui->cap_lineEdit_7) {
+        ui->cap_lineEdit_7->setGeometry(10, 0, 121, 50);
+        ui->cap_lineEdit_7->setPlaceholderText(QStringLiteral("ID Capture"));
+    }
+    if (ui->cap_btnShowSurpeche) {
+        ui->cap_btnShowSurpeche->setGeometry(140, 10, 181, 41);
+        applyPrimaryButton(ui->cap_btnShowSurpeche, QStringLiteral("Verifier surpeche"));
+    }
+    if (ui->cap_btnShowTendance) {
+        ui->cap_btnShowTendance->setGeometry(20, 70, 201, 41);
+        applyPrimaryButton(ui->cap_btnShowTendance, QStringLiteral("Analyser la saisonnalité"));
+    }
+    if (ui->cap_btnExporter && ui->cap_frame) {
+        if (ui->cap_btnExporter->parentWidget() != ui->cap_frame) {
+            ui->cap_btnExporter->setParent(ui->cap_frame);
+        }
+        ui->cap_btnExporter->setGeometry(250, 70, 111, 41);
+        applyPrimaryButton(ui->cap_btnExporter, QStringLiteral("Expor PDF"));
+        ui->cap_btnExporter->setIcon(QIcon(QStringLiteral(":/res/format-de-fichier-pdf.png")));
+        ui->cap_btnExporter->setIconSize(QSize(18, 18));
+        ui->cap_btnExporter->show();
+        ui->cap_btnExporter->raise();
+    }
+
+    if (ui->cap_lineEdit_8 && ui->cap_pagecaptures) {
+        if (ui->cap_lineEdit_8->parentWidget() != ui->cap_pagecaptures) {
+            ui->cap_lineEdit_8->setParent(ui->cap_pagecaptures);
+        }
+        ui->cap_lineEdit_8->setGeometry(24, 86, 230, 36);
+        ui->cap_lineEdit_8->setReadOnly(true);
+        ui->cap_lineEdit_8->setAlignment(Qt::AlignCenter);
+        ui->cap_lineEdit_8->setFocusPolicy(Qt::NoFocus);
+        ui->cap_lineEdit_8->setCursor(Qt::ArrowCursor);
+        ui->cap_lineEdit_8->setPlaceholderText(QStringLiteral("Temperature Arduino"));
+        ui->cap_lineEdit_8->show();
+        ui->cap_lineEdit_8->raise();
+    }
+
+    if (ui->cap_labelLeftTitle) {
+        ui->cap_labelLeftTitle->setGeometry(230, 30, 251, 41);
+        ui->cap_labelLeftTitle->setText(QStringLiteral("Formulaire"));
+        ui->cap_labelLeftTitle->setAlignment(Qt::AlignCenter);
+        ui->cap_labelLeftTitle->setStyleSheet(titleCardStyle);
+    }
+    if (ui->cap_frame_4) {
+        ui->cap_frame_4->setGeometry(220, 80, 281, 411);
+        ui->cap_frame_4->setStyleSheet(frameStyle);
+    }
+    if (ui->cap_lineEdit_11) {
+        ui->cap_lineEdit_11->setGeometry(10, 10, 251, 34);
+        ui->cap_lineEdit_11->setPlaceholderText(QStringLiteral("ID Capture"));
+    }
+    if (ui->cap_lineEdit_9) {
+        ui->cap_lineEdit_9->setGeometry(10, 48, 251, 34);
+        ui->cap_lineEdit_9->setPlaceholderText(QStringLiteral("ID Bateau"));
+    }
+    applyPlainLabel(ui->cap_label_9, QStringLiteral("Type de Poisson :"));
+    applyPlainLabel(ui->cap_label_12, QStringLiteral("Quantité :"));
+    applyPlainLabel(ui->cap_label_13, QStringLiteral("Poids :"));
+    applyPlainLabel(ui->cap_label_14, QStringLiteral("Date :"));
+    if (ui->cap_label_9) ui->cap_label_9->setGeometry(10, 90, 101, 28);
+    if (ui->cap_comboBox_4) ui->cap_comboBox_4->setGeometry(110, 90, 161, 31);
+    if (ui->cap_label_12) ui->cap_label_12->setGeometry(10, 124, 91, 28);
+    if (ui->cap_sbQuantite_4) ui->cap_sbQuantite_4->setGeometry(110, 124, 161, 31);
+    if (ui->cap_label_13) ui->cap_label_13->setGeometry(10, 158, 91, 28);
+    if (ui->cap_dsPoids_3) ui->cap_dsPoids_3->setGeometry(110, 158, 161, 31);
+    if (ui->cap_label_14) ui->cap_label_14->setGeometry(10, 192, 91, 28);
+    if (ui->cap_deDateCapture_3) ui->cap_deDateCapture_3->setGeometry(110, 192, 161, 31);
+    if (ui->cap_btnAddCaptureLine) {
+        ui->cap_btnAddCaptureLine->setGeometry(10, 230, 125, 41);
+        applyPrimaryButton(ui->cap_btnAddCaptureLine, QStringLiteral("Ajouter"));
+        ui->cap_btnAddCaptureLine->setIcon(QIcon(QStringLiteral(":/res/ajouter-le-fichier.png")));
+        ui->cap_btnAddCaptureLine->setIconSize(QSize(18, 18));
+    }
+    if (ui->cap_btnRemoveCaptureLine) {
+        ui->cap_btnRemoveCaptureLine->setGeometry(146, 230, 125, 41);
+        applyPrimaryButton(ui->cap_btnRemoveCaptureLine, QStringLiteral("Retirer"));
+        ui->cap_btnRemoveCaptureLine->setIcon(QIcon(QStringLiteral(":/res/icons8-supprimer-50.png")));
+        ui->cap_btnRemoveCaptureLine->setIconSize(QSize(18, 18));
+    }
+    if (ui->cap_tableWidget_Lignes) {
+        ui->cap_tableWidget_Lignes->setGeometry(10, 280, 261, 71);
+    }
+    if (ui->cap_btnValiider_3) {
+        ui->cap_btnValiider_3->setGeometry(70, 360, 131, 41);
+        applyPrimaryButton(ui->cap_btnValiider_3, QStringLiteral("Valider"));
+    }
+    if (ui->cap_btnValiider_4) {
+        ui->cap_btnValiider_4->setGeometry(510, 734, 180, 32);
+        applyPrimaryButton(ui->cap_btnValiider_4, QStringLiteral("Modifier Quotas"));
+        ui->cap_btnValiider_4->setIcon(QIcon(QStringLiteral(":/res/stylo.png")));
+       
+    }
+
+    applyPlainLabel(ui->cap_label_11, QStringLiteral("Quantité :"));
+    applyPlainLabel(ui->cap_label_10, QStringLiteral("Date :"));
+    if (ui->label3_11) {
+        ui->label3_11->setGeometry(592, 146, 28, 28);
+    }
+    if (ui->lineEdit_7c_2) {
+        ui->lineEdit_7c_2->setGeometry(632, 146, 230, 30);
+        ui->lineEdit_7c_2->setPlaceholderText(QStringLiteral("Recherche par ID capture"));
+    }
+    if (ui->cap_label_11) {
+        ui->cap_label_11->setGeometry(875, 143, 105, 34);
+        ui->cap_label_11->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    }
+    if (ui->cap_sbQuantite_3) {
+        ui->cap_sbQuantite_3->setGeometry(968, 144, 96, 34);
+    }
+    if (ui->cap_label_10) {
+        ui->cap_label_10->setGeometry(1086, 146, 54, 30);
+        ui->cap_label_10->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    }
+    if (ui->cap_deDebut) {
+        ui->cap_deDebut->setGeometry(1142, 144, 172, 34);
+    }
+
+    if (ui->cap_tableWidget) {
+        ui->cap_tableWidget->setGeometry(510, 180, 971, 271);
+        ui->cap_tableWidget->setStyleSheet(tableStyle);
+        ui->cap_tableWidget->setShowGrid(true);
+        ui->cap_tableWidget->horizontalHeader()->setDefaultAlignment(Qt::AlignCenter);
+        ui->cap_tableWidget->horizontalHeader()->setStretchLastSection(false);
+        ui->cap_tableWidget->horizontalHeader()->setFixedHeight(36);
+        ui->cap_tableWidget->verticalHeader()->setVisible(false);
+    }
+    if (ui->cap_tableWidget_Lignes) {
+        ui->cap_tableWidget_Lignes->setStyleSheet(formLinesTableStyle);
+        ui->cap_tableWidget_Lignes->setShowGrid(true);
+        ui->cap_tableWidget_Lignes->setHorizontalHeaderLabels({
+            QStringLiteral("Espèce"),
+            QStringLiteral("Qté"),
+            QStringLiteral("Poids")
+        });
+        ui->cap_tableWidget_Lignes->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        ui->cap_tableWidget_Lignes->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        ui->cap_tableWidget_Lignes->horizontalHeader()->setDefaultAlignment(Qt::AlignCenter);
+        ui->cap_tableWidget_Lignes->horizontalHeader()->setFixedHeight(34);
+        ui->cap_tableWidget_Lignes->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+        ui->cap_tableWidget_Lignes->verticalHeader()->setVisible(false);
+        ui->cap_tableWidget_Lignes->verticalHeader()->setDefaultSectionSize(30);
+    }
+    if (ui->cap_tableWidget_2) {
+        ui->cap_tableWidget_2->setGeometry(220, 500, 281, 251);
+        ui->cap_tableWidget_2->setStyleSheet(quotaTableStyle);
+        ui->cap_tableWidget_2->setShowGrid(true);
+        ui->cap_tableWidget_2->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+        ui->cap_tableWidget_2->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        ui->cap_tableWidget_2->horizontalHeader()->setDefaultAlignment(Qt::AlignCenter);
+        ui->cap_tableWidget_2->horizontalHeader()->setFixedHeight(36);
+        ui->cap_tableWidget_2->horizontalHeader()->setStretchLastSection(true);
+        ui->cap_tableWidget_2->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+        ui->cap_tableWidget_2->verticalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        ui->cap_tableWidget_2->verticalHeader()->setDefaultSectionSize(31);
+        ui->cap_tableWidget_2->verticalHeader()->setMinimumWidth(132);
+        ui->cap_tableWidget_2->verticalHeader()->setMaximumWidth(132);
+    }
+
+    if (ui->frame_zonesb_2) {
+        ui->frame_zonesb_2->setGeometry(510, 460, 881, 271);
+        ui->frame_zonesb_2->setStyleSheet(frameStyle);
+        if (auto* layout = qobject_cast<QVBoxLayout*>(ui->frame_zonesb_2->layout())) {
+            layout->setContentsMargins(12, 12, 12, 12);
+            layout->setSpacing(12);
+        }
+    }
+    if (ui->label_zonesb_2) {
+        ui->label_zonesb_2->setText(QStringLiteral("Répartitions par top 5 especes :"));
+        ui->label_zonesb_2->setAlignment(Qt::AlignCenter);
+        ui->label_zonesb_2->setMinimumHeight(44);
+        ui->label_zonesb_2->setStyleSheet(QStringLiteral(
+            "QLabel {"
+            " background-color: rgb(224, 238, 255);"
+            " border: 2px solid rgb(0, 0, 115);"
+            " border-radius: 15px;"
+            " padding: 5px;"
+            " font-size: 18px;"
+            " font-weight: bold;"
+            " color: rgb(0, 0, 90);"
+            " }"));
+    }
+
+    if (ui->cap_pagecaptures && ui->frame_zonesb_2) {
+        auto* combo = ui->cap_pagecaptures->findChild<QComboBox*>(QStringLiteral("cap_comboStatsMetric"));
+        if (!combo) {
+            combo = new QComboBox(ui->frame_zonesb_2);
+            combo->setObjectName(QStringLiteral("cap_comboStatsMetric"));
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
+                updateCapturesStats(this, ui);
+            });
+        } else if (combo->parentWidget() != ui->frame_zonesb_2) {
+            combo->setParent(ui->frame_zonesb_2);
+        }
+
+        combo->blockSignals(true);
+        combo->clear();
+        combo->addItem(QStringLiteral("Quantité"));
+        combo->addItem(QStringLiteral("Poids"));
+        combo->blockSignals(false);
+        combo->setToolTip(QStringLiteral("Choisir la métrique des statistiques (Quantité / Poids)"));
+        combo->setGeometry(ui->frame_zonesb_2->width() - 125, 10, 110, 32);
+        combo->setStyleSheet(QStringLiteral(
+            "QComboBox {"
+            " font-size: 15px;"
+            " font-weight: bold;"
+            " padding: 2px 10px;"
+            " background-color: white;"
+            " border: 2.5px solid rgb(0, 0, 115);"
+            " border-radius: 12px;"
+            " color: rgb(0, 0, 90);"
+            " }"
+            "QComboBox::drop-down {"
+            " border: none;"
+            " width: 22px;"
+            " }"
+            "QComboBox QAbstractItemView {"
+            " background-color: white;"
+            " border: 1px solid rgb(0, 0, 115);"
+            " selection-background-color: rgb(224, 238, 255);"
+            " selection-color: rgb(0, 0, 90);"
+            " }"));
+        combo->show();
+        combo->raise();
+    }
+
+
+    updateCapturesTemperatureSummaryUi();
+
+    const QStringList statsLabelNames = {
+        QStringLiteral("label_zoneNordb_2"),
+        QStringLiteral("label_zoneSudb_2"),
+        QStringLiteral("label_zoneEstb_2"),
+        QStringLiteral("label_zoneOuestb_3"),
+        QStringLiteral("label_zoneOuestb_2")
+    };
+    const QStringList statsProgressNames = {
+        QStringLiteral("progressZoneNordb_2"),
+        QStringLiteral("progressZoneSudb_2"),
+        QStringLiteral("progressZoneEstb_2"),
+        QStringLiteral("progressZoneOuestb_3"),
+        QStringLiteral("progressZoneOuestb_2")
+    };
+    const QStringList statsValueNames = {
+        QStringLiteral("value_zoneNordb_2"),
+        QStringLiteral("value_zoneSudb_2"),
+        QStringLiteral("value_zoneEstb_2"),
+        QStringLiteral("value_zoneOuestb_3"),
+        QStringLiteral("value_zoneOuestb_2")
+    };
+    for (const QString& name : statsLabelNames) {
+        if (auto* label = ui->frame_zonesb_2->findChild<QLabel*>(name)) {
+            label->setMinimumHeight(32);
+            label->setAlignment(Qt::AlignCenter);
+            label->setStyleSheet(QStringLiteral(
+                "QLabel {"
+                " background-color: rgb(224, 238, 255);"
+                " border: 1px solid rgb(0, 0, 115);"
+                " border-radius: 2px;"
+                " color: rgb(0, 0, 90);"
+                " font-weight: bold;"
+                " }"));
+        }
+    }
+    for (const QString& name : statsProgressNames) {
+        if (auto* bar = ui->frame_zonesb_2->findChild<QProgressBar*>(name)) {
+            bar->setMinimumSize(35, 120);
+            bar->setMaximumWidth(80);
+            bar->setOrientation(Qt::Vertical);
+            bar->setTextVisible(false); // We'll use a separate label
+        }
+    }
+    for (const QString& name : statsValueNames) {
+        if (auto* label = ui->frame_zonesb_2->findChild<QLabel*>(name)) {
+            label->setMinimumHeight(28);
+            label->setAlignment(Qt::AlignCenter);
+            label->setStyleSheet(QStringLiteral(
+                "QLabel {"
+                " background-color: rgb(224, 238, 255);"
+                " border: 1px solid rgb(0, 0, 115);"
+                " border-radius: 2px;"
+                " font-weight: bold;"
+                " }"));
+        }
+    }
+
+}
+
 // Ajuster la largeur des colonnes pour la table des clients
 
 void MainWindow::adjustClientTableColumns()
@@ -2299,7 +2829,7 @@ void MainWindow::adjustClientTableColumns()
     const int colCount = table->columnCount();
     if (colCount < 7) return; // id, nom, prenom, statut, profil, date, telephone, [actions]
 
-    // Colonnes de donn├⌐es
+    // Colonnes de donnâ”œâŒes
     table->setColumnWidth(0, 60);   // id plus petit
     table->setColumnWidth(1, 110);  // nom
     table->setColumnWidth(2, 110);  // prenom
@@ -2308,7 +2838,7 @@ void MainWindow::adjustClientTableColumns()
     table->setColumnWidth(5, 150);  // date
     table->setColumnWidth(6, 110);  // telephone
 
-    // Colonne Actions (derni├¿re)
+    // Colonne Actions (derniâ”œÂ¿re)
     const int actionsCol = colCount - 1;
     if (actionsCol >= 0)
         table->setColumnWidth(actionsCol, 140);
@@ -2329,6 +2859,492 @@ void MainWindow::adjustTopClientsStatsColumns()
     table->setColumnWidth(2, 160);  // prenom / profil
     table->setColumnWidth(3, 160);  // autre info
     table->setColumnWidth(4, 160);  // valeur statistique
+}
+
+void MainWindow::setupEmployeePageVisuals()
+{
+    if (!ui || !ui->pagee) return;
+
+    // Reuse existing styles
+    const QString titleStyle = QStringLiteral(
+        "QLabel {"
+        " background-color: transparent;"
+        " color: rgb(0, 0, 150);"
+        " font-size: 38px;"
+        " font-weight: 500;"
+        " letter-spacing: 2px;"
+        "}");
+
+    const QString frameStyle = QStringLiteral(
+        "QFrame {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 2px solid rgb(0, 0, 115);"
+        " border-radius: 20px;"
+        "}");
+
+    const QString titleCardStyle = QStringLiteral(
+        "QLabel {"
+        " background-color: white;"
+        " border: 2px solid rgb(0, 0, 115);"
+        " border-radius: 15px;"
+        " color: rgb(0, 0, 90);"
+        " font-weight: bold;"
+        " font-size: 18px;"
+        " padding: 5px;"
+        "}");
+
+    const QString lineEditStyle = QStringLiteral(
+        "QLineEdit {"
+        " background-color: white;"
+        " border: 2px solid rgb(0, 0, 115);"
+        " border-radius: 8px;"
+        " padding: 4px 8px;"
+        " color: rgb(0, 0, 90);"
+        " font-weight: 600;"
+        " font-size: 15px;"
+        "}");
+
+    const QString comboStyle = QStringLiteral(
+        "QComboBox {"
+        " background-color: white;"
+        " border: 2px solid rgb(0, 0, 115);"
+        " border-radius: 8px;"
+        " padding: 2px 10px;"
+        " color: rgb(0, 0, 90);"
+        " font-weight: 600;"
+        " font-size: 15px;"
+        "}"
+        "QComboBox::drop-down { border: none; width: 24px; }"
+        "QComboBox QAbstractItemView {"
+        " background-color: white;"
+        " border: 1px solid rgb(0, 0, 115);"
+        " selection-background-color: rgb(224, 238, 255);"
+        " selection-color: rgb(0, 0, 90);"
+        "}");
+
+    const QString primaryButtonStyle = QStringLiteral(
+        "QPushButton {"
+        " background-color: rgb(60, 70, 160);"
+        " color: white;"
+        " border-radius: 10px;"
+        " font-weight: bold;"
+        " font-size: 16px;"
+        " padding: 8px 20px;"
+        "}"
+        "QPushButton:hover { background-color: rgb(80, 90, 180); }");
+
+    const QString secondaryButtonStyle = QStringLiteral(
+        "QPushButton {"
+        " background-color: rgb(46, 204, 113);"
+        " color: white;"
+        " border-radius: 10px;"
+        " font-weight: bold;"
+        " font-size: 15px;"
+        " padding: 8px 15px;"
+        "}"
+        "QPushButton:hover { background-color: rgb(39, 174, 96); }");
+
+    const QString tableStyle = QStringLiteral(
+        "QTableWidget {"
+        " background-color: white;"
+        " border: 1.5px solid rgb(0, 0, 115);"
+        " border-radius: 12px;"
+        " gridline-color: rgba(0, 0, 115, 0.2);"
+        " selection-background-color: rgba(89, 171, 200, 0.2);"
+        " selection-color: rgb(0, 0, 90);"
+        "}"
+        "QHeaderView::section {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 1px solid rgb(0, 0, 115);"
+        " padding: 5px;"
+        " font-weight: bold;"
+        " color: rgb(0, 0, 90);"
+        "}");
+
+    const QString statsLabelStyle = QStringLiteral(
+        "QLabel {"
+        " background-color: rgb(235, 242, 255);"
+        " border: 1.5px solid rgb(0, 0, 115);"
+        " border-radius: 12px;"
+        " padding: 5px 15px;"
+        " font-weight: bold;"
+        " font-size: 14px;"
+        " color: rgb(0, 0, 115);"
+        "}");
+
+    // Title
+    if (ui->label_13e) {
+        ui->label_13e->setStyleSheet(titleStyle);
+        ui->label_13e->setAlignment(Qt::AlignCenter);
+        ui->label_13e->setText(QStringLiteral("GESTION DES EMPLOYÉS"));
+    }
+
+    // Left Form
+    if (ui->frame_2e) {
+        ui->frame_2e->setStyleSheet(frameStyle);
+    }
+    if (ui->label_6e) {
+        ui->label_6e->setStyleSheet(titleCardStyle);
+        ui->label_6e->setText(QStringLiteral("Formulaire"));
+        ui->label_6e->setAlignment(Qt::AlignCenter);
+    }
+
+    // Inputs
+    if (ui->lineEdit_12e) ui->lineEdit_12e->setStyleSheet(lineEditStyle);
+    if (ui->lineEdit_13e) ui->lineEdit_13e->setStyleSheet(lineEditStyle);
+    if (ui->lineEdit_14e) ui->lineEdit_14e->setStyleSheet(lineEditStyle);
+    if (ui->comboBox_11e) ui->comboBox_11e->setStyleSheet(comboStyle);
+    if (ui->comboBox_14e) ui->comboBox_14e->setStyleSheet(comboStyle);
+    if (ui->comboBox_15e) ui->comboBox_15e->setStyleSheet(comboStyle);
+    if (ui->comboBox_16e) ui->comboBox_16e->setStyleSheet(comboStyle);
+    
+    // Search and filters
+    if (ui->lineEdit_12e_2e) ui->lineEdit_12e_2e->setStyleSheet(lineEditStyle);
+    if (ui->comboBox_16e_2) ui->comboBox_16e_2->setStyleSheet(comboStyle);
+    if (ui->comboBox_17e) ui->comboBox_17e->setStyleSheet(comboStyle);
+    
+    // Recherche label
+    if (auto* searchLabel = ui->pagee->findChild<QLabel*>(QStringLiteral("label_17e"))) {
+        searchLabel->setStyleSheet(QStringLiteral("color: rgb(0, 0, 115); font-weight: bold; font-size: 16px;"));
+        searchLabel->setText(QStringLiteral("🔍 Recherche"));
+    }
+    if (ui->label_14e) styleFormLabel(ui->label_14e); // Etat label next to combo
+    if (ui->label_15e) styleFormLabel(ui->label_15e); // Statut label next to combo
+
+    // Labels spécifiques du formulaire
+    auto styleFormLabel = [](QLabel* l) {
+        if (!l) return;
+        l->setStyleSheet(QStringLiteral("color: rgb(0, 0, 90); font-weight: bold; font-size: 15px; background: transparent; border: none;"));
+    };
+    styleFormLabel(ui->label_11e_2); // Rôle
+    styleFormLabel(ui->label_14e_2); // Statut
+    styleFormLabel(ui->label_15e_2); // Equipe
+    styleFormLabel(ui->label_16e_2); // État
+    
+    // Additional labels for the form fields
+    if (auto* nomL = ui->pagee->findChild<QLabel*>(QStringLiteral("label_7e"))) styleFormLabel(nomL);
+    if (auto* prenomL = ui->pagee->findChild<QLabel*>(QStringLiteral("label_12e"))) styleFormLabel(prenomL);
+    if (auto* salaireL = ui->pagee->findChild<QLabel*>(QStringLiteral("label_8e"))) styleFormLabel(salaireL);
+    if (auto* telL = ui->pagee->findChild<QLabel*>(QStringLiteral("label_10e"))) styleFormLabel(telL);
+    if (auto* cvL = ui->pagee->findChild<QLabel*>(QStringLiteral("label_16e"))) styleFormLabel(cvL);
+    
+    // Buttons
+    if (ui->pushButton_5e) ui->pushButton_5e->setStyleSheet(primaryButtonStyle);
+    if (ui->pushButton_5e_2) ui->pushButton_5e_2->setStyleSheet(secondaryButtonStyle);
+
+    // Export PDF button
+    if (ui->pushButton_3e) {
+        ui->pushButton_3e->setStyleSheet(primaryButtonStyle);
+        ui->pushButton_3e->setText(QStringLiteral("📄 Exporter PDF"));
+    }
+
+    // Tables
+    if (ui->tableWidgetee) ui->tableWidgetee->setStyleSheet(tableStyle);
+    if (ui->tableWidgetBannis) ui->tableWidgetBannis->setStyleSheet(tableStyle);
+    
+    // Stats and Banned frames
+    if (ui->frame_bannis) ui->frame_bannis->setStyleSheet(frameStyle);
+    if (ui->label_bannis) {
+        ui->label_bannis->setStyleSheet(titleCardStyle);
+        ui->label_bannis->setAlignment(Qt::AlignCenter);
+    }
+    
+    if (ui->frame_typese) ui->frame_typese->setStyleSheet(frameStyle);
+    if (ui->label_typese) {
+        ui->label_typese->setStyleSheet(titleCardStyle);
+        ui->label_typese->setAlignment(Qt::AlignCenter);
+    }
+
+    // Other inputs
+    if (ui->lineEdit_cv_path) ui->lineEdit_cv_path->setStyleSheet(lineEditStyle);
+    if (ui->lineEdit_14e_2) ui->lineEdit_14e_2->setStyleSheet(lineEditStyle);
+    if (ui->lineEdit_raison_banni) ui->lineEdit_raison_banni->setStyleSheet(lineEditStyle);
+    if (ui->label_raison_banni) {
+        ui->label_raison_banni->setStyleSheet(QStringLiteral("color: #e67e22; font-weight: bold; font-size: 14px; background: transparent;"));
+    }
+
+    // Stats legends
+    if (ui->label_total_typese) ui->label_total_typese->setStyleSheet(statsLabelStyle);
+    if (ui->label_legend_chalutiere) ui->label_legend_chalutiere->setStyleSheet(statsLabelStyle);
+    if (ui->label_legend_palangriere) ui->label_legend_palangriere->setStyleSheet(statsLabelStyle);
+    if (ui->label_legend_caseyeure) ui->label_legend_caseyeure->setStyleSheet(statsLabelStyle);
+    if (ui->label_legend_traditionale) ui->label_legend_traditionale->setStyleSheet(statsLabelStyle);
+
+    // Placeholder for RFID edit if it already exists
+    if (auto* rfid = ui->pagee->findChild<QLineEdit*>(QStringLiteral("lineEdit_rfid"))) {
+        rfid->setStyleSheet(lineEditStyle);
+    }
+}
+
+void MainWindow::setupClientPageVisuals()
+{
+    if (!ui || !ui->pageclients) return;
+
+    const QString frameStyle = QStringLiteral(
+        "QFrame {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 1px solid rgb(0, 0, 115);"
+        " border-radius: 18px;"
+        " color: rgb(0, 0, 90);"
+        " }");
+
+    const QString titleStyle = QStringLiteral(
+        "QLabel {"
+        " font: 24pt \"Castellar\";"
+        " color: rgb(19, 30, 148);"
+        " background-color: transparent;"
+        " border: none;"
+        " }");
+
+    const QString titleCardStyle = QStringLiteral(
+        "QLabel {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 1px solid rgb(0, 0, 115);"
+        " border-radius: 18px;"
+        " padding: 8px 18px;"
+        " font-size: 17px;"
+        " font-weight: 700;"
+        " color: rgb(0, 0, 90);"
+        " }");
+
+    const QString primaryButtonStyle = QStringLiteral(
+        "QPushButton {"
+        " border: 2px solid rgb(0, 0, 112);"
+        " border-radius: 8px;"
+        " background-color: rgba(58, 61, 171, 0.92);"
+        " color: white;"
+        " padding: 8px 14px;"
+        " font-size: 14px;"
+        " font-weight: 700;"
+        " font-family: \"Segoe UI Emoji\", \"Segoe UI\", sans-serif;"
+        " }"
+        "QPushButton:hover {"
+        " background-color: rgba(68, 71, 181, 0.98);"
+        " border-color: rgb(0, 0, 90);"
+        " }"
+        "QPushButton:pressed {"
+        " background-color: rgba(44, 47, 145, 1.0);"
+        " }"
+        "QPushButton:disabled {"
+        " background-color: rgb(160, 172, 214);"
+        " color: white;"
+        " }");
+
+    const QString lineEditStyle = QStringLiteral(
+        "QLineEdit {"
+        " background-color: transparent;"
+        " border: none;"
+        " border-bottom: 2px solid rgb(0, 0, 112);"
+        " padding: 2px;"
+        " color: rgb(0, 0, 112);"
+        " font-size: 14px;"
+        " font-weight: 600;"
+        " }"
+        "QLineEdit:focus {"
+        " border-bottom: 2px solid rgb(58, 61, 171);"
+        " }");
+
+    const QString comboStyle = QStringLiteral(
+        "QComboBox {"
+        " border: 2px solid rgb(0, 0, 112);"
+        " border-radius: 8px;"
+        " padding: 1px 18px 1px 3px;"
+        " background-color: rgb(224, 238, 255);"
+        " color: rgb(0, 0, 112);"
+        " font-weight: 600;"
+        " }"
+        "QComboBox::drop-down {"
+        " subcontrol-origin: padding;"
+        " subcontrol-position: top right;"
+        " width: 20px;"
+        " border-left-width: 0px;"
+        " }"
+        "QComboBox QAbstractItemView {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 1px solid rgb(0, 0, 115);"
+        " selection-background-color: rgba(89, 171, 200, 0.25);"
+        " selection-color: rgb(0, 0, 90);"
+        " }");
+
+    const QString tableStyle = QStringLiteral(
+        "QTableWidget {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 1px solid rgb(0, 0, 115);"
+        " border-radius: 16px;"
+        " gridline-color: rgba(0, 0, 115, 0.35);"
+        " selection-background-color: rgba(89, 171, 200, 0.25);"
+        " selection-color: rgb(0, 0, 90);"
+        " }"
+        "QHeaderView::section {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 1px solid rgb(0, 0, 115);"
+        " padding: 6px;"
+        " font-size: 15px;"
+        " font-weight: 700;"
+        " color: rgb(0, 0, 90);"
+        " }");
+
+    // Title
+    if (ui->label_5c) {
+        ui->label_5c->setStyleSheet(titleStyle);
+        ui->label_5c->setAlignment(Qt::AlignCenter);
+    }
+
+    // Form title
+    if (ui->label_6c) {
+        ui->label_6c->setStyleSheet(titleCardStyle);
+        ui->label_6c->setAlignment(Qt::AlignCenter);
+        ui->label_6c->setText(QStringLiteral("Formulaire"));
+    }
+
+    // Form frame
+    if (ui->frame_2c) {
+        ui->frame_2c->setStyleSheet(frameStyle);
+    }
+
+    // Inputs
+    if (ui->lineEdit_3c) ui->lineEdit_3c->setStyleSheet(lineEditStyle);
+    if (ui->lineEdit_4c) ui->lineEdit_4c->setStyleSheet(lineEditStyle);
+    if (ui->lineEdit_12c) ui->lineEdit_12c->setStyleSheet(lineEditStyle);
+    if (ui->lineEdit_14c) ui->lineEdit_14c->setStyleSheet(lineEditStyle);
+    if (ui->lineEdit_7c) ui->lineEdit_7c->setStyleSheet(lineEditStyle);
+
+    if (ui->comboBoxc) ui->comboBoxc->setStyleSheet(comboStyle);
+    if (ui->comboBox_2c) ui->comboBox_2c->setStyleSheet(comboStyle);
+    if (ui->comboBoxc_2) ui->comboBoxc_2->setStyleSheet(comboStyle);
+
+    if (ui->dateEdit_c) ui->dateEdit_c->setStyleSheet(comboStyle);
+    if (ui->dateEdit_2c) ui->dateEdit_2c->setStyleSheet(comboStyle);
+
+    // Labels
+    auto applyPlainLabel = [](QLabel* label) {
+        if (!label) return;
+        label->setStyleSheet(QStringLiteral(
+            "QLabel {"
+            " background-color: transparent;"
+            " border: none;"
+            " font-size: 16px;"
+            " font-weight: 700;"
+            " color: rgb(0, 0, 90);"
+            " }"));
+    };
+    applyPlainLabel(ui->label_9c);
+    applyPlainLabel(ui->label_14c);
+    applyPlainLabel(ui->label_18c);
+    applyPlainLabel(ui->label_11c);
+    applyPlainLabel(ui->label_12c);
+
+    // Buttons
+    if (ui->pushButton_2c) {
+        ui->pushButton_2c->setStyleSheet(primaryButtonStyle);
+        ui->pushButton_2c->setCursor(Qt::PointingHandCursor);
+    }
+
+    // Table
+    if (ui->tableWidgetc) {
+        ui->tableWidgetc->setStyleSheet(tableStyle);
+    }
+    if (ui->tableTopClients_4) {
+        ui->tableTopClients_4->setStyleSheet(tableStyle);
+    }
+
+   // Sidebar Frame and Buttons on pageclients
+if (auto* sidebarFrame = ui->pageclients->findChild<QFrame*>(QStringLiteral("frame_13"))) {
+    sidebarFrame->setGeometry(-160, 70, 371, 701);
+    sidebarFrame->setStyleSheet(QStringLiteral(
+        "QFrame {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 1px solid rgb(0, 0, 115);"
+        " border-radius: 185px;"
+        " font-weight: 600;"
+        " font-size: 18px;"
+        "}"
+    ));
+
+    QList<QPushButton*> sidebarBtns = {
+        ui->pushButton_3b_51, ui->pushButton_3b_52, ui->pushButton_3b_53,
+        ui->pushButton_3b_54, ui->pushButton_3b_55, ui->pushButton_3b_56
+    };
+
+    for (auto* btn : sidebarBtns) {
+        if (btn) {
+            btn->setStyleSheet(QStringLiteral(
+                "QPushButton {"
+                " background-color: rgba(0, 0, 127, 0.7);"
+                " color: white;"
+                " border: 2px solid rgb(0, 0, 112);"
+                " border-radius: 12px;"
+                " font-family: \"Segoe UI\", \"Century Gothic\", sans-serif;"
+                " font-size: 16px;"
+                " font-weight: 600;"
+                " min-width: 140px;"
+                " min-height: 50px;"
+                "}"
+                "QPushButton:hover {"
+                " background-color: rgba(0, 0, 127, 0.85);"
+                " border-color: #59abc8;"
+                "}"
+                "QPushButton:pressed {"
+                " background-color: rgba(0, 0, 127, 0.95);"
+                "}"
+            ));
+            btn->setCursor(Qt::PointingHandCursor);
+        }
+    }
+}
+}
+
+void MainWindow::setupGlobalStyles()
+{
+    const QString primaryButtonStyle = QStringLiteral(
+        "QPushButton {"
+        " border: 2px solid rgb(0, 0, 112);"
+        " border-radius: 8px;"
+        " background-color: rgba(58, 61, 171, 0.92);"
+        " color: white;"
+        " padding: 8px 20px;"
+        " font-size: 14px;"
+        " font-weight: 700;"
+        " font-family: \"Segoe UI Emoji\", \"Segoe UI\", sans-serif;"
+        " }"
+        "QPushButton:hover {"
+        " background-color: rgba(68, 71, 181, 0.98);"
+        " border-color: rgb(0, 0, 90);"
+        " }"
+        "QPushButton:pressed {"
+        " background-color: rgba(44, 47, 145, 1.0);"
+        " }"
+        "QPushButton:disabled {"
+        " background-color: rgb(160, 172, 214);"
+        " color: white;"
+        " }");
+
+    // All sidebar buttons across all pages
+    const auto buttons = findChildren<QPushButton*>();
+    for (auto* btn : buttons) {
+        if (btn && btn->objectName().startsWith(QStringLiteral("pushButton_3b_"))) {
+            btn->setStyleSheet(primaryButtonStyle);
+            btn->setCursor(Qt::PointingHandCursor);
+        }
+    }
+
+    // Main action buttons on each page
+    QList<QPushButton*> mainButtons = {
+        ui->pushButton_2c,   // Clients
+        ui->pushButton_5e,   // Employes
+        ui->bap,             // Pecheurs (Ajouter)
+        ui->bep,             // Pecheurs (Modifier)
+        ui->pushButton_12b,  // Bateaux
+        ui->pushButton_11,   // Quais
+        ui->cap_btnValiider_3 // Captures
+    };
+
+    for (auto* btn : mainButtons) {
+        if (btn) {
+            btn->setStyleSheet(primaryButtonStyle);
+            btn->setCursor(Qt::PointingHandCursor);
+        }
+    }
 }
 
 // Public helper implementations added to avoid accessing private members from lambdas.
@@ -2381,12 +3397,12 @@ void MainWindow::refreshClientsPage()
 
     QStringList selectCols = {idCol, nomCol, preCol, statCol, profCol, dateCol, telCol};
 
-    // R├⌐cup├⌐rer les filtres de l'UI
+    // Râ”œâŒcupâ”œâŒrer les filtres de l'UI
     const QString searchText = ui->lineEdit_7c ? ui->lineEdit_7c->text().trimmed() : QString();
     const QString rawStatut = ui->comboBoxc_2 ? ui->comboBoxc_2->currentText().trimmed() : QString();
     const QString statutFilter = (rawStatut.compare(QStringLiteral("Tous"), Qt::CaseInsensitive) == 0) ? QString() : rawStatut;
     const QDate dateFilter = ui->dateEdit_2c ? ui->dateEdit_2c->date() : QDate();
-    const QDate sentinelDate(2000, 1, 1); // valeur par d├⌐faut dans l'UI => pas de filtre
+    const QDate sentinelDate(2000, 1, 1); // valeur par dâ”œâŒfaut dans l'UI => pas de filtre
 
     QStringList where;
     QList<QVariant> binds;
@@ -2428,7 +3444,7 @@ void MainWindow::refreshClientsPage()
     QTableWidget *table = ui->tableWidgetc;
     table->clearContents();
     table->setRowCount(0);
-    table->setColumnCount(8); // 7 donn├⌐es + Actions
+    table->setColumnCount(8); // 7 donnâ”œâŒes + Actions
 
     const QStringList headers = {QStringLiteral("id"), QStringLiteral("nom"), QStringLiteral("prenom"),
                                  QStringLiteral("statut"), QStringLiteral("profil"), QStringLiteral("date"),
@@ -2465,7 +3481,7 @@ void MainWindow::refreshClientsPage()
     // Boutons Actions et largeur des colonnes
     ensureActionsColumnPopulated(table, QStringLiteral("QPushButton { border:2px solid rgb(0, 0, 112); border-radius:8px; background-color: rgba(0, 0, 127,0.7); color: white; padding: 4px 8px; font-family: 'Segoe UI Emoji', 'Segoe UI', 'Arial', sans-serif; font-size: 8px; font-weight: bold;} QPushButton:hover { background-color: rgba(0, 0, 127,0.7); border-color: #59abc8;} QPushButton:pressed { background-color:rgba(0, 0, 127,0.9); }"));
 
-    // C├óbler les boutons Modifier/Supprimer (colonne Actions)
+    // Câ”œÃ³bler les boutons Modifier/Supprimer (colonne Actions)
     const int actionsCol = table->columnCount() - 1;
     if (actionsCol >= 0) {
         for (int r = 0; r < table->rowCount(); ++r) {
@@ -2546,7 +3562,7 @@ void MainWindow::refreshTopClientsStats()
     }
     QSqlDatabase db = conn->getDatabase();
 
-    // Résolution du nom de la table
+    // RÃ©solution du nom de la table
     const QString tableName = resolveTableName(db, {QStringLiteral("CLIENTS"), QStringLiteral("CLIENT"), QStringLiteral("TCLIENT")});
     if (tableName.isEmpty()) {
         qWarning() << "refreshTopClientsStats: clients table not found";
@@ -2555,7 +3571,7 @@ void MainWindow::refreshTopClientsStats()
 
     const QStringList dbCols = getColumnNames(db, tableName);
     
-    // Résolution des noms de colonnes
+    // RÃ©solution des noms de colonnes
     auto resolve = [&](const QStringList &syns) {
         QString col = matchColumnBySynonyms(dbCols, syns);
         return col.isEmpty() ? syns.first() : col;
@@ -2568,8 +3584,8 @@ void MainWindow::refreshTopClientsStats()
     const QString profCol   = resolve({QStringLiteral("PROFIL_CLIENT"), QStringLiteral("PROFIL"), QStringLiteral("PROFILCLIENT"), QStringLiteral("PROFILE"), QStringLiteral("PROFIL_CLIENT")});
     const QString dateCol   = resolve({QStringLiteral("DATE_INSCRIPTION"), QStringLiteral("DATE"), QStringLiteral("DATEINSCRIPTION"), QStringLiteral("DATE_INSCRIPTION"), QStringLiteral("CREATEDAT")});
 
-    // Query: Top 5 clients fidèles les plus anciens
-    // On essaie d'abord les fidèles, si aucun n'est trouvé on prend tous les clients
+    // Query: Top 5 clients fidÃ¨les les plus anciens
+    // On essaie d'abord les fidÃ¨les, si aucun n'est trouvÃ© on prend tous les clients
     QString sql = QStringLiteral("SELECT %1, %2, %3, %4, %5 FROM %6 "
                                  "WHERE UPPER(%7) LIKE 'FIDELE%' "
                                  "ORDER BY %8 ASC")
@@ -2579,9 +3595,9 @@ void MainWindow::refreshTopClientsStats()
     bool hasData = false;
     if (query.exec(sql) && query.next()) {
         hasData = true;
-        // On revient au début manuellement en utilisant first() dans la boucle
+        // On revient au dÃ©but manuellement en utilisant first() dans la boucle
     } else {
-        // Fallback: Tous les clients par ancienneté
+        // Fallback: Tous les clients par anciennetÃ©
         sql = QStringLiteral("SELECT %1, %2, %3, %4, %5 FROM %6 ORDER BY %7 ASC")
               .arg(idCol, nomCol, prenomCol, telCol, dateCol, tableName, dateCol);
         if (query.exec(sql) && query.next()) {
@@ -2595,7 +3611,7 @@ void MainWindow::refreshTopClientsStats()
     }
 
     int row = 0;
-    // On traite le premier enregistrement déjà récupéré par next()
+    // On traite le premier enregistrement dÃ©jÃ  rÃ©cupÃ©rÃ© par next()
     do {
         table->insertRow(row);
         for (int col = 0; col < 5; ++col) {
@@ -2628,6 +3644,9 @@ MainWindow::MainWindow(QWidget *parent)
     , m_faceVideoSink(nullptr)
 {
     ui->setupUi(this);
+    Connection* startupConnection = Connection::getInstance();
+    const bool startupDbReady = startupConnection
+        && (startupConnection->estConnecte() || startupConnection->ensureOpen());
 
     if (ui->tableWidgetQuai) {
         ui->tableWidgetQuai->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -2637,12 +3656,12 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Eye toggle (show/hide) for each password field
     installPasswordEyeToggle(ui->lineEdit_2b);   // login
-    installPasswordEyeToggle(ui->lineEdit_12b);  // mot de passe actuel (param├¿tres)
-    installPasswordEyeToggle(ui->lineEdit_13b);  // nouveau mot de passe (param├¿tres)
-    installPasswordEyeToggle(ui->lineEdit_10b);  // nouveau mot de passe (r├⌐cup├⌐ration)
-    installPasswordEyeToggle(ui->lineEdit_11b);  // confirmer mot de passe (r├⌐cup├⌐ration)
+    installPasswordEyeToggle(ui->lineEdit_12b);  // mot de passe actuel (paramâ”œÂ¿tres)
+    installPasswordEyeToggle(ui->lineEdit_13b);  // nouveau mot de passe (paramâ”œÂ¿tres)
+    installPasswordEyeToggle(ui->lineEdit_10b);  // nouveau mot de passe (râ”œâŒcupâ”œâŒration)
+    installPasswordEyeToggle(ui->lineEdit_11b);  // confirmer mot de passe (râ”œâŒcupâ”œâŒration)
 
-    // Se souvenir de moi: recharger les identifiants sauvegard├⌐s
+    // Se souvenir de moi: recharger les identifiants sauvegardâ”œâŒs
     applyRememberedLogin(ui);
 
 
@@ -2656,19 +3675,19 @@ MainWindow::MainWindow(QWidget *parent)
     }
 
 
-    // Fix accents (├⌐/├¿/ΓÇª) + emojis on all pages.
+    // Fix accents (â”œâŒ/â”œÂ¿/Î“Ã‡Âª) + emojis on all pages.
     normalizeUiTexts();
 
     setupArduinoIntegration();
     ensureEmployeRfidUi();
 
-    // Page employ├⌐s : masquer les anciens boutons flottants (├⌐dition/suppression/refresh)
+    // Page employâ”œâŒs : masquer les anciens boutons flottants (â”œâŒdition/suppression/refresh)
     // et utiliser uniquement la colonne Actions de la table.
     if (auto *btnEditLegacy = this->findChild<QPushButton*>(QStringLiteral("pushButton_6e_2"))) btnEditLegacy->hide();
     if (auto *btnDeleteLegacy = this->findChild<QPushButton*>(QStringLiteral("pushButton_4p_5"))) btnDeleteLegacy->hide();
     if (auto *btnRefreshLegacy = this->findChild<QPushButton*>(QStringLiteral("pushButton_5p_6"))) btnRefreshLegacy->hide();
 
-    // Page pêchers: validation du nom et prénom (lettres uniquement)
+    // Page pÃªchers: validation du nom et prÃ©nom (lettres uniquement)
     if (ui->lineEdit_2p && ui->lineEdit_3p) {
         QRegularExpression rxLetters("^[\\p{L}\\s-]+$");
         auto* validator = new QRegularExpressionValidator(rxLetters, this);
@@ -2684,7 +3703,7 @@ MainWindow::MainWindow(QWidget *parent)
         ui->lineEditp->setMinimumWidth(140);
     }
 
-    // Page employés: IDs: champs modifiables selon demande utilisateur
+    // Page employÃ©s: IDs: champs modifiables selon demande utilisateur
     const auto unlockIdFields = [this]() {
         if (!ui) return;
         if (ui->lineEditp) { ui->lineEditp->setReadOnly(false); ui->lineEditp->setEnabled(true); }           // Pecheur
@@ -2696,7 +3715,7 @@ MainWindow::MainWindow(QWidget *parent)
     };
     unlockIdFields();
 
-    // Initialisation Raison du bannissement (caché par défaut)
+    // Initialisation Raison du bannissement (cachÃ© par dÃ©faut)
     if (ui->label_raison_banni) ui->label_raison_banni->hide();
     if (ui->lineEdit_raison_banni) ui->lineEdit_raison_banni->hide();
 
@@ -2747,16 +3766,16 @@ MainWindow::MainWindow(QWidget *parent)
     }
     if (ui->dateTimeEdit_2) {
         ui->dateTimeEdit_2->setMinimumDate(QDate(1900, 1, 1));
-        ui->dateTimeEdit_2->setSpecialValueText(QStringLiteral("Non affectée"));
+        ui->dateTimeEdit_2->setSpecialValueText(QStringLiteral("Non affectÃ©e"));
         ui->dateTimeEdit_2->setDateTime(nullPecheurAffectationDateTime());
     }
 
-    // Page bateaux: valeurs par défaut (sinon QDateEdit démarre souvent en 2000-01-01)
+    // Page bateaux: valeurs par dÃ©faut (sinon QDateEdit dÃ©marre souvent en 2000-01-01)
     if (ui->dateEdit) {
-        ui->dateEdit->setDate(today); // Date d'entrée
+        ui->dateEdit->setDate(today); // Date d'entrÃ©e
     }
     if (ui->dateEdit_2) {
-        ui->dateEdit_2->setDate(today); // Date dernière maintenance
+        ui->dateEdit_2->setDate(today); // Date derniÃ¨re maintenance
     }
 
     const auto refreshPecheurGeneratedId = [this]() {
@@ -2804,7 +3823,7 @@ MainWindow::MainWindow(QWidget *parent)
     }
     refreshEmployeGeneratedId();
 
-    // Remplir automatiquement les tables depuis la base au d├⌐marrage
+    // Remplir automatiquement les tables depuis la base au dâ”œâŒmarrage
     // Ensure the status filter includes a 'Tous' option that means no filter
     // Add 'Tous' as first item if not already present
     if (ui->comboBoxc_2) {
@@ -2822,44 +3841,36 @@ MainWindow::MainWindow(QWidget *parent)
         ui->cap_deDebut->setDate(QDate(2000, 1, 1));
     }
 
-    // Sélecteur "stats captures" (Quantité / Poids) — ajouté en runtime (sans modifier le .ui)
-    if (ui->cap_pagecaptures && ui->frame_zonesb_2) {
-        auto *combo = ui->cap_pagecaptures->findChild<QComboBox*>(QStringLiteral("cap_comboStatsMetric"));
-        if (!combo) {
-            combo = new QComboBox(ui->cap_pagecaptures);
-            combo->setObjectName(QStringLiteral("cap_comboStatsMetric"));
-            combo->addItem(QStringLiteral("Quantité"));
-            combo->addItem(QStringLiteral("Poids"));
-            combo->setToolTip(QStringLiteral("Choisir la métrique des statistiques (Quantité / Poids)"));
-
-            const QRect statsFrameGeom = ui->frame_zonesb_2->geometry();
-            // En haut à droite du bloc "Répartitions par top 5 espèces"
-            combo->setGeometry(statsFrameGeom.right() - 210, statsFrameGeom.top() + 10, 200, 32);
-
-            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
-                updateCapturesStats(this, ui);
-            });
-        }
-    }
+    setupCapturePageVisuals();
+    setupClientPageVisuals();
+    setupEmployeePageVisuals();
+    setupGlobalStyles();
 
     refreshClientsPage();
 
-    QSqlDatabase db = Connection::getInstance()->getDatabase();
-    if (ui->tableWidgetee) {
-        // Chargement initial des employés via helper dédié (résolution de table + synonymes)
-        loadEmployes();
-        updateEmployeePageRfidStatus();
+    if (startupDbReady) {
+        QSqlDatabase db = Connection::getInstance()->getDatabase();
+        Q_UNUSED(db);
+        if (ui->tableWidgetee) {
+            // Chargement initial des employÃ©s via helper dÃ©diÃ© (rÃ©solution de table + synonymes)
+            loadEmployes();
+            updateEmployeePageRfidStatus();
+        }
+        loadCaptures();
+        loadQuotas(false);
+        loadBateaux();
+        setupBateauMaintenanceAlertSystem();
+        loadPecheurBateauChoices(ui);
+        loadQuaiBateauChoices(ui);
+        // Chargement initial de la table des quais avec actions connectâ”œâŒes
+        refreshQuaiTable();
+    } else if (statusBar()) {
+        statusBar()->showMessage(
+            QStringLiteral("Base Oracle indisponible au dÃ©marrage. L'application reste ouverte en mode limitÃ©."),
+            15000);
     }
-    loadCaptures();
-    loadQuotas(false);
-    loadBateaux();
-    setupBateauMaintenanceAlertSystem();
-    loadPecheurBateauChoices(ui);
-    loadQuaiBateauChoices(ui);
-    // Chargement initial de la table des quais avec actions connect├⌐es
-    refreshQuaiTable();
 
-    // Pré-remplir les IDs auto-générés (toujours en lecture seule)
+    // PrÃ©-remplir les IDs auto-gÃ©nÃ©rÃ©s (toujours en lecture seule)
     if (ui->lineEdit_3b && currentEditingId.isEmpty() && ui->lineEdit_3b->text().trimmed().isEmpty()) {
         const QString newId = bateaauuu::genererNouvelId();
         if (!newId.isEmpty()) ui->lineEdit_3b->setText(newId);
@@ -2894,12 +3905,12 @@ MainWindow::MainWindow(QWidget *parent)
         }
     }
 
-    // Page p├¬cheurs : frame FaceID masqu├⌐e par d├⌐faut
+    // Page pâ”œÂ¬cheurs : frame FaceID masquâ”œâŒe par dâ”œâŒfaut
     if (ui->framefaceidp) {
         ui->framefaceidp->hide();
     }
 
-    // Comportement d'origine GBateau : cacher certains panneaux au d├⌐marrage
+    // Comportement d'origine GBateau : cacher certains panneaux au dâ”œâŒmarrage
     if (ui->frame_10b) {
         ui->frame_10b->hide();
     }
@@ -2909,9 +3920,9 @@ MainWindow::MainWindow(QWidget *parent)
     }
 
      setupFrames();
-    // Page clients : laisser le panneau chatbot visible (si la page est affich├⌐e)
+    // Page clients : laisser le panneau chatbot visible (si la page est affichâ”œâŒe)
 
-    // D├⌐marrer sur le login GBateau (si pr├⌐sent), sinon sur le menu GBateau
+    // Dâ”œâŒmarrer sur le login GBateau (si prâ”œâŒsent), sinon sur le menu GBateau
     if (ui->stackedWidget) {
         if (ui->loginb) {
             ui->stackedWidget->setCurrentWidget(ui->loginb);
@@ -2920,7 +3931,7 @@ MainWindow::MainWindow(QWidget *parent)
         }
     }
 
-    // Filtres  recherche + ├⌐tat + statut
+    // Filtres  recherche + â”œâŒtat + statut
     if (ui->pushButton_9e) {
         connect(ui->pushButton_9e, &QPushButton::clicked, this, [this]() { loadEmployes(); });
     }
@@ -2955,8 +3966,8 @@ MainWindow::MainWindow(QWidget *parent)
                 this, [this](int) { filterBateaux(); });
     }
 
-    // Rafra├«chissement automatique des statistiques d'occupation
-    // pendant que la page_4 (statistiques des quais) est affich├⌐e.
+    // Rafraâ”œÂ«chissement automatique des statistiques d'occupation
+    // pendant que la page_4 (statistiques des quais) est affichâ”œâŒe.
     m_statsTimer = new QTimer(this);
     m_statsTimer->setInterval(5000); // toutes les 5 secondes
     connect(m_statsTimer, &QTimer::timeout, this, [this]() {
@@ -2969,7 +3980,7 @@ MainWindow::MainWindow(QWidget *parent)
     });
     m_statsTimer->start();
 
-    // M├⌐t├⌐o (page_3) : API Open-Meteo sans cl├⌐ + rafra├«chissement p├⌐riodique
+    // Mâ”œâŒtâ”œâŒo (page_3) : API Open-Meteo sans clâ”œâŒ + rafraâ”œÂ«chissement pâ”œâŒriodique
     m_weatherNetwork = new QNetworkAccessManager(this);
 
     m_weatherTimer = new QTimer(this);
@@ -2995,7 +4006,7 @@ MainWindow::MainWindow(QWidget *parent)
         });
     }
 
-    // Chargement m├⌐t├⌐o initial
+    // Chargement mâ”œâŒtâ”œâŒo initial
     refreshWeatherForPage3();
 
     // Ajout du combo de tri pour les quais sur la page_3
@@ -3005,13 +4016,13 @@ MainWindow::MainWindow(QWidget *parent)
             QComboBox *comboTri = new QComboBox(parent);
             comboTri->setObjectName(QStringLiteral("comboBox_sortQuais"));
 
-            comboTri->addItem(QStringLiteral("Tri: Par défaut"), 0);
+            comboTri->addItem(QStringLiteral("Tri: Par d\u00e9faut"), 0);
             comboTri->addItem(QStringLiteral("Tri: ID (Croissant)"), 1);
-            comboTri->addItem(QStringLiteral("Tri: ID (Décroissant)"), 2);
-            comboTri->addItem(QStringLiteral("Tri: Capacité (Croissante)"), 3);
-            comboTri->addItem(QStringLiteral("Tri: Capacité (Décroissante)"), 4);
+            comboTri->addItem(QStringLiteral("Tri: ID (D\u00e9croissant)"), 2);
+            comboTri->addItem(QStringLiteral("Tri: Capacit\u00e9 (Croissante)"), 3);
+            comboTri->addItem(QStringLiteral("Tri: Capacit\u00e9 (D\u00e9croissante)"), 4);
             comboTri->addItem(QStringLiteral("Tri: Longueur (Croissante)"), 5);
-            comboTri->addItem(QStringLiteral("Tri: Longueur (Décroissante)"), 6);
+            comboTri->addItem(QStringLiteral("Tri: Longueur (D\u00e9croissante)"), 6);
 
             comboTri->setStyleSheet(QStringLiteral(
                 "QComboBox {"
@@ -3036,14 +4047,14 @@ MainWindow::MainWindow(QWidget *parent)
     }
 }
 
-// Navigation / actions : impl├⌐mentations uniques plus bas dans le fichier.
+// Navigation / actions : implâ”œâŒmentations uniques plus bas dans le fichier.
 
 // Fonction pour afficher une frame et cacher l'autre
 void MainWindow::showFrame(QWidget* frameToShow)
 {
     if (!ui) return;
 
-    // Frames ├á g├⌐rer
+    // Frames â”œÃ¡ gâ”œâŒrer
     QWidget* frameb_3b = ui->frame_3b;
     QWidget* frameb = ui->frameb;
 
@@ -3062,7 +4073,7 @@ void MainWindow::showFrame(QWidget* frameToShow)
 }
 
 
-// Au d├⌐marrage, cacher le frame QR
+// Au dâ”œâŒmarrage, cacher le frame QR
 void MainWindow::setupFrames()
 {
     if (ui->frame_3b) ui->frame_3b->hide();
@@ -3140,7 +4151,7 @@ void MainWindow::on_p4b_clicked()
 
 void MainWindow::on_p6b_clicked()
 {
-    // Depuis le menu GBateau : ouvrir la gestion des employ├⌐s
+    // Depuis le menu GBateau : ouvrir la gestion des employâ”œâŒs
     if (ui->stackedWidget && ui->pagee) {
         ui->stackedWidget->setCurrentWidget(ui->pagee);
     }
@@ -3216,7 +4227,7 @@ void MainWindow::loadEmployes()
     table->setRowCount(0);
     table->setColumnCount(dataCols + 1);
 
-    // Initialisation du tableau des éléments bannis
+    // Initialisation du tableau des Ã©lÃ©ments bannis
     if (ui->tableWidgetBannis) {
         ui->tableWidgetBannis->setRowCount(0);
         ui->tableWidgetBannis->setColumnCount(3);
@@ -3278,7 +4289,7 @@ void MainWindow::loadEmployes()
             table->setItem(visibleRow, c, cellItem);
         }
 
-        // Ajouter aux éléments bannis si l'état est "Banni"
+        // Ajouter aux Ã©lÃ©ments bannis si l'Ã©tat est "Banni"
         if (normalizeKey(etat) == normalizeKey(QStringLiteral("Banni"))) {
             if (ui->tableWidgetBannis) {
                 int bannedRow = ui->tableWidgetBannis->rowCount();
@@ -3362,8 +4373,8 @@ void MainWindow::ensureEmployeActionsColumn(const QString &buttonStyle)
         auto *editBtn = new QPushButton(container);
         auto *deleteBtn = new QPushButton(container);
 
-        editBtn->setText(QStringLiteral("\u270F\uFE0F")); // ✏️
-        deleteBtn->setText(QStringLiteral("\u274C"));    // ❌
+        editBtn->setText(QStringLiteral("\u270F\uFE0F")); // âœï¸
+        deleteBtn->setText(QStringLiteral("\u274C"));    // âŒ
 
         editBtn->setToolTip(QStringLiteral("Modifier"));
         deleteBtn->setToolTip(QStringLiteral("Supprimer"));
@@ -3569,9 +4580,16 @@ void MainWindow::ensureEmployeRfidUi()
         rfidEdit->setObjectName(QStringLiteral("lineEdit_rfid"));
         rfidEdit->setGeometry(20, 530, 231, 28);
         rfidEdit->setPlaceholderText(QStringLiteral("RFID UID (Scannez...)"));
-        if (ui->lineEdit_14e_2) {
-            rfidEdit->setStyleSheet(ui->lineEdit_14e_2->styleSheet());
-        }
+        rfidEdit->setStyleSheet(QStringLiteral(
+            "QLineEdit {"
+            " background-color: white;"
+            " border: 2px solid rgb(0, 0, 115);"
+            " border-radius: 8px;"
+            " padding: 4px 8px;"
+            " color: rgb(0, 0, 90);"
+            " font-weight: 600;"
+            " font-size: 14px;"
+            "}"));
         connect(rfidEdit, &QLineEdit::returnPressed, this, &MainWindow::on_btnAnalyzeRfidQt_clicked);
     }
 
@@ -3581,7 +4599,7 @@ void MainWindow::ensureEmployeRfidUi()
         rfidStatusLabel = new QLabel(ui->frame_2e);
         rfidStatusLabel->setObjectName(QStringLiteral("label_rfid_status"));
         rfidStatusLabel->setGeometry(20, 560, 231, 20);
-        rfidStatusLabel->setStyleSheet(QStringLiteral("color: red; font-weight: bold;"));
+        rfidStatusLabel->setStyleSheet(QStringLiteral("color: #c0392b; font-weight: bold; font-size: 13px;"));
         rfidStatusLabel->setText(QStringLiteral("⚠ Arduino: déconnecté"));
         rfidStatusLabel->setAlignment(Qt::AlignCenter);
     }
@@ -3621,6 +4639,7 @@ void MainWindow::setQuotaTableEditable(bool editable)
             flags &= ~Qt::ItemIsEditable;
         }
         item->setFlags(flags);
+        item->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     }
 }
 
@@ -3699,11 +4718,15 @@ void MainWindow::loadQuotas(bool showErrors)
     if (!table->horizontalHeaderItem(0)) {
         table->setHorizontalHeaderItem(0, new QTableWidgetItem(QStringLiteral("Quotas")));
     }
+    if (auto* headerItem = table->horizontalHeaderItem(0)) {
+        headerItem->setTextAlignment(Qt::AlignCenter);
+    }
 
     for (int r = 0; r < table->rowCount(); ++r) {
         QString species;
         if (auto* vh = table->verticalHeaderItem(r)) {
             species = vh->text().trimmed();
+            vh->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         }
         if (species.isEmpty()) {
             continue;
@@ -3718,7 +4741,10 @@ void MainWindow::loadQuotas(bool showErrors)
         const auto it = quotaBySpecies.constFind(normalizeKey(species));
         if (it != quotaBySpecies.constEnd()) {
             item->setText(QStringLiteral("%1kg").arg(QString::number(*it, 'f', 0)));
+        } else {
+            item->setText(QString());
         }
+        item->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     }
 
     setQuotaTableEditable(false);
@@ -3884,6 +4910,8 @@ void MainWindow::loadCaptures()
     }
 
     QTableWidget* table = ui->cap_tableWidget;
+    table->setWordWrap(true);
+    table->setTextElideMode(Qt::ElideNone);
     table->setAlternatingRowColors(false);
     table->setShowGrid(false);
     table->setStyleSheet(
@@ -3908,16 +4936,312 @@ void MainWindow::loadCaptures()
     const QStringList headers = {
         QStringLiteral("ID Capture"),
         QStringLiteral("ID Bateau"),
-        QStringLiteral("Type Poisson"),
-        QStringLiteral("Quantite"),
-        QStringLiteral("Poids"),
-        QStringLiteral("Temp\u00E9rature (\u00B0C)"),
+        QStringLiteral("Nb Type de Poisson"),
+        QStringLiteral("Qte Totale"),
+        QStringLiteral("Poids Total"),
+        QStringLiteral("Temperature (C)"),
         QStringLiteral("Date"),
         QStringLiteral("Actions")
     };
     for (int i = 0; i < headers.size(); ++i) {
         table->setHorizontalHeaderItem(i, new QTableWidgetItem(headers.at(i)));
     }
+    table->horizontalHeader()->setSectionResizeMode(QHeaderView::Fixed);
+    table->setColumnWidth(0, 95);
+    table->setColumnWidth(1, 95);
+    table->setColumnWidth(2, 150);
+    table->setColumnWidth(3, 90);
+    table->setColumnWidth(4, 95);
+    table->setColumnWidth(5, 125);
+    table->setColumnWidth(6, 110);
+    table->setColumnWidth(7, 165);
+
+    struct GroupLine {
+        QString species;
+        int quantite = 0;
+        double poidsKg = 0.0;
+        double temperatureC = 0.0;
+        bool hasTemperature = false;
+    };
+    struct Group {
+        int displayId = 0;
+        int bateau = 0;
+        QDate date;
+        QStringList storedIds;
+        QVector<GroupLine> lines;
+    };
+    struct BaseGroupInfo {
+        int count = 0;
+        bool hasSuffix0 = false;
+    };
+    struct SpeciesAgg {
+        QString species;
+        int quantite = 0;
+        double poidsKg = 0.0;
+    };
+
+    auto baseKeyForRow = [](int baseId, int bateau, const QDate& date) {
+        return QStringLiteral("%1|%2|%3")
+            .arg(QString::number(baseId), QString::number(bateau), date.toString(QStringLiteral("yyyy-MM-dd")));
+    };
+    auto groupKeyForRow = [](const QString& groupId, int bateau, const QDate& date) {
+        return QStringLiteral("%1|%2|%3")
+            .arg(groupId, QString::number(bateau), date.toString(QStringLiteral("yyyy-MM-dd")));
+    };
+
+    QHash<QString, BaseGroupInfo> baseInfos;
+    for (const captures::TableRowData& record : rows) {
+        const int storedId = toIntOrZero(record.idCapture);
+        if (storedId <= 0) {
+            continue;
+        }
+        const int baseId = storedId / 10;
+        if (baseId <= 0) {
+            continue;
+        }
+
+        BaseGroupInfo& info = baseInfos[baseKeyForRow(baseId, record.idBateau, record.dateCapture)];
+        ++info.count;
+        if ((storedId % 10) == 0) {
+            info.hasSuffix0 = true;
+        }
+    }
+
+    QHash<QString, Group> grouped;
+    QStringList groupOrder;
+    for (const captures::TableRowData& record : rows) {
+        const int storedId = toIntOrZero(record.idCapture);
+        int displayId = storedId;
+        bool isGroupedCapture = false;
+        int baseId = 0;
+        if (storedId > 0) {
+            baseId = storedId / 10;
+            const BaseGroupInfo info = baseInfos.value(baseKeyForRow(baseId, record.idBateau, record.dateCapture));
+            isGroupedCapture = (baseId > 0 && info.count >= 2 && info.hasSuffix0);
+            if (isGroupedCapture) {
+                displayId = baseId;
+            }
+        }
+
+        const QString groupId = isGroupedCapture
+            ? QStringLiteral("M:%1").arg(QString::number(baseId))
+            : QStringLiteral("S:%1").arg(storedId > 0 ? QString::number(storedId) : record.idCapture);
+        const QString groupKey = groupKeyForRow(groupId, record.idBateau, record.dateCapture);
+
+        if (!grouped.contains(groupKey)) {
+            Group group;
+            group.displayId = displayId;
+            group.bateau = record.idBateau;
+            group.date = record.dateCapture;
+            grouped.insert(groupKey, group);
+            groupOrder.push_back(groupKey);
+        }
+
+        Group& group = grouped[groupKey];
+        group.storedIds << (storedId > 0 ? QString::number(storedId) : record.idCapture);
+
+        GroupLine line;
+        line.species = record.typePoisson;
+        line.quantite = record.quantite;
+        line.poidsKg = record.poids;
+        line.temperatureC = record.temperatureC;
+        line.hasTemperature = record.hasTemperature;
+        group.lines.push_back(line);
+    }
+
+    int groupedRow = 0;
+    for (const QString& groupKey : std::as_const(groupOrder)) {
+        const Group group = grouped.value(groupKey);
+        const int currentRow = groupedRow;
+        table->insertRow(groupedRow);
+
+        QHash<QString, SpeciesAgg> bySpecies;
+        int totalQuantite = 0;
+        double totalPoids = 0.0;
+        double totalTemperature = 0.0;
+        int temperatureCount = 0;
+
+        for (const GroupLine& line : group.lines) {
+            const QString speciesKey = normalizeKey(line.species);
+            SpeciesAgg agg = bySpecies.value(speciesKey);
+            if (agg.species.isEmpty()) {
+                agg.species = line.species.trimmed();
+            }
+            agg.quantite += line.quantite;
+            agg.poidsKg += line.poidsKg;
+            bySpecies.insert(speciesKey, agg);
+
+            totalQuantite += line.quantite;
+            totalPoids += line.poidsKg;
+            if (line.hasTemperature) {
+                totalTemperature += line.temperatureC;
+                ++temperatureCount;
+            }
+        }
+
+        const bool isGroupedCapture = group.storedIds.size() > 1;
+        const bool hasTemperature = (temperatureCount > 0);
+        const double displayTemperature = hasTemperature
+            ? (totalTemperature / static_cast<double>(temperatureCount))
+            : 0.0;
+
+        auto* idItem = new QTableWidgetItem(QString::number(group.displayId));
+        idItem->setData(Qt::UserRole, group.storedIds.join(QStringLiteral(",")));
+        table->setItem(groupedRow, 0, idItem);
+        table->setItem(groupedRow, 1, new QTableWidgetItem(QString::number(group.bateau)));
+
+        auto* speciesItem = new QTableWidgetItem(QString::number(bySpecies.size()));
+        if (group.lines.size() == 1) {
+            speciesItem->setData(Qt::UserRole, group.lines.first().species.trimmed());
+        }
+        table->setItem(groupedRow, 2, speciesItem);
+
+        auto* quantityItem = new QTableWidgetItem(QString::number(totalQuantite));
+        quantityItem->setData(Qt::UserRole, QString::number(totalQuantite));
+        table->setItem(groupedRow, 3, quantityItem);
+
+        auto* poidsItem = new QTableWidgetItem(QString::number(totalPoids, 'f', 2));
+        poidsItem->setData(Qt::UserRole, QString::number(totalPoids, 'f', 2));
+        table->setItem(groupedRow, 4, poidsItem);
+
+        auto* tempItem = new QTableWidgetItem(hasTemperature
+            ? QString::number(displayTemperature, 'f', 1)
+            : QString());
+        if (hasTemperature) {
+            if (displayTemperature < m_arduinoTempDangerThreshold) {
+                tempItem->setForeground(QColor(39, 174, 96));
+            } else if (displayTemperature <= m_arduinoTempCritiqueThreshold) {
+                tempItem->setForeground(QColor(243, 156, 18));
+            } else {
+                tempItem->setForeground(QColor(231, 76, 60));
+            }
+            QFont font = tempItem->font();
+            font.setBold(true);
+            tempItem->setFont(font);
+            tempItem->setTextAlignment(Qt::AlignCenter);
+        }
+        table->setItem(groupedRow, 5, tempItem);
+        table->setItem(groupedRow, 6, new QTableWidgetItem(group.date.isValid()
+            ? group.date.toString(QStringLiteral("yyyy-MM-dd"))
+            : QString()));
+        table->setRowHeight(groupedRow, 42);
+
+        const QString buttonStyle = QStringLiteral(
+            "QPushButton {"
+            " border: 2px solid rgb(0, 0, 112);"
+            " border-radius: 8px;"
+            " background-color: rgb(239, 245, 255);"
+            " color: rgb(0, 0, 112);"
+            " padding: 0px;"
+            " font-family: \"Segoe UI Emoji\", \"Segoe UI\", sans-serif;"
+            " font-size: 16px;"
+            " font-weight: 700;"
+            " }"
+            "QPushButton:hover { background-color: rgb(229, 238, 255); }"
+            "QPushButton:pressed { background-color: rgb(220, 232, 252); }"
+            "QPushButton:disabled { background-color: rgb(214, 221, 236); color: rgb(120, 130, 164); }");
+
+        auto* actionWidget = new QWidget();
+        actionWidget->setStyleSheet(QStringLiteral("background-color: transparent;"));
+        auto* actionLayout = new QHBoxLayout(actionWidget);
+        actionLayout->setContentsMargins(3, 3, 3, 3);
+        actionLayout->setSpacing(10);
+
+        auto* btnView = new QPushButton(QStringLiteral("👁️"));
+        btnView->setFixedSize(48, 36);
+        btnView->setFont(QFont(QStringLiteral("Segoe UI Emoji"), 15, QFont::Bold));
+        btnView->setFlat(true);
+        btnView->setStyleSheet(buttonStyle);
+        btnView->setToolTip(QStringLiteral("Detailler"));
+        connect(btnView, &QPushButton::clicked, this, [this, displayId = group.displayId, bySpecies]() {
+            QDialog dialog(this);
+            dialog.setModal(true);
+            dialog.setWindowTitle(QStringLiteral("Details capture %1").arg(QString::number(displayId)));
+
+            auto* layout = new QVBoxLayout(&dialog);
+            auto* detailTable = new QTableWidget(&dialog);
+            detailTable->setColumnCount(3);
+            detailTable->setHorizontalHeaderItem(0, new QTableWidgetItem(QStringLiteral("Espece")));
+            detailTable->setHorizontalHeaderItem(1, new QTableWidgetItem(QStringLiteral("Qte")));
+            detailTable->setHorizontalHeaderItem(2, new QTableWidgetItem(QStringLiteral("Poids")));
+            detailTable->horizontalHeader()->setStretchLastSection(true);
+            detailTable->verticalHeader()->setVisible(false);
+            detailTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+            detailTable->setSelectionMode(QAbstractItemView::NoSelection);
+
+            QList<SpeciesAgg> speciesList = bySpecies.values();
+            std::sort(speciesList.begin(), speciesList.end(), [](const SpeciesAgg& a, const SpeciesAgg& b) {
+                return a.species.toLower() < b.species.toLower();
+            });
+
+            detailTable->setRowCount(speciesList.size());
+            for (int i = 0; i < speciesList.size(); ++i) {
+                const SpeciesAgg& agg = speciesList.at(i);
+                detailTable->setItem(i, 0, new QTableWidgetItem(agg.species));
+                detailTable->setItem(i, 1, new QTableWidgetItem(QString::number(agg.quantite)));
+                detailTable->setItem(i, 2, new QTableWidgetItem(QString::number(agg.poidsKg, 'f', 2)));
+            }
+
+            auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dialog);
+            connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+            layout->addWidget(detailTable);
+            layout->addWidget(buttons);
+            dialog.resize(420, 260);
+            dialog.exec();
+        });
+
+        auto* btnEdit = new QPushButton(QStringLiteral("✏️"));
+        btnEdit->setFixedSize(48, 36);
+        btnEdit->setFont(QFont(QStringLiteral("Segoe UI Emoji"), 15, QFont::Bold));
+        btnEdit->setFlat(true);
+        btnEdit->setStyleSheet(buttonStyle);
+        btnEdit->setToolTip(QStringLiteral("Modifier"));
+        if (isGroupedCapture) {
+            btnEdit->setEnabled(false);
+            btnEdit->setToolTip(QStringLiteral("Modification indisponible pour une capture multi-especes"));
+        } else {
+            connect(btnEdit, &QPushButton::clicked, this, [this, currentRow]() {
+                loadCaptureFromTable(currentRow);
+            });
+        }
+
+        auto* btnDelete = new QPushButton(QStringLiteral("❌"));
+        btnDelete->setFixedSize(48, 36);
+        btnDelete->setFont(QFont(QStringLiteral("Segoe UI Emoji"), 15, QFont::Bold));
+        btnDelete->setFlat(true);
+        btnDelete->setStyleSheet(buttonStyle);
+        btnDelete->setToolTip(QStringLiteral("Supprimer"));
+        connect(btnDelete, &QPushButton::clicked, this, [this, currentRow]() {
+            supprimerCaptureFromRow(currentRow);
+        });
+
+        actionLayout->addStretch();
+        actionLayout->addWidget(btnView, 0, Qt::AlignVCenter);
+        actionLayout->addWidget(btnEdit, 0, Qt::AlignVCenter);
+        actionLayout->addWidget(btnDelete, 0, Qt::AlignVCenter);
+        actionLayout->addStretch();
+        table->setCellWidget(groupedRow, 7, actionWidget);
+
+        ++groupedRow;
+    }
+
+    table->setColumnWidth(0, 120);
+    table->setColumnWidth(1, 100);
+    table->setColumnWidth(2, 140);
+    table->setColumnWidth(3, 90);
+    table->setColumnWidth(4, 90);
+    table->setColumnWidth(5, 130);
+    table->setColumnWidth(6, 120);
+    table->setColumnWidth(7, 178);
+    table->verticalHeader()->setDefaultSectionSize(50);
+
+    if (m_hasArduinoTemperature) {
+        updateCapturesTableLiveTemperature(m_lastArduinoTemperatureC);
+    }
+
+    updateCapturesStats(this, ui);
+    loadQuotas(false);
+    return;
 
     int row = 0;
     for (const captures::TableRowData& record : rows) {
@@ -3956,7 +5280,7 @@ void MainWindow::loadCaptures()
         actionLayout->setContentsMargins(2, 2, 2, 2);
         actionLayout->setSpacing(7);
 
-        auto* btnEdit = new QPushButton(QStringLiteral("✏️"));
+        auto* btnEdit = new QPushButton(QStringLiteral("âœï¸"));
         btnEdit->setFixedSize(42, 32);
         btnEdit->setFont(QFont(QStringLiteral("Segoe UI Emoji"), 15, QFont::Bold));
         btnEdit->setFlat(true);
@@ -3975,7 +5299,7 @@ void MainWindow::loadCaptures()
             loadCaptureFromTable(currentRow);
         });
 
-        auto* btnDelete = new QPushButton(QStringLiteral("❌"));
+        auto* btnDelete = new QPushButton(QStringLiteral("âŒ"));
         btnDelete->setFixedSize(42, 32);
         btnDelete->setFont(QFont(QStringLiteral("Segoe UI Emoji"), 15, QFont::Bold));
         btnDelete->setFlat(true);
@@ -4019,10 +5343,10 @@ void MainWindow::loadCaptures()
         updateCapturesTableLiveTemperature(m_lastArduinoTemperatureC);
     }
     
-    // Mettre à jour les statistiques
+    // Mettre Ã  jour les statistiques
     updateCapturesStats(this, ui);
 
-    // Synchroniser le tableau quota (lecture seule par défaut)
+    // Synchroniser le tableau quota (lecture seule par dÃ©faut)
     loadQuotas(false);
 }
 
@@ -4037,7 +5361,7 @@ void MainWindow::on_cap_btnValiider_4_clicked()
         loadQuotas(true);
         m_quotaEditMode = true;
         setQuotaTableEditable(true);
-        ui->cap_btnValiider_4->setText(QStringLiteral("💾Enregistrer Quotas"));
+        ui->cap_btnValiider_4->setText(QStringLiteral("Enregistrer Quotas"));
         QMessageBox::information(this,
                                  QStringLiteral("Quotas"),
                                  QStringLiteral("Modifiez les valeurs, puis cliquez sur 'Enregistrer Quotas'."));
@@ -4052,7 +5376,7 @@ void MainWindow::on_cap_btnValiider_4_clicked()
 
     m_quotaEditMode = false;
     setQuotaTableEditable(false);
-    ui->cap_btnValiider_4->setText(QStringLiteral("✏️Modifier Quotas"));
+    ui->cap_btnValiider_4->setText(QStringLiteral("Modifier Quotas"));
     loadQuotas(false);
     QMessageBox::information(this, QStringLiteral("Quotas"), QStringLiteral("Quotas mis a jour."));
 }
@@ -4065,9 +5389,21 @@ void MainWindow::loadCaptureFromTable(int row)
 
     const QString idCapture = table->item(row, 0) ? table->item(row, 0)->text().trimmed() : QString();
     const QString idBateau = table->item(row, 1) ? table->item(row, 1)->text().trimmed() : QString();
-    const QString typePoisson = table->item(row, 2) ? table->item(row, 2)->text().trimmed() : QString();
-    const QString quantite = table->item(row, 3) ? table->item(row, 3)->text().trimmed() : QString();
-    const QString poids = table->item(row, 4) ? table->item(row, 4)->text().trimmed() : QString();
+    const QString typePoisson = table->item(row, 2)
+        ? (table->item(row, 2)->data(Qt::UserRole).toString().trimmed().isEmpty()
+            ? table->item(row, 2)->text().trimmed()
+            : table->item(row, 2)->data(Qt::UserRole).toString().trimmed())
+        : QString();
+    const QString quantite = table->item(row, 3)
+        ? (table->item(row, 3)->data(Qt::UserRole).toString().trimmed().isEmpty()
+            ? table->item(row, 3)->text().trimmed()
+            : table->item(row, 3)->data(Qt::UserRole).toString().trimmed())
+        : QString();
+    const QString poids = table->item(row, 4)
+        ? (table->item(row, 4)->data(Qt::UserRole).toString().trimmed().isEmpty()
+            ? table->item(row, 4)->text().trimmed()
+            : table->item(row, 4)->data(Qt::UserRole).toString().trimmed())
+        : QString();
     const QString tempTxt = table->item(row, 5) ? table->item(row, 5)->text().trimmed() : QString();
     const QString dateTxt = table->item(row, 6) ? table->item(row, 6)->text().trimmed() : QString();
 
@@ -4102,6 +5438,12 @@ void MainWindow::loadCaptureFromTable(int row)
     }
 
     if (ui->cap_btnValiider_3) ui->cap_btnValiider_3->setText(QStringLiteral("Modifier"));
+
+    if (ui->cap_tableWidget_Lignes) {
+        clearCaptureLinesTable(ui->cap_tableWidget_Lignes);
+    }
+    if (ui->cap_btnAddCaptureLine) ui->cap_btnAddCaptureLine->setEnabled(false);
+    if (ui->cap_btnRemoveCaptureLine) ui->cap_btnRemoveCaptureLine->setEnabled(false);
 }
 
 void MainWindow::supprimerCaptureFromRow(int row)
@@ -4110,26 +5452,46 @@ void MainWindow::supprimerCaptureFromRow(int row)
     QTableWidget* table = ui->cap_tableWidget;
     if (row < 0 || row >= table->rowCount()) return;
 
-    const QString idCapture = table->item(row, 0) ? table->item(row, 0)->text().trimmed() : QString();
-    if (idCapture.isEmpty()) {
+    const QString idCaptureDisplay = table->item(row, 0) ? table->item(row, 0)->text().trimmed() : QString();
+    if (idCaptureDisplay.isEmpty()) {
         QMessageBox::warning(this, QStringLiteral("Suppression capture"), QStringLiteral("ID capture introuvable."));
         return;
     }
 
+    QStringList storedIds;
+    if (auto* idItem = table->item(row, 0)) {
+        const QString stored = idItem->data(Qt::UserRole).toString().trimmed();
+        if (!stored.isEmpty()) {
+            storedIds = stored.split(QLatin1Char(','), Qt::SkipEmptyParts);
+            for (QString& id : storedIds) {
+                id = id.trimmed();
+            }
+        }
+    }
+    if (storedIds.isEmpty()) {
+        storedIds << idCaptureDisplay;
+    }
+
+    const bool isGroupedCapture = storedIds.size() > 1;
+
     const auto reply = QMessageBox::question(
         this,
         QStringLiteral("Confirmation"),
-        QStringLiteral("Voulez-vous vraiment supprimer la capture ID: %1 ?").arg(idCapture),
+        isGroupedCapture
+            ? QStringLiteral("Voulez-vous vraiment supprimer cette capture multi-especes (ID: %1) ?").arg(idCaptureDisplay)
+            : QStringLiteral("Voulez-vous vraiment supprimer la capture ID: %1 ?").arg(idCaptureDisplay),
         QMessageBox::Yes | QMessageBox::No);
 
     if (reply != QMessageBox::Yes) return;
 
-    if (!captures::supprimer(idCapture)) {
-        QMessageBox::critical(this, QStringLiteral("Suppression capture"), QStringLiteral("Suppression echouee: %1").arg(captures::lastError()));
-        return;
+    for (const QString& storedId : std::as_const(storedIds)) {
+        if (!captures::supprimer(storedId)) {
+            QMessageBox::critical(this, QStringLiteral("Suppression capture"), QStringLiteral("Suppression echouee: %1").arg(captures::lastError()));
+            return;
+        }
     }
 
-    if (m_editingCaptureId == idCapture) {
+    if (m_editingCaptureId == idCaptureDisplay) {
         resetCaptureForm();
     }
 
@@ -4150,6 +5512,70 @@ void MainWindow::resetCaptureForm()
     if (ui && ui->cap_dsPoids_3) ui->cap_dsPoids_3->setValue(0.0);
     if (ui && ui->cap_deDateCapture_3) ui->cap_deDateCapture_3->setDate(QDate::currentDate());
     if (ui && ui->cap_btnValiider_3) ui->cap_btnValiider_3->setText(QStringLiteral("Valider"));
+    if (ui && ui->cap_tableWidget_Lignes) clearCaptureLinesTable(ui->cap_tableWidget_Lignes);
+    if (ui && ui->cap_btnAddCaptureLine) ui->cap_btnAddCaptureLine->setEnabled(true);
+    if (ui && ui->cap_btnRemoveCaptureLine) ui->cap_btnRemoveCaptureLine->setEnabled(true);
+}
+
+void MainWindow::on_cap_btnAddCaptureLine_clicked()
+{
+    if (!ui || !ui->cap_tableWidget_Lignes || !ui->cap_comboBox_4 || !ui->cap_sbQuantite_4 || !ui->cap_dsPoids_3) {
+        return;
+    }
+    if (!m_editingCaptureId.isEmpty()) {
+        QMessageBox::information(this, QStringLiteral("Capture"), QStringLiteral("L'ajout multi-especes est disponible uniquement en mode ajout."));
+        return;
+    }
+
+    const QString species = ui->cap_comboBox_4->currentText().trimmed();
+    const int quantite = ui->cap_sbQuantite_4->value();
+    const double poids = ui->cap_dsPoids_3->value();
+
+    if (species.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("Champs"), QStringLiteral("Veuillez choisir une espece."));
+        return;
+    }
+    if (quantite <= 0) {
+        QMessageBox::warning(this, QStringLiteral("Champs"), QStringLiteral("Veuillez saisir une quantite superieure a zero."));
+        return;
+    }
+    if (poids <= 0.0) {
+        QMessageBox::warning(this, QStringLiteral("Champs"), QStringLiteral("Veuillez saisir un poids superieur a zero."));
+        return;
+    }
+    if (hasSpeciesInLinesTable(ui->cap_tableWidget_Lignes, species)) {
+        QMessageBox::warning(this, QStringLiteral("Doublon"), QStringLiteral("Cette espece est deja ajoutee."));
+        return;
+    }
+
+    const int row = ui->cap_tableWidget_Lignes->rowCount();
+    ui->cap_tableWidget_Lignes->insertRow(row);
+    ui->cap_tableWidget_Lignes->setItem(row, 0, new QTableWidgetItem(species));
+    ui->cap_tableWidget_Lignes->setItem(row, 1, new QTableWidgetItem(QString::number(quantite)));
+    ui->cap_tableWidget_Lignes->setItem(row, 2, new QTableWidgetItem(QString::number(poids, 'f', 2)));
+    ui->cap_tableWidget_Lignes->selectRow(row);
+
+    ui->cap_sbQuantite_4->setValue(0);
+    ui->cap_dsPoids_3->setValue(0.0);
+}
+
+void MainWindow::on_cap_btnRemoveCaptureLine_clicked()
+{
+    if (!ui || !ui->cap_tableWidget_Lignes) {
+        return;
+    }
+    if (!m_editingCaptureId.isEmpty()) {
+        return;
+    }
+
+    QTableWidget* table = ui->cap_tableWidget_Lignes;
+    int row = table->currentRow();
+    if (row < 0 && table->rowCount() > 0) {
+        row = table->rowCount() - 1;
+    }
+    if (row >= 0) {
+        table->removeRow(row);
+    }
 }
 
 void MainWindow::on_cap_btnValiider_3_clicked()
@@ -4165,13 +5591,23 @@ void MainWindow::on_cap_btnValiider_3_clicked()
         QMessageBox::warning(this, QStringLiteral("Champs"), QStringLiteral("Veuillez saisir un ID Bateau valide"));
         return;
     }
-    if (!ui->cap_sbQuantite_4 || ui->cap_sbQuantite_4->value() <= 0) {
-        QMessageBox::warning(this, QStringLiteral("Champs"), QStringLiteral("Veuillez saisir une quantite superieure a zero"));
+
+    const bool hasLinesTable = (ui->cap_tableWidget_Lignes && ui->cap_tableWidget_Lignes->rowCount() > 0);
+    const bool hasCurrentLine = (ui->cap_sbQuantite_4 && ui->cap_dsPoids_3
+        && ui->cap_sbQuantite_4->value() > 0
+        && ui->cap_dsPoids_3->value() > 0.0);
+
+    if (!hasLinesTable && !hasCurrentLine) {
+        QMessageBox::warning(this, QStringLiteral("Champs"), QStringLiteral("Ajoutez au moins une espece ou saisissez Quantite et Poids."));
         return;
     }
-    if (!ui->cap_dsPoids_3 || ui->cap_dsPoids_3->value() <= 0.0) {
-        QMessageBox::warning(this, QStringLiteral("Champs"), QStringLiteral("Veuillez saisir un poids superieur a zero"));
-        return;
+
+    if (ui->cap_deDateCapture_3) {
+        const QDate captureDate = ui->cap_deDateCapture_3->date();
+        if (captureDate.isValid() && captureDate > QDate::currentDate()) {
+            QMessageBox::warning(this, QStringLiteral("Champs"), QStringLiteral("La date de capture ne doit pas etre superieure a aujourd'hui."));
+            return;
+        }
     }
 
     const captures c = captureFromForm();
@@ -4190,24 +5626,108 @@ void MainWindow::on_cap_btnValiider_3_clicked()
             }
         }
     } else {
-        const QString idCapture = ui->cap_lineEdit_11->text().trimmed();
-        if (captures::idExiste(idCapture)) {
+        QVector<CaptureLineUi> lines;
+        if (ui->cap_tableWidget_Lignes) {
+            lines = captureLinesFromTable(ui->cap_tableWidget_Lignes);
+        }
+
+        if (hasCurrentLine && ui->cap_comboBox_4) {
+            const QString species = ui->cap_comboBox_4->currentText().trimmed();
+            const int quantite = ui->cap_sbQuantite_4 ? ui->cap_sbQuantite_4->value() : 0;
+            const double poids = ui->cap_dsPoids_3 ? ui->cap_dsPoids_3->value() : 0.0;
+            if (!species.isEmpty() && quantite > 0 && poids > 0.0) {
+                if (!ui->cap_tableWidget_Lignes || !hasSpeciesInLinesTable(ui->cap_tableWidget_Lignes, species)) {
+                    CaptureLineUi line;
+                    line.species = species;
+                    line.quantite = quantite;
+                    line.poidsKg = poids;
+                    lines.push_back(line);
+                }
+            }
+        }
+
+        if (lines.isEmpty()) {
+            QMessageBox::warning(this, QStringLiteral("Champs"), QStringLiteral("Ajoutez au moins une espece."));
+            return;
+        }
+
+        const QString baseId = ui->cap_lineEdit_11 ? ui->cap_lineEdit_11->text().trimmed() : QString();
+        if (captures::idExiste(baseId)) {
             QMessageBox::warning(this, QStringLiteral("Doublon"), QStringLiteral("Cet ID capture existe deja."));
             return;
         }
 
-        if (c.ajouter()) {
-            loadCaptures();
-            resetCaptureForm();
-            QMessageBox::information(this, QStringLiteral("Capture"), QStringLiteral("Ajout reussi"));
+        Connection* conn = Connection::getInstance();
+        if (!conn || !conn->ensureOpen()) {
+            QMessageBox::warning(this, QStringLiteral("Capture"), QStringLiteral("Connexion a la base indisponible."));
+            return;
+        }
+
+        QSqlDatabase db = conn->getDatabase();
+        const bool canTx = db.isValid() && db.driver() && db.driver()->hasFeature(QSqlDriver::Transactions);
+        if (canTx) {
+            db.transaction();
+        }
+
+        const int baseIdNum = toIntOrZero(baseId);
+        if (baseIdNum <= 0) {
+            if (canTx) db.rollback();
+            QMessageBox::warning(this, QStringLiteral("Champs"), QStringLiteral("ID Capture invalide."));
+            return;
+        }
+
+        QVector<QString> ids;
+        ids.reserve(lines.size());
+        if (lines.size() == 1) {
+            ids.push_back(baseId);
         } else {
-            const QString err = captures::lastError();
-            if (isSaisieConstraintError(err)) {
-                QMessageBox::warning(this, QStringLiteral("Champs"), QStringLiteral("Ajout echoue: %1").arg(err));
-            } else {
-                QMessageBox::critical(this, QStringLiteral("Erreur"), QStringLiteral("Ajout echoue: %1").arg(err));
+            for (int i = 0; i < lines.size(); ++i) {
+                ids.push_back(QString::number(baseIdNum * 10 + i));
+            }
+            for (const QString& id : std::as_const(ids)) {
+                if (captures::idExiste(id)) {
+                    if (canTx) db.rollback();
+                    QMessageBox::warning(this, QStringLiteral("Doublon"), QStringLiteral("Un des IDs generes existe deja. Choisissez un autre ID Capture."));
+                    return;
+                }
             }
         }
+
+        const int idBateau = toIntOrZero(ui->cap_lineEdit_9 ? ui->cap_lineEdit_9->text() : QString());
+        const QDate captureDate = (ui->cap_deDateCapture_3 && ui->cap_deDateCapture_3->date().isValid())
+            ? ui->cap_deDateCapture_3->date()
+            : QDate::currentDate();
+
+        for (int i = 0; i < lines.size(); ++i) {
+            const CaptureLineUi& line = lines[i];
+            captures one = m_hasArduinoTemperature
+                ? captures(ids[i], idBateau, line.species, line.quantite, line.poidsKg, captureDate, m_lastArduinoTemperatureC)
+                : captures(ids[i], idBateau, line.species, line.quantite, line.poidsKg, captureDate);
+
+            if (!one.ajouter()) {
+                const QString err = captures::lastError();
+                if (canTx) db.rollback();
+                if (isSaisieConstraintError(err)) {
+                    QMessageBox::warning(this, QStringLiteral("Champs"), QStringLiteral("Ajout echoue: %1").arg(err));
+                } else {
+                    QMessageBox::critical(this, QStringLiteral("Erreur"), QStringLiteral("Ajout echoue: %1").arg(err));
+                }
+                return;
+            }
+        }
+
+        if (canTx && !db.commit()) {
+            db.rollback();
+            QMessageBox::critical(this, QStringLiteral("Erreur"), QStringLiteral("Commit echoue."));
+            return;
+        }
+
+        loadCaptures();
+        resetCaptureForm();
+        QMessageBox::information(this,
+                                 QStringLiteral("Capture"),
+                                 QStringLiteral("Ajout reussi (%1 espece(s)).\nID Capture: %2")
+                                     .arg(QString::number(lines.size()), baseId));
     }
 }
 
@@ -4420,9 +5940,310 @@ void MainWindow::on_cap_btnBackMenu_clicked()
     }
 }
 
+static bool loadSurpecheAnalysisForCapture(MainWindow* parent,
+                                           Ui::MainWindow* ui,
+                                           const QString& idCaptureText,
+                                           QString* errorOut)
+{
+    if (errorOut) *errorOut = QString();
+    if (!parent || !ui) {
+        if (errorOut) *errorOut = QStringLiteral("UI indisponible.");
+        return false;
+    }
+    if (idCaptureText.trimmed().isEmpty()) {
+        if (errorOut) *errorOut = QStringLiteral("Veuillez saisir ID Capture.");
+        return false;
+    }
+
+    const int idCaptureNum = toIntOrZero(idCaptureText);
+    if (idCaptureNum <= 0) {
+        if (errorOut) *errorOut = QStringLiteral("ID Capture invalide.");
+        return false;
+    }
+
+    Connection* conn = Connection::getInstance();
+    if (!conn || !conn->ensureOpen()) {
+        if (errorOut) *errorOut = QStringLiteral("Connexion a la base indisponible.");
+        return false;
+    }
+    QSqlDatabase db = conn->getDatabase();
+
+    const QString capturesTable = resolveTableName(db, {
+        QStringLiteral("CAPTURES"),
+        QStringLiteral("CAPTURE"),
+        QStringLiteral("TCAPTURES"),
+        QStringLiteral("T_CAPTURES")
+    });
+    if (capturesTable.isEmpty()) {
+        if (errorOut) *errorOut = QStringLiteral("Table CAPTURES introuvable.");
+        return false;
+    }
+
+    const QStringList captureColumns = getColumnNames(db, capturesTable);
+    const QString idCol = matchColumnBySynonyms(captureColumns, {
+        QStringLiteral("id_capture"), QStringLiteral("idcapture"), QStringLiteral("id")
+    });
+    const QString idBateauCol = matchColumnBySynonyms(captureColumns, {
+        QStringLiteral("id_bateau"), QStringLiteral("idbateau"), QStringLiteral("bateau_id")
+    });
+    const QString typeCol = matchColumnBySynonyms(captureColumns, {
+        QStringLiteral("type_poisson"), QStringLiteral("typepoisson"), QStringLiteral("poisson"), QStringLiteral("espece")
+    });
+    const QString quantiteCol = matchColumnBySynonyms(captureColumns, {
+        QStringLiteral("quantite"), QStringLiteral("qte")
+    });
+    const QString poidsCol = matchColumnBySynonyms(captureColumns, {
+        QStringLiteral("poids"), QStringLiteral("poids_kg")
+    });
+    const QString dateCol = matchColumnBySynonyms(captureColumns, {
+        QStringLiteral("date_capture"), QStringLiteral("datecapture"), QStringLiteral("date")
+    });
+
+    if (idCol.isEmpty() || idBateauCol.isEmpty() || typeCol.isEmpty() || quantiteCol.isEmpty() || poidsCol.isEmpty() || dateCol.isEmpty()) {
+        if (errorOut) *errorOut = QStringLiteral("Colonnes CAPTURES manquantes (ID/ID_BATEAU/TYPE/QUANTITE/POIDS/DATE).");
+        return false;
+    }
+
+    int idBateau = 0;
+    QDate captureDate;
+    {
+        QSqlQuery query(db);
+        query.prepare(QStringLiteral(
+            "SELECT TRUNC(%1), %2 "
+            "FROM %3 "
+            "WHERE %4 = ? "
+            "UNION ALL "
+            "SELECT TRUNC(%1), %2 "
+            "FROM %3 "
+            "WHERE %4 BETWEEN ? AND ?")
+            .arg(dateCol, idBateauCol, capturesTable, idCol));
+        query.addBindValue(idCaptureNum);
+        query.addBindValue(idCaptureNum * 10);
+        query.addBindValue(idCaptureNum * 10 + 9);
+        if (!query.exec()) {
+            if (errorOut) *errorOut = QStringLiteral("Lecture capture echouee: %1").arg(query.lastError().text());
+            return false;
+        }
+        if (!query.next()) {
+            if (errorOut) *errorOut = QStringLiteral("Capture introuvable pour ID=%1.").arg(QString::number(idCaptureNum));
+            return false;
+        }
+
+        captureDate = query.value(0).toDate();
+        idBateau = query.value(1).toInt();
+        if (idBateau <= 0) {
+            if (errorOut) *errorOut = QStringLiteral("ID Bateau invalide pour la capture ID=%1.").arg(QString::number(idCaptureNum));
+            return false;
+        }
+        if (!captureDate.isValid()) {
+            captureDate = QDate::currentDate();
+        }
+    }
+
+    const QDate weekStart = captureDate.addDays(1 - captureDate.dayOfWeek());
+    const QDate weekEnd = weekStart.addDays(6);
+
+    QHash<QString, double> quotaBySpecies;
+    {
+        const QString quotaTable = resolveTableName(db, {
+            QStringLiteral("QUOTA"),
+            QStringLiteral("QUOTAS"),
+            QStringLiteral("TQUOTA"),
+            QStringLiteral("T_QUOTA"),
+            QStringLiteral("QUOTA_POISSON"),
+            QStringLiteral("QUOTAS_POISSON")
+        });
+        if (quotaTable.isEmpty()) {
+            if (errorOut) *errorOut = QStringLiteral("Table QUOTA introuvable dans la base.");
+            return false;
+        }
+
+        const QStringList quotaColumns = getColumnNames(db, quotaTable);
+        const QString quotaTypeCol = matchColumnBySynonyms(quotaColumns, {
+            QStringLiteral("type_poisson"), QStringLiteral("espece"), QStringLiteral("poisson"), QStringLiteral("species"), QStringLiteral("type")
+        });
+        const QString quotaKgCol = matchColumnBySynonyms(quotaColumns, {
+            QStringLiteral("quota"), QStringLiteral("quota_kg"), QStringLiteral("quotaKg"), QStringLiteral("poids_max"), QStringLiteral("max_poids"), QStringLiteral("limite")
+        });
+        if (quotaTypeCol.isEmpty() || quotaKgCol.isEmpty()) {
+            if (errorOut) *errorOut = QStringLiteral("Colonnes QUOTA manquantes (type + valeur).");
+            return false;
+        }
+
+        QSqlQuery query(db);
+        if (!query.exec(QStringLiteral("SELECT %1, %2 FROM %3").arg(quotaTypeCol, quotaKgCol, quotaTable))) {
+            if (errorOut) *errorOut = QStringLiteral("Lecture quotas echouee: %1").arg(query.lastError().text());
+            return false;
+        }
+
+        while (query.next()) {
+            const QString species = query.value(0).toString().trimmed();
+            bool ok = false;
+            const double kg = query.value(1).toDouble(&ok);
+            if (!species.isEmpty() && ok && kg >= 0.0) {
+                const QString key = normalizeKey(species);
+                const auto it = quotaBySpecies.constFind(key);
+                if (it == quotaBySpecies.constEnd()) {
+                    quotaBySpecies.insert(key, kg);
+                } else {
+                    quotaBySpecies.insert(key, qMin(*it, kg));
+                }
+            }
+        }
+    }
+
+    struct AnalysisRow {
+        QString species;
+        int quantite = 0;
+        double poidsKg = 0.0;
+        double quotaKg = -1.0;
+        double pct = 0.0;
+        QString status;
+    };
+
+    QVector<AnalysisRow> analysisRows;
+    {
+        QSqlQuery query(db);
+        query.prepare(QStringLiteral(
+            "SELECT %1, NVL(SUM(%2), 0), NVL(SUM(%3), 0) "
+            "FROM %4 "
+            "WHERE %5 = ? "
+            "  AND TRUNC(%6) BETWEEN TO_DATE(?, 'YYYY-MM-DD') AND TO_DATE(?, 'YYYY-MM-DD') "
+            "GROUP BY %1 "
+            "ORDER BY NVL(SUM(%3), 0) DESC")
+            .arg(typeCol, quantiteCol, poidsCol, capturesTable, idBateauCol, dateCol));
+        query.addBindValue(idBateau);
+        query.addBindValue(weekStart.toString(QStringLiteral("yyyy-MM-dd")));
+        query.addBindValue(weekEnd.toString(QStringLiteral("yyyy-MM-dd")));
+        if (!query.exec()) {
+            if (errorOut) *errorOut = QStringLiteral("Analyse captures echouee: %1").arg(query.lastError().text());
+            return false;
+        }
+
+        while (query.next()) {
+            AnalysisRow row;
+            row.species = query.value(0).toString().trimmed();
+            row.quantite = query.value(1).toInt();
+            row.poidsKg = query.value(2).toDouble();
+            if (row.species.isEmpty()) {
+                continue;
+            }
+
+            const auto it = quotaBySpecies.constFind(normalizeKey(row.species));
+            if (it != quotaBySpecies.constEnd()) {
+                row.quotaKg = *it;
+            }
+
+            if (row.quotaKg > 0.0) {
+                row.pct = (100.0 * row.poidsKg) / row.quotaKg;
+            } else if (row.poidsKg > 0.0) {
+                row.pct = 999.0;
+            }
+
+            if (row.quotaKg == 0.0 && row.poidsKg > 0.0) {
+                row.status = QStringLiteral("Surpeche");
+            } else if (row.quotaKg > 0.0 && row.pct > 100.0) {
+                row.status = QStringLiteral("Surpeche");
+            } else if (row.quotaKg > 0.0 && row.pct >= 80.0) {
+                row.status = QStringLiteral("Alerte");
+            } else {
+                row.status = QStringLiteral("OK");
+            }
+
+            analysisRows.push_back(row);
+        }
+    }
+
+    if (ui->lineEdit_7c_7) ui->lineEdit_7c_7->setText(QString::number(idCaptureNum));
+    if (ui->lineEdit_7c_8) ui->lineEdit_7c_8->setText(QString::number(idBateau));
+    if (ui->dateEdit_3) ui->dateEdit_3->setDate(captureDate);
+    if (ui->lineEdit_7c_9) ui->lineEdit_7c_9->setText(QString::number(analysisRows.size()));
+
+    bool anySurpeche = false;
+    QStringList overQuotaSpecies;
+    for (const AnalysisRow& row : std::as_const(analysisRows)) {
+        if (row.status == QStringLiteral("Surpeche")) {
+            anySurpeche = true;
+            overQuotaSpecies << row.species;
+        }
+    }
+    if (ui->lineEdit_7c_10) {
+        ui->lineEdit_7c_10->setText(anySurpeche ? QStringLiteral("SURPECHE") : QStringLiteral("OK"));
+    }
+
+    if (ui->cap_tableWidget_4) {
+        QTableWidget* table = ui->cap_tableWidget_4;
+        table->clearContents();
+        table->setRowCount(analysisRows.size());
+        for (int i = 0; i < analysisRows.size(); ++i) {
+            const AnalysisRow& row = analysisRows.at(i);
+            table->setItem(i, 0, new QTableWidgetItem(row.species));
+            table->setItem(i, 1, new QTableWidgetItem(QString::number(row.quantite)));
+            table->setItem(i, 2, new QTableWidgetItem(QString::number(row.poidsKg, 'f', 2) + QStringLiteral("kg")));
+            table->setItem(i, 3, new QTableWidgetItem(row.quotaKg >= 0.0
+                ? QString::number(row.quotaKg, 'f', 0) + QStringLiteral("kg")
+                : QStringLiteral("N/A")));
+            table->setItem(i, 4, new QTableWidgetItem(QString::number(qMin(999.0, qMax(0.0, row.pct)), 'f', 1) + QStringLiteral("%")));
+            table->setItem(i, 5, new QTableWidgetItem(row.status));
+        }
+    }
+
+    QVector<AnalysisRow> topRows = analysisRows;
+    if (ui->cap_label_24) ui->cap_label_24->setText(QStringLiteral("Nom espece : ---"));
+    if (ui->cap_label_25) ui->cap_label_25->setText(QStringLiteral("Nom espece : ---"));
+    if (ui->cap_label_26) ui->cap_label_26->setText(QStringLiteral("Nom espece : ---"));
+    if (ui->cap_progressBar_4) ui->cap_progressBar_4->setValue(0);
+    if (ui->cap_progressBar_5) ui->cap_progressBar_5->setValue(0);
+    if (ui->cap_progressBar_6) ui->cap_progressBar_6->setValue(0);
+
+    for (int i = 0; i < qMin(3, topRows.size()); ++i) {
+        const AnalysisRow& row = topRows.at(i);
+        const int progressValue = qBound(0, static_cast<int>(qMin(100.0, qMax(0.0, row.pct)) + 0.5), 100);
+        if (i == 0) {
+            if (ui->cap_label_24) ui->cap_label_24->setText(QStringLiteral("Nom espece : %1").arg(row.species));
+            if (ui->cap_progressBar_4) ui->cap_progressBar_4->setValue(progressValue);
+        } else if (i == 1) {
+            if (ui->cap_label_25) ui->cap_label_25->setText(QStringLiteral("Nom espece : %1").arg(row.species));
+            if (ui->cap_progressBar_5) ui->cap_progressBar_5->setValue(progressValue);
+        } else {
+            if (ui->cap_label_26) ui->cap_label_26->setText(QStringLiteral("Nom espece : %1").arg(row.species));
+            if (ui->cap_progressBar_6) ui->cap_progressBar_6->setValue(progressValue);
+        }
+    }
+
+    if (ui->cap_textBrowser_2) {
+        QString html;
+        html += QStringLiteral("<div style='color:#ffffff; font-size:9pt; font-weight:400;'>");
+        html += QStringLiteral("<p>Semaine: %1 .. %2</p>")
+            .arg(weekStart.toString(QStringLiteral("yyyy-MM-dd")), weekEnd.toString(QStringLiteral("yyyy-MM-dd")));
+        html += QStringLiteral("<p>Bateau: %1 | Capture: %2</p>")
+            .arg(QString::number(idBateau), QString::number(idCaptureNum));
+        if (analysisRows.isEmpty()) {
+            html += QStringLiteral("<p>Aucune capture trouvee pour cette semaine.</p>");
+        } else if (anySurpeche) {
+            html += QStringLiteral("<p><b>Surpeche detectee</b> sur: %1</p>").arg(overQuotaSpecies.join(QStringLiteral(", ")));
+        } else {
+            html += QStringLiteral("<p><b>Aucune surpeche detectee</b> (quotas respectes).</p>");
+        }
+        html += QStringLiteral("</div>");
+        ui->cap_textBrowser_2->setHtml(html);
+    }
+
+    return true;
+}
+
 void MainWindow::on_cap_btnShowSurpeche_clicked()
 {
     if (!ui || !ui->stackedWidget) {
+        return;
+    }
+
+    m_previousCapturePage = ui->stackedWidget->currentWidget();
+
+    const QString idCaptureText = ui->cap_lineEdit_7 ? ui->cap_lineEdit_7->text().trimmed() : QString();
+    if (idCaptureText.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("Surpeche"), QStringLiteral("Veuillez saisir l'ID Capture a cote du bouton."));
+        if (ui->cap_lineEdit_7) ui->cap_lineEdit_7->setFocus();
         return;
     }
 
@@ -4437,6 +6258,11 @@ void MainWindow::on_cap_btnShowSurpeche_clicked()
 
     ui->stackedWidget->setCurrentWidget(surpechePage);
 
+    QString error;
+    if (!loadSurpecheAnalysisForCapture(this, ui, idCaptureText, &error)) {
+        QMessageBox::warning(this, QStringLiteral("Surpeche"), error.isEmpty() ? QStringLiteral("Verification surpeche echouee.") : error);
+    }
+
     // Put focus on a meaningful control on the destination page.
     if (auto *fallback = surpechePage->findChild<QPushButton*>(QStringLiteral("cap_btnBackToCapturesMainSurpeche"))) {
         fallback->setFocus(Qt::FocusReason::OtherFocusReason);
@@ -4449,6 +6275,8 @@ void MainWindow::on_cap_btnShowTendance_clicked()
         return;
     }
 
+    m_previousCapturePage = ui->stackedWidget->currentWidget();
+
     QWidget *tendancePage = ui->stackedWidget->findChild<QWidget*>(QStringLiteral("cap_pagecaptures_tendance"));
     if (!tendancePage) {
         return;
@@ -4456,23 +6284,432 @@ void MainWindow::on_cap_btnShowTendance_clicked()
 
     ui->stackedWidget->setCurrentWidget(tendancePage);
 
+    // Style global de la page
+    tendancePage->setStyleSheet(QStringLiteral(
+        "QWidget#cap_pagecaptures_tendance { background-color: rgb(235, 242, 255); }"
+        "QLabel { background: transparent; color: rgb(0, 0, 115); font-family: 'Segoe UI'; }"
+    ));
+
+    if (ui->cap_lblTitle_3) {
+        ui->cap_lblTitle_3->setText(QStringLiteral("TENDANCE SAISONIERE"));
+        ui->cap_lblTitle_3->setAlignment(Qt::AlignCenter);
+        ui->cap_lblTitle_3->setStyleSheet(QStringLiteral(
+            "QLabel {"
+            "  color: rgb(20, 50, 180);"
+            "  font-size: 36px;"
+            "  font-weight: 500;"
+            "  letter-spacing: 3px;"
+            "  background: transparent;"
+            "}"));
+    }
+
+    if (ui->cap_frame_3) {
+        ui->cap_frame_3->setStyleSheet(QStringLiteral(
+            "QFrame#cap_frame_3 {"
+            "  background: transparent;"
+            "  border: none;"
+            "}"));
+    }
+
+    // Styles des filtres
+    const QString filterLabelStyle = QStringLiteral("color: rgb(0, 0, 115); font-weight: bold; font-size: 16px;");
+    const QString filterInputStyle = QStringLiteral(
+        "QWidget {"
+        "  background-color: white;"
+        "  border: 2px solid rgb(0, 0, 115);"
+        "  border-radius: 12px;"
+        "  padding: 2px 10px;"
+        "  color: rgb(0, 0, 115);"
+        "  font-weight: bold;"
+        "  font-size: 15px;"
+        "}");
+
+    if (ui->cap_label_30) ui->cap_label_30->setStyleSheet(filterLabelStyle);
+    if (ui->cap_label_28) ui->cap_label_28->setStyleSheet(filterLabelStyle);
+    if (ui->cap_label_29) ui->cap_label_29->setStyleSheet(filterLabelStyle);
+
+    if (ui->cap_comboBox_3) ui->cap_comboBox_3->setStyleSheet(filterInputStyle);
+    if (ui->cap_dateEdit) ui->cap_dateEdit->setStyleSheet(filterInputStyle);
+    if (ui->cap_dateEdit_2) ui->cap_dateEdit_2->setStyleSheet(filterInputStyle);
+
+    if (ui->cap_pushButton_4) {
+        ui->cap_pushButton_4->setStyleSheet(QStringLiteral(
+            "QPushButton {"
+            "  background-color: rgb(60, 70, 160);"
+            "  color: white;"
+            "  border-radius: 10px;"
+            "  font-weight: bold;"
+            "  font-size: 16px;"
+            "  padding: 5px 20px;"
+            "}"
+            "QPushButton:hover { background-color: rgb(40, 50, 130); }"));
+    }
+
+    // Frame "Stats Bateau"
+    if (ui->cap_groupStatsBateau) {
+        ui->cap_groupStatsBateau->setStyleSheet(QStringLiteral(
+            "QGroupBox {"
+            "  background-color: rgb(190, 215, 255);"
+            "  border: 2px solid rgb(0, 0, 115);"
+            "  border-radius: 15px;"
+            "  margin-top: 20px;"
+            "  font-weight: bold;"
+            "  font-size: 14px;"
+            "  color: rgb(0, 0, 115);"
+            "}"
+            "QGroupBox::title { subcontrol-origin: margin; left: 15px; padding: 0 5px; }"));
+    }
+
+    // Capsules de l'axe Y et X
+    const QString capsuleStyle = QStringLiteral(
+        "QLabel {"
+        "  background-color: white;"
+        "  border: 1.5px solid rgb(0, 0, 115);"
+        "  border-radius: 12px;"
+        "  padding: 2px 15px;"
+        "  font-weight: bold;"
+        "  color: rgb(0, 0, 115);"
+        "  font-size: 13px;"
+        "}");
+
+    const QStringList yNames = {
+        QStringLiteral("y100_5"), QStringLiteral("y100_4"), QStringLiteral("y100"),
+        QStringLiteral("y25_3"), QStringLiteral("y50"), QStringLiteral("y50_4"),
+        QStringLiteral("y25"), QStringLiteral("y25_2"), QStringLiteral("y0")
+    };
+    for (const QString& name : yNames) {
+        if (auto* label = tendancePage->findChild<QLabel*>(name)) {
+            label->setStyleSheet(capsuleStyle);
+            label->setMinimumWidth(380); // Largeur pour les capsules de gauche
+            label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        }
+    }
+
+    for (int i = 1; i <= 7; ++i) {
+        if (auto* label = tendancePage->findChild<QLabel*>(QStringLiteral("d%1").arg(i))) {
+            label->setStyleSheet(capsuleStyle);
+            label->setMinimumWidth(60);
+            label->setAlignment(Qt::AlignCenter);
+        }
+    }
+
+    // Footer Labels (Poids Totale, Quantité Totale)
+    const QString footerLabelStyle = QStringLiteral("color: rgb(0, 0, 115); font-weight: bold; font-size: 16px;");
+    if (ui->cap_label_32) ui->cap_label_32->setStyleSheet(footerLabelStyle);
+    if (ui->cap_label_33) ui->cap_label_33->setStyleSheet(footerLabelStyle);
+
+    const QString valueStyle = QStringLiteral(
+        "QLineEdit {"
+        "  border: none;"
+        "  border-bottom: 2px solid rgb(0, 0, 115);"
+        "  background: transparent;"
+        "  font-weight: bold;"
+        "  color: rgb(0, 0, 115);"
+        "  font-size: 18px;"
+        "  padding-bottom: 2px;"
+        "}");
+    if (ui->lineEdit_7c_13) ui->lineEdit_7c_13->setStyleSheet(valueStyle);
+    if (ui->lineEdit_7c_14) ui->lineEdit_7c_14->setStyleSheet(valueStyle);
+
+    if (ui->cap_btnBackToCapturesMainTendance) {
+        ui->cap_btnBackToCapturesMainTendance->setStyleSheet(QStringLiteral(
+            "QPushButton {"
+            "  background-color: rgb(125, 75, 75);"
+            "  color: white;"
+            "  border-radius: 10px;"
+            "  font-weight: bold;"
+            "  font-size: 16px;"
+            "  padding: 5px 25px;"
+            "}"
+            "QPushButton:hover { background-color: rgb(100, 50, 50); }"));
+    }
+
+    // Masquer les éléments inutiles
+    if (auto* idBoatLabel = tendancePage->findChild<QLabel*>(QStringLiteral("cap_label_58"))) idBoatLabel->hide();
+    if (auto* idBoatInput = tendancePage->findChild<QLineEdit*>(QStringLiteral("lineEdit_7c_3"))) idBoatInput->hide();
+    if (auto* idBoatLabel2 = tendancePage->findChild<QLabel*>(QStringLiteral("cap_label_idBateau"))) idBoatLabel2->hide();
+    if (auto* idBoatValue = tendancePage->findChild<QLineEdit*>(QStringLiteral("lineEdit_7c_12"))) idBoatValue->hide();
+
+    // Initialisation des noms de mois
+    const QDate endDate = (ui->cap_dateEdit_2 && ui->cap_dateEdit_2->date().isValid())
+        ? ui->cap_dateEdit_2->date()
+        : QDate::currentDate();
+    
+    auto monthShortFr = [](int month) -> QString {
+        static const QStringList names = {
+            QStringLiteral("Jan"), QStringLiteral("Fev"), QStringLiteral("Mar"), QStringLiteral("Avr"),
+            QStringLiteral("Mai"), QStringLiteral("Juin"), QStringLiteral("Juil"), QStringLiteral("Aou"),
+            QStringLiteral("Sep"), QStringLiteral("Oct"), QStringLiteral("Nov"), QStringLiteral("Dec")
+        };
+        return (month >= 1 && month <= 12) ? names.at(month - 1) : QString();
+    };
+
+    const QDate endMonth(endDate.year(), endDate.month(), 1);
+    for (int i = 0; i < 7; ++i) {
+        const QDate monthDate = endMonth.addMonths(-(6 - i));
+        if (auto* label = tendancePage->findChild<QLabel*>(QStringLiteral("d%1").arg(i + 1))) {
+            label->setText(monthShortFr(monthDate.month()));
+        }
+    }
+
     if (auto *fallback = tendancePage->findChild<QPushButton*>(QStringLiteral("cap_btnBackToCapturesMainTendance"))) {
         fallback->setFocus(Qt::FocusReason::OtherFocusReason);
     }
 }
 
+
+
+
+void MainWindow::on_cap_pushButton_4_clicked()
+{
+    if (!ui || !ui->stackedWidget) {
+        return;
+    }
+
+    QWidget* tendancePage = ui->stackedWidget->findChild<QWidget*>(QStringLiteral("cap_pagecaptures_tendance"));
+    if (!tendancePage) {
+        return;
+    }
+
+    const QString speciesRaw = ui->cap_comboBox_3 ? ui->cap_comboBox_3->currentText().trimmed() : QString();
+    const QString species = (speciesRaw.compare(QStringLiteral("Tous"), Qt::CaseInsensitive) == 0) ? QString() : speciesRaw;
+
+    QDate dateDebut = ui->cap_dateEdit ? ui->cap_dateEdit->date() : QDate();
+    QDate dateFin = ui->cap_dateEdit_2 ? ui->cap_dateEdit_2->date() : QDate();
+    if (!dateFin.isValid()) dateFin = QDate::currentDate();
+    if (!dateDebut.isValid()) dateDebut = QDate(dateFin.year(), dateFin.month(), 1).addMonths(-6);
+    if (dateDebut > dateFin) std::swap(dateDebut, dateFin);
+
+    Connection* conn = Connection::getInstance();
+    if (!conn || !conn->ensureOpen()) {
+        QMessageBox::warning(this, QStringLiteral("Saisonnalite"), QStringLiteral("Connexion a la base indisponible."));
+        return;
+    }
+    QSqlDatabase db = conn->getDatabase();
+
+    const QString tableName = resolveTableName(db, {
+        QStringLiteral("CAPTURES"),
+        QStringLiteral("CAPTURE"),
+        QStringLiteral("T_CAPTURES"),
+        QStringLiteral("T_CAPTURE")
+    });
+    if (tableName.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("Saisonnalite"), QStringLiteral("Table CAPTURES introuvable dans la base."));
+        return;
+    }
+
+    const QStringList cols = getColumnNames(db, tableName);
+    const QString typeCol = matchColumnBySynonyms(cols, {
+        QStringLiteral("type_poisson"), QStringLiteral("typepoisson"), QStringLiteral("poisson"), QStringLiteral("espece")
+    });
+    const QString quantiteCol = matchColumnBySynonyms(cols, {
+        QStringLiteral("quantite"), QStringLiteral("qte")
+    });
+    const QString poidsCol = matchColumnBySynonyms(cols, {
+        QStringLiteral("poids"), QStringLiteral("poids_kg")
+    });
+    const QString dateCol = matchColumnBySynonyms(cols, {
+        QStringLiteral("date_capture"), QStringLiteral("datecapture"), QStringLiteral("date")
+    });
+
+    if (typeCol.isEmpty() || quantiteCol.isEmpty() || poidsCol.isEmpty() || dateCol.isEmpty()) {
+        QMessageBox::warning(this,
+                             QStringLiteral("Saisonnalite"),
+                             QStringLiteral("Colonnes CAPTURES manquantes (TYPE/QUANTITE/POIDS/DATE)."));
+        return;
+    }
+
+    const QDate endMonth(dateFin.year(), dateFin.month(), 1);
+    QList<int> monthKeys;
+    monthKeys.reserve(7);
+    for (int i = 6; i >= 0; --i) {
+        const QDate monthDate = endMonth.addMonths(-i);
+        monthKeys << (monthDate.year() * 12 + monthDate.month());
+    }
+
+    double totalPoids = 0.0;
+    int totalQuantite = 0;
+    {
+        QStringList where;
+        where << QStringLiteral("TRUNC(%1) >= TO_DATE(?, 'YYYY-MM-DD')").arg(dateCol);
+        where << QStringLiteral("TRUNC(%1) <= TO_DATE(?, 'YYYY-MM-DD')").arg(dateCol);
+        if (!species.isEmpty()) {
+            where << QStringLiteral("UPPER(%1) = ?").arg(typeCol);
+        }
+
+        const QString sql = QStringLiteral("SELECT SUM(%1), SUM(%2) FROM %3 WHERE %4")
+            .arg(poidsCol, quantiteCol, tableName, where.join(QStringLiteral(" AND ")));
+        QSqlQuery query(db);
+        query.prepare(sql);
+        query.addBindValue(dateDebut.toString(QStringLiteral("yyyy-MM-dd")));
+        query.addBindValue(dateFin.toString(QStringLiteral("yyyy-MM-dd")));
+        if (!species.isEmpty()) {
+            query.addBindValue(species.toUpper());
+        }
+
+        if (query.exec() && query.next()) {
+            totalPoids = query.value(0).toDouble();
+            totalQuantite = query.value(1).toInt();
+        }
+    }
+
+    QHash<int, double> poidsByMonth;
+    QHash<int, int> qtyByMonth;
+    {
+        QStringList where;
+        where << QStringLiteral("TRUNC(%1) >= TO_DATE(?, 'YYYY-MM-DD')").arg(dateCol);
+        where << QStringLiteral("TRUNC(%1) <= TO_DATE(?, 'YYYY-MM-DD')").arg(dateCol);
+        if (!species.isEmpty()) {
+            where << QStringLiteral("UPPER(%1) = ?").arg(typeCol);
+        }
+
+        const QString sql = QStringLiteral(
+            "SELECT TRUNC(%1, 'MM') AS M, SUM(%2) AS P, SUM(%3) AS Q "
+            "FROM %4 WHERE %5 GROUP BY TRUNC(%1, 'MM') ORDER BY M")
+            .arg(dateCol, poidsCol, quantiteCol, tableName, where.join(QStringLiteral(" AND ")));
+
+        QSqlQuery query(db);
+        query.prepare(sql);
+        query.addBindValue(dateDebut.toString(QStringLiteral("yyyy-MM-dd")));
+        query.addBindValue(dateFin.toString(QStringLiteral("yyyy-MM-dd")));
+        if (!species.isEmpty()) {
+            query.addBindValue(species.toUpper());
+        }
+
+        if (query.exec()) {
+            while (query.next()) {
+                const QDate monthDate = query.value(0).toDate();
+                if (!monthDate.isValid()) {
+                    continue;
+                }
+                const int key = (monthDate.year() * 12 + monthDate.month());
+                poidsByMonth.insert(key, query.value(1).toDouble());
+                qtyByMonth.insert(key, query.value(2).toInt());
+            }
+        }
+    }
+
+    if (ui->lineEdit_7c_13) {
+        ui->lineEdit_7c_13->setText(QString::number(totalPoids, 'f', 2));
+    }
+    if (ui->lineEdit_7c_14) {
+        ui->lineEdit_7c_14->setText(QString::number(totalQuantite));
+    }
+
+    double maxMonthly = 0.0;
+    for (int i = 0; i < monthKeys.size(); ++i) {
+        maxMonthly = qMax(maxMonthly, poidsByMonth.value(monthKeys.at(i), 0.0));
+    }
+    if (maxMonthly <= 0.0) {
+        maxMonthly = 1.0;
+    }
+
+    const QStringList yNames = {
+        QStringLiteral("y100_5"), QStringLiteral("y100_4"), QStringLiteral("y100"),
+        QStringLiteral("y25_3"), QStringLiteral("y50"), QStringLiteral("y50_4"),
+        QStringLiteral("y25"), QStringLiteral("y25_2"), QStringLiteral("y0")
+    };
+    const double step = (yNames.size() > 1) ? (maxMonthly / static_cast<double>(yNames.size() - 1)) : maxMonthly;
+    for (int i = 0; i < yNames.size(); ++i) {
+        const double value = maxMonthly - (i * step);
+        if (auto* label = tendancePage->findChild<QLabel*>(yNames.at(i))) {
+            label->setText(QStringLiteral("%1 KG").arg(QString::number(qMax(0.0, value), 'f', 0)));
+        }
+    }
+
+    auto extractColor = [](const QString& styleSheet) -> QString {
+        static QRegularExpression rx(QStringLiteral("color\\s*:\\s*([^;]+);"), QRegularExpression::CaseInsensitiveOption);
+        const QRegularExpressionMatch match = rx.match(styleSheet);
+        return match.hasMatch() ? match.captured(1).trimmed() : QStringLiteral("#4fc3f7");
+    };
+
+    const QStringList monthColors = {
+        QStringLiteral("#4fc3f7"), // Cyan
+        QStringLiteral("#66bb6a"), // Green
+        QStringLiteral("#ffa726"), // Orange
+        QStringLiteral("#4fc3f7"), // Cyan
+        QStringLiteral("#ab47bc"), // Purple
+        QStringLiteral("#4fc3f7"), // Cyan
+        QStringLiteral("#7e57c2")  // Indigo
+    };
+
+    for (int i = 0; i < 7; ++i) {
+        const int key = monthKeys.value(i);
+        const double poids = poidsByMonth.value(key, 0.0);
+        const int quantite = qtyByMonth.value(key, 0);
+        const QString color = monthColors.value(i, QStringLiteral("#4fc3f7"));
+        
+        // Month labels (d1..d7)
+        if (auto* labelX = tendancePage->findChild<QLabel*>(QStringLiteral("d%1").arg(i + 1))) {
+            labelX->setStyleSheet(QStringLiteral(
+                "QLabel {"
+                "  background-color: white;"
+                "  border: 1.5px solid rgb(0, 0, 115);"
+                "  border-radius: 12px;"
+                "  padding: 2px 10px;"
+                "  font-weight: bold;"
+                "  color: rgb(0, 0, 115);"
+                "  font-size: 13px;"
+                "}"));
+        }
+
+        // Chart bars (p1..p7)
+        if (auto* point = tendancePage->findChild<QLabel*>(QStringLiteral("p%1").arg(i + 1))) {
+            const double ratio = qBound(0.0, poids / maxMonthly, 1.0);
+            const int maxBlocks = 12;
+            const int barBlocks = static_cast<int>(ratio * maxBlocks + 0.5);
+            
+            QStringList blocks;
+            // Always add a colored indicator block at the very bottom
+            blocks << QStringLiteral("<span style='color:%1; font-size:24px;'>■</span>").arg(color);
+            
+            // Add segments for the value
+            for (int j = 0; j < barBlocks; ++j) {
+                // The segments are purple-ish in the tall bar of the image
+                blocks.prepend(QStringLiteral("<span style='color:#7e57c2; font-size:24px;'>■</span>"));
+            }
+            
+            point->setText(blocks.join(QStringLiteral("<br>")));
+            point->setAlignment(Qt::AlignHCenter | Qt::AlignBottom);
+            point->setToolTip(QStringLiteral("Poids: %1 kg\nQuantite: %2")
+                              .arg(QString::number(poids, 'f', 2), QString::number(quantite)));
+            
+            point->setStyleSheet(QStringLiteral("background: transparent; border: none;"));
+        }
+    }
+}
+
+
+
+
 void MainWindow::on_cap_btnBackToCapturesMainSurpeche_clicked()
 {
-    if (ui && ui->stackedWidget && ui->cap_pagecaptures) {
+    if (!ui || !ui->stackedWidget) {
+        return;
+    }
+
+    if (m_previousCapturePage && ui->stackedWidget->indexOf(m_previousCapturePage) != -1) {
+        ui->stackedWidget->setCurrentWidget(m_previousCapturePage);
+    } else if (ui->cap_pagecaptures) {
         ui->stackedWidget->setCurrentWidget(ui->cap_pagecaptures);
     }
+
+    m_previousCapturePage = nullptr;
 }
 
 void MainWindow::on_cap_btnBackToCapturesMainTendance_clicked()
 {
-    if (ui && ui->stackedWidget && ui->cap_pagecaptures) {
+    if (!ui || !ui->stackedWidget) {
+        return;
+    }
+
+    if (m_previousCapturePage && ui->stackedWidget->indexOf(m_previousCapturePage) != -1) {
+        ui->stackedWidget->setCurrentWidget(m_previousCapturePage);
+    } else if (ui->cap_pagecaptures) {
         ui->stackedWidget->setCurrentWidget(ui->cap_pagecaptures);
     }
+
+    m_previousCapturePage = nullptr;
 }
 
 void MainWindow::on_p1b_clicked()
@@ -4482,23 +6719,23 @@ void MainWindow::on_p1b_clicked()
         ui->stackedWidget->setCurrentWidget(ui->gestionbateaub);
         if (ui->tableWidgetb) ui->tableWidgetb->setVisible(true);
     }
-    // Rafra├«chir la table ├á chaque ouverture
+    // Rafraâ”œÂ«chir la table â”œÃ¡ chaque ouverture
     loadBateaux();
 }
 
 void MainWindow::on_p2b_clicked()
 {
-    // Depuis le menu GBateau : ouvrir la gestion des p├¬cheurs
+    // Depuis le menu GBateau : ouvrir la gestion des pâ”œÂ¬cheurs
     if (ui->stackedWidget && ui->pagepecheur) {
         ui->stackedWidget->setCurrentWidget(ui->pagepecheur);
     }
 
-    // Par d├⌐faut, garder FaceID masqu├⌐ ├á l'entr├⌐e de la page
+    // Par dâ”œâŒfaut, garder FaceID masquâ”œâŒ â”œÃ¡ l'entrâ”œâŒe de la page
     if (ui && ui->framefaceidp) {
         ui->framefaceidp->hide();
     }
 
-    // R├⌐afficher les widgets principaux (au cas o├╣ on revient depuis FaceID)
+    // Râ”œâŒafficher les widgets principaux (au cas oâ”œâ•£ on revient depuis FaceID)
     if (ui) {
         if (ui->tableWidgetp) ui->tableWidgetp->setVisible(true);
         if (ui->label_3p) ui->label_3p->setVisible(true);
@@ -4519,7 +6756,7 @@ void MainWindow::on_p2b_clicked()
 
 void MainWindow::on_p3b_clicked()
 {
-    // Depuis le menu GBateau : ouvrir la gestion des clients (int├⌐gr├⌐e dans mainwindow.ui)
+    // Depuis le menu GBateau : ouvrir la gestion des clients (intâ”œâŒgrâ”œâŒe dans mainwindow.ui)
     if (ui && ui->stackedWidget && ui->pageclients) {
         ui->stackedWidget->setCurrentWidget(ui->pageclients);
 
@@ -4565,7 +6802,7 @@ void MainWindow::on_pushButton_8c_3_clicked()
 }
 void MainWindow::on_pushButton_8c_4_clicked()
 {
-    // Aller à la page Top 5 Clients (page_7)
+    // Aller Ã  la page Top 5 Clients (page_7)
     if (ui && ui->stackedWidget && ui->page_7) {
         ui->stackedWidget->setCurrentWidget(ui->page_7);
         refreshTopClientsStats();
@@ -4581,7 +6818,7 @@ void MainWindow::on_btnTelegramRemise_clicked()
 {
     Connection *conn = Connection::getInstance();
     if (!conn || !conn->ensureOpen()) {
-        QMessageBox::critical(this, QStringLiteral("Telegram"), QStringLiteral("Échec de connexion à la base de données."));
+        QMessageBox::critical(this, QStringLiteral("Telegram"), QStringLiteral("Ã‰chec de connexion Ã  la base de donnÃ©es."));
         return;
     }
     QSqlDatabase db = conn->getDatabase();
@@ -4600,13 +6837,13 @@ void MainWindow::on_btnTelegramRemise_clicked()
     const QString profCol = resolve({QStringLiteral("PROFIL_CLIENT"), QStringLiteral("PROFIL")});
     const QString dateCol = resolve({QStringLiteral("DATE_INSCRIPTION"), QStringLiteral("DATE")});
 
-    // Query: Top 2 clients fidèles les plus anciens
+    // Query: Top 2 clients fidÃ¨les les plus anciens
     QString sql = QStringLiteral("SELECT %1, %2, %3 FROM %4 WHERE UPPER(%5) LIKE 'FIDELE%' ORDER BY %3 ASC")
                   .arg(nomCol, preCol, dateCol, tableName, profCol);
 
     QSqlQuery query(db);
     if (!query.exec(sql)) {
-        QMessageBox::warning(this, QStringLiteral("Telegram"), QStringLiteral("Erreur SQL lors de la récupération des clients."));
+        QMessageBox::warning(this, QStringLiteral("Telegram"), QStringLiteral("Erreur SQL lors de la rÃ©cupÃ©ration des clients."));
         return;
     }
 
@@ -4617,18 +6854,18 @@ void MainWindow::on_btnTelegramRemise_clicked()
         QString prenom = query.value(1).toString();
         QString dateStr = query.value(2).toDate().toString(QStringLiteral("dd/MM/yyyy"));
         
-        QString msg = QStringLiteral("Bonjour %1 %2, vous avez une remise de 50% car vous êtes une cliente fidèle depuis le %3.")
+        QString msg = QStringLiteral("Bonjour %1 %2, vous avez une remise de 50% car vous Ãªtes une cliente fidÃ¨le depuis le %3.")
                       .arg(nom, prenom, dateStr);
         messages << msg;
         count++;
     }
 
     if (messages.isEmpty()) {
-        QMessageBox::information(this, QStringLiteral("Telegram"), QStringLiteral("Aucun client fidèle trouvé pour l'envoi."));
+        QMessageBox::information(this, QStringLiteral("Telegram"), QStringLiteral("Aucun client fidÃ¨le trouvÃ© pour l'envoi."));
         return;
     }
 
-    // Paramètres Telegram
+    // ParamÃ¨tres Telegram
     const QString botToken = QStringLiteral("8686167350:AAGePcTtzGEViaDxzhL87ZgG8VswSbqsPUw");
     QStringList chatIds;
     chatIds << QStringLiteral("6028362791") << QStringLiteral("8409556197");
@@ -4653,7 +6890,7 @@ void MainWindow::on_btnTelegramRemise_clicked()
     }
 
     QMessageBox::information(this, QStringLiteral("Telegram"), 
-                             QStringLiteral("Message de remise envoyé avec succès aux %1 premiers clients fidèles !").arg(count));
+                             QStringLiteral("Message de remise envoyÃ© avec succÃ¨s aux %1 premiers clients fidÃ¨les !").arg(count));
 }
 
 void MainWindow::on_btnSend_4_clicked()
@@ -4671,14 +6908,14 @@ void MainWindow::on_btnSend_4_clicked()
 
     Connection *conn = Connection::getInstance();
     if (!conn->ensureOpen()) {
-        response = QStringLiteral("Désolé, je ne peux pas accéder à la base de données pour le moment.");
+        response = QStringLiteral("DÃ©solÃ©, je ne peux pas accÃ©der Ã  la base de donnÃ©es pour le moment.");
     } else {
         QSqlDatabase db = conn->getDatabase();
 
         const QString captureTable = resolveTableName(db, {QStringLiteral("CAPTURES"), QStringLiteral("CAPTURE"), QStringLiteral("T_CAPTURES")});
         const QString quotaTable = resolveTableName(db, {QStringLiteral("QUOTAS"), QStringLiteral("QUOTA"), QStringLiteral("T_QUOTAS")});
 
-        // Détection de l'espèce de poisson dans la question (prioritaire)
+        // DÃ©tection de l'espÃ¨ce de poisson dans la question (prioritaire)
         QString foundSpecies;
         QStringList allAvailable;
         if (!captureTable.isEmpty()) {
@@ -4696,7 +6933,7 @@ void MainWindow::on_btnSend_4_clicked()
         }
 
         if (!foundSpecies.isEmpty()) {
-            // Détails pour une espèce spécifique (ID Bateau, ID Capture, Date, etc.)
+            // DÃ©tails pour une espÃ¨ce spÃ©cifique (ID Bateau, ID Capture, Date, etc.)
             const QStringList cols = getColumnNames(db, captureTable);
             const QString typeCol = matchColumnBySynonyms(cols, {QStringLiteral("TYPE_POISSON"), QStringLiteral("ESPECE"), QStringLiteral("TYPE")});
             const QString qteCol = matchColumnBySynonyms(cols, {QStringLiteral("QUANTITE"), QStringLiteral("QTE")});
@@ -4711,11 +6948,11 @@ void MainWindow::on_btnSend_4_clicked()
             query.prepare(sql);
             query.addBindValue(foundSpecies);
             if (query.exec() && query.next()) {
-                response = QStringLiteral("Détails de la dernière capture de <b>%1</b> :<br>"
+                response = QStringLiteral("DÃ©tails de la derniÃ¨re capture de <b>%1</b> :<br>"
                                           "- ID Capture : <b>%2</b><br>"
                                           "- ID Bateau : <b>%3</b><br>"
                                           "- Date : <b>%4</b><br>"
-                                          "- Quantité : <b>%5</b><br>"
+                                          "- QuantitÃ© : <b>%5</b><br>"
                                           "- Poids : <b>%6 kg</b>")
                            .arg(foundSpecies)
                            .arg(query.value(0).toString())
@@ -4724,10 +6961,10 @@ void MainWindow::on_btnSend_4_clicked()
                            .arg(query.value(3).toString())
                            .arg(query.value(4).toString());
             } else {
-                response = QStringLiteral("Je n'ai pas trouvé de détails récents pour l'espèce %1.").arg(foundSpecies);
+                response = QStringLiteral("Je n'ai pas trouvÃ© de dÃ©tails rÃ©cents pour l'espÃ¨ce %1.").arg(foundSpecies);
             }
         } else if (lowerQuestion.contains(QStringLiteral("capture")) || lowerQuestion.contains(QStringLiteral("espece")) || lowerQuestion.contains(QStringLiteral("poisson")) || lowerQuestion.contains(QStringLiteral("bateau")) || lowerQuestion.contains(QStringLiteral("date"))) {
-            // Informations générales sur les captures
+            // Informations gÃ©nÃ©rales sur les captures
             if (captureTable.isEmpty()) {
                 response = QStringLiteral("La table des captures est introuvable.");
             } else {
@@ -4742,7 +6979,7 @@ void MainWindow::on_btnSend_4_clicked()
                     QSqlQuery query(db);
                     QString sql = QStringLiteral("SELECT %1, SUM(%2) as total_poids FROM %3 GROUP BY %1 ORDER BY total_poids DESC").arg(typeCol, poidsCol, captureTable);
                     if (query.exec(sql) && query.next()) {
-                        response = QStringLiteral("L'espèce ayant le poids total le plus élevé est <b>%1</b> avec un total de <b>%2 kg</b>.")
+                        response = QStringLiteral("L'espÃ¨ce ayant le poids total le plus Ã©levÃ© est <b>%1</b> avec un total de <b>%2 kg</b>.")
                                    .arg(query.value(0).toString())
                                    .arg(query.value(1).toString());
                     } else {
@@ -4752,42 +6989,42 @@ void MainWindow::on_btnSend_4_clicked()
                     QSqlQuery query(db);
                     QString sql = QStringLiteral("SELECT %1, SUM(%2) as total FROM %3 GROUP BY %1 ORDER BY total DESC").arg(typeCol, qteCol, captureTable);
                     if (query.exec(sql) && query.next()) {
-                        response = QStringLiteral("L'espèce la plus capturée est <b>%1</b> avec un total de <b>%2</b> unités.")
+                        response = QStringLiteral("L'espÃ¨ce la plus capturÃ©e est <b>%1</b> avec un total de <b>%2</b> unitÃ©s.")
                                    .arg(query.value(0).toString())
                                    .arg(query.value(1).toString());
                     } else {
                         response = QStringLiteral("Je n'ai pas pu calculer les statistiques de capture.");
                     }
                 } else if (lowerQuestion.contains(QStringLiteral("id bateau")) || lowerQuestion.contains(QStringLiteral("id capture")) || lowerQuestion.contains(QStringLiteral("date"))) {
-                    response = QStringLiteral("Pour vous donner l'ID du bateau ou la date, précisez l'espèce de poisson (ex: sardine, loup, etc.). Les espèces disponibles sont : <b>%1</b>.").arg(allAvailable.join(QStringLiteral(", ")));
+                    response = QStringLiteral("Pour vous donner l'ID du bateau ou la date, prÃ©cisez l'espÃ¨ce de poisson (ex: sardine, loup, etc.). Les espÃ¨ces disponibles sont : <b>%1</b>.").arg(allAvailable.join(QStringLiteral(", ")));
                 } else {
                     QSqlQuery query(db);
                     QString sql = QStringLiteral("SELECT COUNT(*), SUM(%1) FROM %2").arg(qteCol, captureTable);
                     if (query.exec(sql) && query.next()) {
-                        response = QStringLiteral("Il y a au total <b>%1</b> enregistrements de captures pour une quantité globale de <b>%2</b> poissons.")
+                        response = QStringLiteral("Il y a au total <b>%1</b> enregistrements de captures pour une quantitÃ© globale de <b>%2</b> poissons.")
                                    .arg(query.value(0).toString())
                                    .arg(query.value(1).toString());
                     } else {
-                        response = QStringLiteral("Je suis votre assistant AquaTech. Posez-moi des questions sur les captures, les espèces (ID, Bateau, Date) ou les quotas !");
+                        response = QStringLiteral("Je suis votre assistant AquaTech. Posez-moi des questions sur les captures, les espÃ¨ces (ID, Bateau, Date) ou les quotas !");
                     }
                 }
             }
         } else if (lowerQuestion.contains(QStringLiteral("quota"))) {
             // Informations sur les quotas
             if (quotaTable.isEmpty()) {
-                response = QStringLiteral("La table des quotas est introuvable. Cependant, je peux vous dire que les quotas sont essentiels pour la gestion durable de la pêche.");
+                response = QStringLiteral("La table des quotas est introuvable. Cependant, je peux vous dire que les quotas sont essentiels pour la gestion durable de la pÃªche.");
             } else {
                 QSqlQuery query(db);
                 if (query.exec(QStringLiteral("SELECT COUNT(*) FROM %1").arg(quotaTable)) && query.next()) {
-                    response = QStringLiteral("Il y a actuellement <b>%1</b> quotas définis dans le système pour réguler les captures.").arg(query.value(0).toString());
+                    response = QStringLiteral("Il y a actuellement <b>%1</b> quotas dÃ©finis dans le systÃ¨me pour rÃ©guler les captures.").arg(query.value(0).toString());
                 } else {
-                    response = QStringLiteral("Les quotas sont en place, mais je ne parviens pas à lire les détails pour le moment.");
+                    response = QStringLiteral("Les quotas sont en place, mais je ne parviens pas Ã  lire les dÃ©tails pour le moment.");
                 }
             }
         } else if (lowerQuestion.contains(QStringLiteral("client"))) {
-            response = QStringLiteral("Ici, vous pouvez voir le Top 5 de nos clients les plus fidèles. Ils sont classés par leur date d'inscription la plus ancienne.");
+            response = QStringLiteral("Ici, vous pouvez voir le Top 5 de nos clients les plus fidÃ¨les. Ils sont classÃ©s par leur date d'inscription la plus ancienne.");
         } else {
-            response = QStringLiteral("Je suis votre assistant AquaTech. Posez-moi des questions sur les captures (ex: ID bateau sardine), les espèces ou les quotas !");
+            response = QStringLiteral("Je suis votre assistant AquaTech. Posez-moi des questions sur les captures (ex: ID bateau sardine), les espÃ¨ces ou les quotas !");
         }
     }
 
@@ -4858,13 +7095,13 @@ void MainWindow::setupPecheurFaceCapture()
                 }
 
                 if (nowMs <= m_faceOpenStatusUntilMs) {
-                    setPecheurFaceStatus(ui, QStringLiteral("Caméra ouverte."));
+                    setPecheurFaceStatus(ui, QStringLiteral("CamÃ©ra ouverte."));
                 } else {
                     setPecheurFaceStatus(ui, pecheurFaceOpenStatusText());
                 }
             } else {
                 m_faceOpenStatusUntilMs = 0;
-                setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
+                setPecheurFaceStatus(ui, QStringLiteral("CamÃ©ra fermÃ©e."));
             }
 
             const QRect rect = pecheurFacePreviewRect(ui ? ui->frame_10p : nullptr);
@@ -4897,8 +7134,8 @@ void MainWindow::setupPecheurFaceCapture()
                 m_faceCapturePending = false;
                 m_faceCaptureRetryRemaining = 0;
                 m_pendingPecheurPhotoBytes.clear();
-                const QString msg = QStringLiteral("Caméra fermée. Ouvrez la caméra avant de capturer.");
-                setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
+                const QString msg = QStringLiteral("CamÃ©ra fermÃ©e. Ouvrez la camÃ©ra avant de capturer.");
+                setPecheurFaceStatus(ui, QStringLiteral("CamÃ©ra fermÃ©e."));
                 QMessageBox::warning(this, QStringLiteral("Capture"), msg);
                 return;
             }
@@ -4912,7 +7149,7 @@ void MainWindow::setupPecheurFaceCapture()
             image.save(&buffer, "JPG", 90);
             m_pendingPecheurPhotoBytes = encoded;
 
-            setPecheurFaceStatus(ui, QStringLiteral("✅ Visage détecté et centré.\nEnregistrement en cours..."));
+            setPecheurFaceStatus(ui, QStringLiteral("âœ… Visage dÃ©tectÃ© et centrÃ©.\nEnregistrement en cours..."));
 
             if (persistCapturedPecheurPhoto()) {
                 stopPecheurFaceCapture();
@@ -4920,13 +7157,13 @@ void MainWindow::setupPecheurFaceCapture()
                     ui->framefaceidp->hide();
                 }
                 setPecheurMainWidgetsVisible(ui, true);
-                setPecheurFaceStatus(ui, QStringLiteral("✅ Visage détecté.\nPhoto prête."));
-                QMessageBox::information(this, QStringLiteral("Visage"), QStringLiteral("Photo capturée. Cliquez sur Ajouter ou Modifier pour enregistrer le profil complet."));
+                setPecheurFaceStatus(ui, QStringLiteral("âœ… Visage dÃ©tectÃ©.\nPhoto prÃªte."));
+                QMessageBox::information(this, QStringLiteral("Visage"), QStringLiteral("Photo capturÃ©e. Cliquez sur Ajouter ou Modifier pour enregistrer le profil complet."));
             } else {
                 const QString err = Pecheurs::lastError().trimmed();
                 const QString msg = err.isEmpty()
-                                      ? QStringLiteral("Photo capturée mais enregistrement en base échoué.")
-                                      : QStringLiteral("Échec enregistrement: %1").arg(err);
+                                      ? QStringLiteral("Photo capturÃ©e mais enregistrement en base Ã©chouÃ©.")
+                                      : QStringLiteral("Ã‰chec enregistrement: %1").arg(err);
                 setPecheurFaceStatus(ui, msg);
                 QMessageBox::warning(this, QStringLiteral("Visage"), msg);
             }
@@ -4952,22 +7189,22 @@ void MainWindow::setupPecheurFaceCapture()
     if (!m_faceCamera) {
         const QCameraDevice device = QMediaDevices::defaultVideoInput();
         if (device.isNull()) {
-            QMessageBox::warning(this, QStringLiteral("Caméra"), QStringLiteral("Aucune caméra disponible."));
+            QMessageBox::warning(this, QStringLiteral("CamÃ©ra"), QStringLiteral("Aucune camÃ©ra disponible."));
             return;
         }
 
         m_faceCamera = new QCamera(device, this);
         connect(m_faceCamera, &QCamera::errorOccurred, this, [this](QCamera::Error, const QString& errorString) {
             m_faceHasRecentFrame = false;
-            const QString msg = QStringLiteral("Erreur caméra: %1").arg(errorString);
+            const QString msg = QStringLiteral("Erreur camÃ©ra: %1").arg(errorString);
             setPecheurFaceStatus(ui, msg);
-            QMessageBox::warning(this, QStringLiteral("Caméra"), msg);
+            QMessageBox::warning(this, QStringLiteral("CamÃ©ra"), msg);
         });
         connect(m_faceCamera, &QCamera::activeChanged, this, [this](bool active) {
             if (!active) {
                 m_faceHasRecentFrame = false;
                 m_faceOpenStatusUntilMs = 0;
-                setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
+                setPecheurFaceStatus(ui, QStringLiteral("CamÃ©ra fermÃ©e."));
             }
         });
 
@@ -4982,7 +7219,7 @@ void MainWindow::setupPecheurFaceCapture()
         m_facePreviewLabel->show();
     }
 
-    setPecheurFaceStatus(ui, QStringLiteral("Initialisation caméra..."));
+    setPecheurFaceStatus(ui, QStringLiteral("Initialisation camÃ©ra..."));
 
     if (!m_faceCamera->isActive()) {
         m_faceCamera->start();
@@ -4995,7 +7232,7 @@ void MainWindow::setupPecheurFaceCapture()
         if (m_faceCamera && m_faceCamera->isActive() && hasLiveFrame) {
             setPecheurFaceStatus(ui, pecheurFaceOpenStatusText());
         } else {
-            setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
+            setPecheurFaceStatus(ui, QStringLiteral("CamÃ©ra fermÃ©e."));
         }
     });
 }
@@ -5041,7 +7278,7 @@ void MainWindow::attemptPecheurFaceCapture()
         return;
     }
 
-    // Double vérification des champs obligatoires au moment de la capture réelle
+    // Double vÃ©rification des champs obligatoires au moment de la capture rÃ©elle
     const QString nom = ui->lineEdit_2p ? ui->lineEdit_2p->text().trimmed() : QString();
     const QString prenom = ui->lineEdit_3p ? ui->lineEdit_3p->text().trimmed() : QString();
     const QString role = ui->comboBoxp ? ui->comboBoxp->currentText().trimmed() : QString();
@@ -5049,7 +7286,7 @@ void MainWindow::attemptPecheurFaceCapture()
     if (nom.isEmpty() || prenom.isEmpty() || role.isEmpty()) {
         m_faceCapturePending = false;
         m_faceCaptureRetryRemaining = 0;
-        setPecheurFaceStatus(ui, QStringLiteral("⚠️ Champs Nom/Prénom/Rôle requis."));
+        setPecheurFaceStatus(ui, QStringLiteral("âš ï¸ Champs Nom/PrÃ©nom/RÃ´le requis."));
         return;
     }
 
@@ -5062,14 +7299,14 @@ void MainWindow::attemptPecheurFaceCapture()
     if (!hasLiveFrame) {
         if (m_faceCaptureRetryRemaining > 0) {
             --m_faceCaptureRetryRemaining;
-            setPecheurFaceStatus(ui, QStringLiteral("Initialisation caméra..."));
+            setPecheurFaceStatus(ui, QStringLiteral("Initialisation camÃ©ra..."));
             QTimer::singleShot(250, this, [this]() { attemptPecheurFaceCapture(); });
             return;
         }
 
         m_faceCapturePending = false;
-        const QString msg = QStringLiteral("Caméra fermée. Ouvrez la caméra avant de capturer.");
-        setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
+        const QString msg = QStringLiteral("CamÃ©ra fermÃ©e. Ouvrez la camÃ©ra avant de capturer.");
+        setPecheurFaceStatus(ui, QStringLiteral("CamÃ©ra fermÃ©e."));
         QMessageBox::warning(this, QStringLiteral("Visage"), msg);
         return;
     }
@@ -5077,7 +7314,7 @@ void MainWindow::attemptPecheurFaceCapture()
     if (!m_faceImageCapture->isReadyForCapture()) {
         if (m_faceCaptureRetryRemaining > 0) {
             --m_faceCaptureRetryRemaining;
-            setPecheurFaceStatus(ui, QStringLiteral("Initialisation caméra..."));
+            setPecheurFaceStatus(ui, QStringLiteral("Initialisation camÃ©ra..."));
             QTimer::singleShot(250, this, [this]() { attemptPecheurFaceCapture(); });
             return;
         }
@@ -5098,7 +7335,7 @@ void MainWindow::attemptPecheurFaceCapture()
         }
 
         m_faceCapturePending = false;
-        const QString msg = QStringLiteral("Capture impossible. Vérifiez la caméra puis réessayez.");
+        const QString msg = QStringLiteral("Capture impossible. VÃ©rifiez la camÃ©ra puis rÃ©essayez.");
         setPecheurFaceStatus(ui, msg);
         QMessageBox::warning(this, QStringLiteral("Visage"), msg);
     }
@@ -5130,9 +7367,9 @@ bool MainWindow::persistCapturedPecheurPhoto()
         return false;
     }
 
-    // On ne fait plus d'enregistrement immédiat en base ici pour éviter les doublons
-    // et l'effacement accidentel de la photo lors d'un clic ultérieur sur "Modifier".
-    // La photo reste dans m_pendingPecheurPhotoBytes jusqu'à l'appui sur Ajouter/Modifier.
+    // On ne fait plus d'enregistrement immÃ©diat en base ici pour Ã©viter les doublons
+    // et l'effacement accidentel de la photo lors d'un clic ultÃ©rieur sur "Modifier".
+    // La photo reste dans m_pendingPecheurPhotoBytes jusqu'Ã  l'appui sur Ajouter/Modifier.
     
     return true;
 }
@@ -5148,11 +7385,11 @@ void MainWindow::on_btnFaceIDp_clicked()
 
     if (nom.isEmpty() || prenom.isEmpty() || role.isEmpty()) {
         QMessageBox::warning(this, QStringLiteral("Capture Photo"),
-                             QStringLiteral("Veuillez remplir le Nom, le Prénom et le Rôle du pêcheur avant de pouvoir enregistrer son visage."));
+                             QStringLiteral("Veuillez remplir le Nom, le PrÃ©nom et le RÃ´le du pÃªcheur avant de pouvoir enregistrer son visage."));
         return;
     }
 
-    // Afficher FaceID, préremplir les champs et lancer la caméra
+    // Afficher FaceID, prÃ©remplir les champs et lancer la camÃ©ra
     setPecheurMainWidgetsVisible(ui, false);
     syncPecheurFaceCaptureFields();
     setupPecheurFaceCapture();
@@ -5208,8 +7445,8 @@ void MainWindow::on_bmi_6p_clicked()
     if (!m_faceCamera->isActive()) {
         QMessageBox::warning(this,
                              QStringLiteral("Visage"),
-                             QStringLiteral("La caméra est fermée. Ouvrez la caméra puis positionnez un visage dans le cercle."));
-        setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
+                             QStringLiteral("La camÃ©ra est fermÃ©e. Ouvrez la camÃ©ra puis positionnez un visage dans le cercle."));
+        setPecheurFaceStatus(ui, QStringLiteral("CamÃ©ra fermÃ©e."));
         return;
     }
 
@@ -5218,20 +7455,20 @@ void MainWindow::on_bmi_6p_clicked()
     if (!hasLiveFrame) {
         QMessageBox::warning(this,
                              QStringLiteral("Visage"),
-                             QStringLiteral("Caméra fermée. Aucun flux vidéo détecté."));
-        setPecheurFaceStatus(ui, QStringLiteral("Caméra fermée."));
+                             QStringLiteral("CamÃ©ra fermÃ©e. Aucun flux vidÃ©o dÃ©tectÃ©."));
+        setPecheurFaceStatus(ui, QStringLiteral("CamÃ©ra fermÃ©e."));
         return;
     }
 
     m_faceCapturePending = true;
     m_faceCaptureRetryRemaining = 30;
-    setPecheurFaceStatus(ui, QStringLiteral("✅ Visage détecté et centré.\nValidation en cours..."));
+    setPecheurFaceStatus(ui, QStringLiteral("âœ… Visage dÃ©tectÃ© et centrÃ©.\nValidation en cours..."));
     attemptPecheurFaceCapture();
 }
 
 void MainWindow::on_pushButton_11p_clicked()
 {
-    // Annuler FaceID, r├⌐afficher les widgets principaux
+    // Annuler FaceID, râ”œâŒafficher les widgets principaux
     if (!ui) return;
     stopPecheurFaceCapture();
     if (ui->framefaceidp) ui->framefaceidp->setVisible(false);
@@ -5240,7 +7477,7 @@ void MainWindow::on_pushButton_11p_clicked()
 
 void MainWindow::on_pushButton_10p_clicked()
 {
-    // R\u00e9essayer FaceID / Déclencher capture
+    // R\u00e9essayer FaceID / DÃ©clencher capture
     if (!ui) return;
     if (ui->label_8p) ui->label_8p->setText(QStringLiteral("Capture en cours..."));
     
@@ -5295,7 +7532,7 @@ void MainWindow::legacy_pushButton_b_4b_clicked()
     if (!conn->ensureOpen()) {
         QMessageBox::critical(this,
                               QStringLiteral("Connexion"),
-                              QStringLiteral("Connexion DB ├⌐chou├⌐e: %1").arg(conn->lastErrorText()));
+                              QStringLiteral("Connexion DB â”œâŒchouâ”œâŒe: %1").arg(conn->lastErrorText()));
         return;
     }
 
@@ -5321,7 +7558,7 @@ void MainWindow::legacy_pushButton_b_4b_clicked()
         return;
     }
 
-    // Se souvenir de moi: sauvegarder (ou effacer) APR├êS une connexion r├⌐ussie
+    // Se souvenir de moi: sauvegarder (ou effacer) APRâ”œÃªS une connexion râ”œâŒussie
     const bool remember = ui->checkBoxb && ui->checkBoxb->isChecked();
     storeRememberedLogin(username, password, remember);
 
@@ -5336,7 +7573,7 @@ void MainWindow::legacy_pushButton_b_4b_clicked()
 
 void MainWindow::on_pushButton_20b_clicked()
 {
-    // Mot de passe oubli├⌐ ? -> page r├⌐cup├⌐ration (Rmdpb)
+    // Mot de passe oubliâ”œâŒ ? -> page râ”œâŒcupâ”œâŒration (Rmdpb)
     if (!ui || !ui->stackedWidget || !ui->Rmdpb) {
         return;
     }
@@ -5354,7 +7591,7 @@ void MainWindow::on_pushButton_20b_clicked()
 
 void MainWindow::on_pushButton_13b_clicked()
 {
-    // Envoyer (r├⌐cup├⌐ration): si Nom=admin et Email=klai.nourhene1@gmail.com
+    // Envoyer (râ”œâŒcupâ”œâŒration): si Nom=admin et Email=klai.nourhene1@gmail.com
     // on envoie un code a 6 chiffres et on ouvre la page de verification.
     if (!ui || !ui->stackedWidget || !ui->Remailb) {
         return;
@@ -5496,7 +7733,7 @@ void MainWindow::on_pushButton_16b_clicked()
         return;
     }
 
-    // Si l'utilisateur a activ├⌐ "se souvenir de moi", mettre ├á jour le mot de passe enregistr├⌐.
+    // Si l'utilisateur a activâ”œâŒ "se souvenir de moi", mettre â”œÃ¡ jour le mot de passe enregistrâ”œâŒ.
     {
         QSettings settings(QStringLiteral("AquaTech"), QStringLiteral("AquaTech"));
         const bool remember = settings.value(QStringLiteral("auth/rememberMe"), false).toBool();
@@ -5566,7 +7803,7 @@ void MainWindow::on_p1_2b_clicked()
 
 void MainWindow::on_pushButton_12b_clicked()
 {
-    // Bouton "Fermer" dans le panneau param├¿tres : fermer frame_10b
+    // Bouton "Fermer" dans le panneau paramâ”œÂ¿tres : fermer frame_10b
     if (ui && ui->frame_10b) {
         ui->frame_10b->hide();
     }
@@ -5574,7 +7811,7 @@ void MainWindow::on_pushButton_12b_clicked()
 
 void MainWindow::on_pushButton_9b_clicked()
 {
-    // D├⌐connexion : effacer les identifiants enregistr├⌐s et revenir ├á la page login
+    // Dâ”œâŒconnexion : effacer les identifiants enregistrâ”œâŒs et revenir â”œÃ¡ la page login
     storeRememberedLogin(QString(), QString(), false);
 
     if (ui && ui->stackedWidget && ui->loginb) {
@@ -5593,7 +7830,7 @@ void MainWindow::on_pushButton_9b_clicked()
 
 void MainWindow::on_pushButton_clicked()
 {
-    // Bouton "Γ¼à∩╕Å Retour Menu" sur la page gestion des quais : revenir au menu GBateau
+    // Bouton "Î“Â¼Ã âˆ©â••Ã… Retour Menu" sur la page gestion des quais : revenir au menu GBateau
     if (ui->stackedWidget && ui->gestionsb) {
         ui->stackedWidget->setCurrentWidget(ui->gestionsb);
     }
@@ -5601,7 +7838,7 @@ void MainWindow::on_pushButton_clicked()
 
 void MainWindow::on_pushButton_10e_clicked()
 {
-    // Bouton "Retour Menu" sur la page gestion des employ├⌐s : revenir au menu GBateau
+    // Bouton "Retour Menu" sur la page gestion des employâ”œâŒs : revenir au menu GBateau
     if (ui->stackedWidget && ui->gestionsb) {
         ui->stackedWidget->setCurrentWidget(ui->gestionsb);
     }
@@ -5617,7 +7854,7 @@ void MainWindow::legacy_pushButton_3b_clicked()
 
 void MainWindow::legacy_pushButton_7b_clicked()
 {
-    // Bouton "Param├¿tres des alertes" : afficher le panneau framealertb (lookup by name)
+    // Bouton "Paramâ”œÂ¿tres des alertes" : afficher le panneau framealertb (lookup by name)
     if (auto *frameAlert = this->findChild<QWidget*>(QStringLiteral("framealertb"))) {
         if (frameAlert->isVisible()) {
             frameAlert->hide();
@@ -6032,27 +8269,8 @@ void MainWindow::handleArduinoUid(const QString& uid)
     QString denyReason;
     const bool allowed = Employe::canAccessByRfid(cleanUid, &nomEmploye, &denyReason);
 
-    // Log the decision for debugging
-    {
-        QFile f(QStringLiteral("arduino_debug.log"));
-        if (f.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
-            const QString line = QDateTime::currentDateTime().toString(Qt::ISODate)
-                + QStringLiteral(" - handleArduinoUid: uid=") + cleanUid
-                + QStringLiteral(" allowed=") + (allowed ? QStringLiteral("true") : QStringLiteral("false"))
-                + QStringLiteral(" employe=") + nomEmploye
-                + QStringLiteral(" reason=") + denyReason
-                + QLatin1Char('\n');
-            f.write(line.toUtf8());
-            f.close();
-        }
-    }
-
     if (m_arduino && m_arduino->isConnected()) {
-        if (!m_arduino->sendAccessDecision(cleanUid, allowed) && statusBar()) {
-            statusBar()->showMessage(QStringLiteral("Envoi de la commande RFID vers l'Arduino a echoue."), 6000);
-        }
-    } else if (statusBar()) {
-        statusBar()->showMessage(QStringLiteral("Badge lu mais Arduino RFID non connecte."), 6000);
+        m_arduino->sendAccessDecision(cleanUid, allowed);
     }
 
     if (statusBar()) {
@@ -6297,52 +8515,32 @@ void MainWindow::setupArduinoTemperatureButton()
     if (!ui || !ui->cap_pagecaptures) return;
     if (m_capArduinoTempButton) return;
 
-    m_capArduinoTempButton = new QPushButton(QStringLiteral("Temperature normale"), ui->cap_pagecaptures);
+    m_capArduinoTempButton = new QPushButton(QStringLiteral("Temperature indisponible"), ui->cap_pagecaptures);
     m_capArduinoTempButton->setObjectName(QStringLiteral("cap_btnArduinoTemp"));
 
     // Status-style button (green/yellow/red) driven by temperature.
     m_capArduinoTempButton->setStyleSheet(QStringLiteral(
         "QPushButton {"
-        "  background-color: #27ae60;"
-        "  border: 2px solid #229954;"
-        "  border-radius: 8px;"
+        "  background-color: rgb(140, 152, 182);"
+        "  border: 2px solid rgb(120, 130, 164);"
+        "  border-radius: 6px;"
         "  color: white;"
         "  font-weight: 700;"
-        "  padding: 8px 16px;"
+        "  font-size: 11px;" 
+        "  padding: 6px 10px;"
         "}"
     ));
 
-    const QRect ref = ui->cap_btnExporter ? ui->cap_btnExporter->geometry() : QRect(1360, 130, 151, 41);
-    const int w = qMax(190, ref.width() + 20);
-    const int h = ref.height();
-    const int x = 20;      // top-left
-    const int y = 20;
+    const int w = 225;
+    const int h = 40;
+    const int x = 4;
+    const int y = 10;
     m_capArduinoTempButton->setGeometry(x, y, w, h);
     m_capArduinoTempButton->show();
     m_capArduinoTempButton->raise();
 
-    if (m_hasArduinoTemperature) {
-        // Apply the last known status immediately.
-        const double t = m_lastArduinoTemperatureC;
-        if (t < 29.0) {
-            m_capArduinoTempButton->setText(QStringLiteral("Temperature normale"));
-            m_capArduinoTempButton->setStyleSheet(QStringLiteral(
-                "QPushButton { background-color: #27ae60; border: 2px solid #229954; border-radius: 8px; color: white; font-weight: 700; padding: 8px 16px; }"
-            ));
-        } else if (t <= 32.0) {
-            m_capArduinoTempButton->setText(QStringLiteral("Temp danger"));
-            m_capArduinoTempButton->setStyleSheet(QStringLiteral(
-                "QPushButton { background-color: #f39c12; border: 2px solid #d68910; border-radius: 8px; color: white; font-weight: 700; padding: 8px 16px; }"
-            ));
-        } else {
-            m_capArduinoTempButton->setText(QStringLiteral("Temp critique"));
-            m_capArduinoTempButton->setStyleSheet(QStringLiteral(
-                "QPushButton { background-color: #e74c3c; border: 2px solid #c0392b; border-radius: 8px; color: white; font-weight: 700; padding: 8px 16px; }"
-            ));
-        }
-    }
-
     connect(m_capArduinoTempButton, &QPushButton::clicked, this, &MainWindow::toggleCapturesArduinoTemperatureView);
+    updateCapturesTemperatureSummaryUi();
 }
 
 void MainWindow::toggleCapturesArduinoTemperatureView()
@@ -6570,7 +8768,7 @@ static bool tryParseTemperatureC(const QString& line, double* outC)
         return false;
     }
 
-    // Accept both decimal separators and optional units (e.g. "25.5", "25,5", "25.5 °C", "T=25.5").
+    // Accept both decimal separators and optional units (e.g. "25.5", "25,5", "25.5 Â°C", "T=25.5").
     t.replace(QLatin1Char(','), QLatin1Char('.'));
 
     static QRegularExpression rx(QStringLiteral("(-?\\d+(?:\\.\\d+)?)"));
@@ -6637,6 +8835,62 @@ QString MainWindow::tempStatusCss(double temperatureC)
         return QStringLiteral("background-color: #f39c12; border: 2px solid #d68910;") + common;
     }
     return QStringLiteral("background-color: #e74c3c; border: 2px solid #c0392b;") + common;
+}
+
+void MainWindow::updateCapturesTemperatureSummaryUi()
+{
+    QString summaryText = QStringLiteral("Capteur en attente");
+    QString detailText = QStringLiteral("Aucune temperature recue pour le moment.");
+    QString borderColor = QStringLiteral("rgb(120, 130, 164)");
+    QString textColor = QStringLiteral("rgb(70, 82, 112)");
+    QString buttonText = QStringLiteral("Temperature indisponible");
+    QString buttonStyle = QStringLiteral(
+        "QPushButton { background-color: rgb(140, 152, 182); border: 2px solid rgb(120, 130, 164); border-radius: 8px; color: white; font-weight: 700; padding: 8px 16px; }");
+
+    if (m_hasArduinoTemperature) {
+        const double t = m_lastArduinoTemperatureC;
+        summaryText = QString::number(t, 'f', 1) + QStringLiteral(" C");
+        detailText = QStringLiteral("Derniere mesure Arduino: ")
+                   + QString::number(t, 'f', 1)
+                   + QStringLiteral(" C");
+        buttonText = QString::number(t, 'f', 1)
+                   + QStringLiteral(" C  |  ")
+                   + tempStatusButtonText(t);
+        buttonStyle = tempStatusButtonCss(t);
+
+        if (t < m_arduinoTempDangerThreshold) {
+            borderColor = QStringLiteral("#27ae60");
+            textColor = borderColor;
+        } else if (t <= m_arduinoTempCritiqueThreshold) {
+            borderColor = QStringLiteral("#f39c12");
+            textColor = borderColor;
+        } else {
+            borderColor = QStringLiteral("#e74c3c");
+            textColor = borderColor;
+        }
+    } else if (m_arduinoTemp && !m_arduinoTemp->connectedPortName().trimmed().isEmpty()) {
+        detailText = QStringLiteral("Arduino connecte sur ") + m_arduinoTemp->connectedPortName().trimmed();
+        buttonText = QStringLiteral("Temperature en attente");
+    }
+
+    if (m_capArduinoTempButton) {
+        m_capArduinoTempButton->setText(buttonText);
+        m_capArduinoTempButton->setStyleSheet(buttonStyle);
+        m_capArduinoTempButton->setToolTip(detailText);
+    }
+
+    if (ui && ui->cap_lineEdit_8) {
+    ui->cap_lineEdit_8->setText(summaryText);
+    ui->cap_lineEdit_8->setStyleSheet(
+        QStringLiteral("QLineEdit { "
+                       "background-color: transparent; "  // ← transparent
+                       "border: none; "                   // ← pas de bordure
+                       "color: transparent; "             // ← texte invisible
+                       "selection-background-color: transparent; "
+                       "}")
+    );
+    ui->cap_lineEdit_8->setToolTip(detailText);
+}
 }
 
 void MainWindow::showArduinoTemperatureWindow()
@@ -6888,6 +9142,7 @@ void MainWindow::handleArduinoTemperatureLine(const QString& line)
     }
 
     updateArduinoTemperatureDialog(temperatureC);
+    updateCapturesTemperatureSummaryUi();
 
     // Live sync into the captures list.
     updateCapturesTableLiveTemperature(temperatureC);
@@ -7176,7 +9431,8 @@ int MainWindow::findAndReserveFreeQuai()
 
     QSqlQuery up(db);
     up.prepare(QStringLiteral("UPDATE QUAIS SET STATUT = :statut WHERE ID_QUAI = :id"));
-    up.bindValue(QStringLiteral(":statut"), QStringLiteral("Occupe"));
+    const QString nextStatut = m_quaisFermeMeteo ? QStringLiteral("Ferme") : QStringLiteral("Occupe");
+    up.bindValue(QStringLiteral(":statut"), nextStatut);
     up.bindValue(QStringLiteral(":id"), id);
     if (!up.exec()) {
         if (m_portConsole) {
@@ -7185,8 +9441,16 @@ int MainWindow::findAndReserveFreeQuai()
         return -1;
     }
 
+    if (m_quaisFermeMeteo) {
+        m_quaisAutoLocked.insert(id, QStringLiteral("Occupe"));
+    }
+
+    QSqlQuery commitQuery(db);
+    commitQuery.exec(QStringLiteral("COMMIT"));
+
     if (m_portConsole) {
-        m_portConsole->appendPlainText(QStringLiteral("[DB] Quai reserved: %1").arg(id));
+        m_portConsole->appendPlainText(
+            QStringLiteral("[DB] Quai reserved: %1 -> %2").arg(id).arg(nextStatut));
     }
     refreshQuaiTable();
     return id;
@@ -7206,7 +9470,8 @@ void MainWindow::markQuaiFree(int idQuai)
     const QSqlDatabase db = conn->getDatabase();
     QSqlQuery q(db);
     q.prepare(QStringLiteral("UPDATE QUAIS SET STATUT = :statut, ID_BATEAU = NULL WHERE ID_QUAI = :id"));
-    q.bindValue(QStringLiteral(":statut"), QStringLiteral("Libre"));
+    const QString nextStatut = QStringLiteral("Libre");
+    q.bindValue(QStringLiteral(":statut"), nextStatut);
     q.bindValue(QStringLiteral(":id"), idQuai);
     if (!q.exec()) {
         if (m_portConsole) {
@@ -7216,8 +9481,11 @@ void MainWindow::markQuaiFree(int idQuai)
         return;
     }
 
+    m_quaisAutoLocked.remove(idQuai);
+
     if (m_portConsole) {
-        m_portConsole->appendPlainText(QStringLiteral("[DB] Quai freed: %1").arg(idQuai));
+        m_portConsole->appendPlainText(
+            QStringLiteral("[DB] Quai freed: %1 -> %2").arg(idQuai).arg(nextStatut));
     }
     refreshQuaiTable();
 }
@@ -7274,6 +9542,7 @@ void MainWindow::updateArduinoTemperatureDialogConnectionState()
     if (!m_arduinoTempConnLabel) return;
     if (!m_arduinoTemp) {
         m_arduinoTempConnLabel->setText(QStringLiteral("Port temperature: disconnected"));
+        updateCapturesTemperatureSummaryUi();
         return;
     }
 
@@ -7283,6 +9552,7 @@ void MainWindow::updateArduinoTemperatureDialogConnectionState()
     } else {
         m_arduinoTempConnLabel->setText(QStringLiteral("Port temperature: %1 (connecte)").arg(port));
     }
+    updateCapturesTemperatureSummaryUi();
 }
 
 void MainWindow::updateArduinoTemperatureDialog(double temperatureC, bool appendHistory)
@@ -7554,10 +9824,10 @@ void MainWindow::updateEmployeePageRfidStatus()
     if (connected) {
         const QString portName = m_arduino->connectedPortName();
         rfidStatusLabel->setText(QStringLiteral("✓ Arduino: %1").arg(portName));
-        rfidStatusLabel->setStyleSheet(QStringLiteral("color: green; font-weight: bold;"));
+        rfidStatusLabel->setStyleSheet(QStringLiteral("color: #27ae60; font-weight: bold; font-size: 13px;"));
     } else {
         rfidStatusLabel->setText(QStringLiteral("⚠ Arduino: déconnecté"));
-        rfidStatusLabel->setStyleSheet(QStringLiteral("color: red; font-weight: bold;"));
+        rfidStatusLabel->setStyleSheet(QStringLiteral("color: #c0392b; font-weight: bold; font-size: 13px;"));
     }
 }
 
@@ -7601,13 +9871,13 @@ void MainWindow::on_pushButton_2c_clicked()
     values.insert(QStringLiteral("telephone"), ui->lineEdit_14c ? ui->lineEdit_14c->text().trimmed() : QString());
     values.insert(QStringLiteral("date"), ui->dateEdit_c ? ui->dateEdit_c->date() : QDate());
 
-    // Contrôles de saisie (Clients)
+    // ContrÃ´les de saisie (Clients)
     QString nom = values.value(QStringLiteral("nom")).toString().simplified();
     QString prenom = values.value(QStringLiteral("prenom")).toString().simplified();
     const QString telephone = values.value(QStringLiteral("telephone")).toString().trimmed();
     const QDate dateInscription = values.value(QStringLiteral("date")).toDate();
 
-    // Lettres uniquement (Unicode), avec séparateurs usuels: espace, tiret, apostrophe.
+    // Lettres uniquement (Unicode), avec sÃ©parateurs usuels: espace, tiret, apostrophe.
     static const QRegularExpression namePattern(
         QStringLiteral("^[\\p{L}\\p{M}]+(?:[\\s'-][\\p{L}\\p{M}]+)*$"),
         QRegularExpression::UseUnicodePropertiesOption);
@@ -7642,7 +9912,7 @@ void MainWindow::on_pushButton_2c_clicked()
         return;
     }
 
-    // Écrire les versions normalisées dans le payload
+    // Ã‰crire les versions normalisÃ©es dans le payload
     values.insert(QStringLiteral("nom"), nom);
     values.insert(QStringLiteral("prenom"), prenom);
     values.insert(QStringLiteral("telephone"), telephone);
@@ -7662,13 +9932,13 @@ void MainWindow::on_pushButton_2c_clicked()
     const QStringList dbCols = getColumnNames(db, tableName);
     const QString idCol = matchColumnBySynonyms(dbCols, syn.value(QStringLiteral("id")));
 
-    // Génération ID (265NNNN) en mode ajout
+    // GÃ©nÃ©ration ID (265NNNN) en mode ajout
     if (!isEditing && ui->lineEdit_3c && ui->lineEdit_3c->text().trimmed().isEmpty()) {
         QString genErr;
         const QString newId = generateNextNumericIdWithPrefix(db, tableName, idCol, 265, 4, &genErr);
         if (newId.isEmpty()) {
             QMessageBox::critical(this, QStringLiteral("Ajout client"),
-                                  QStringLiteral("Impossible de générer l'ID client (265NNNN): %1").arg(genErr));
+                                  QStringLiteral("Impossible de gÃ©nÃ©rer l'ID client (265NNNN): %1").arg(genErr));
             return;
         }
         ui->lineEdit_3c->setText(newId);
@@ -7677,7 +9947,7 @@ void MainWindow::on_pushButton_2c_clicked()
     QString err;
     if (isEditing) {
         const QString idWhere = m_editingClientId.isEmpty() ? values.value(QStringLiteral("id")).toString() : m_editingClientId;
-        // ID en lecture seule: ne pas mettre à jour la clé primaire.
+        // ID en lecture seule: ne pas mettre Ã  jour la clÃ© primaire.
         if (!updateRowByMapping(this, db, tableName, QStringLiteral("id"), idWhere, values, syn, false, &err)) {
             QMessageBox::critical(this, QStringLiteral("Modifier client"), QStringLiteral("Modification \u00E9chou\u00E9e: %1").arg(err));
             return;
@@ -7702,7 +9972,7 @@ void MainWindow::on_pushButton_2c_clicked()
     if (ui->comboBoxc) ui->comboBoxc->setCurrentIndex(0);
     if (ui->comboBox_2c) ui->comboBox_2c->setCurrentIndex(0);
 
-    // Préparer l'ID pour le prochain ajout
+    // PrÃ©parer l'ID pour le prochain ajout
     if (ui->lineEdit_3c && !idCol.isEmpty()) {
         QString genErr;
         const QString nextId = generateNextNumericIdWithPrefix(db, tableName, idCol, 265, 4, &genErr);
@@ -7729,7 +9999,7 @@ void MainWindow::on_pushButton_2c_clicked()
         return false;
     };
 
-    // Si la ligne n'appara├«t pas (filtres actifs), r├⌐initialiser les filtres puis rafra├«chir.
+    // Si la ligne n'apparaâ”œÂ«t pas (filtres actifs), râ”œâŒinitialiser les filtres puis rafraâ”œÂ«chir.
     if (!selectRowById(targetId)) {
         if (ui->lineEdit_7c) ui->lineEdit_7c->clear();
         if (ui->comboBoxc_2) {
@@ -7914,7 +10184,7 @@ void MainWindow::on_pushButton_5e_clicked()
         }
     }
 
-    static const QRegularExpression nomPattern(QStringLiteral("^[A-Za-z├Ç-├┐\\s'-]+$"));
+    static const QRegularExpression nomPattern(QStringLiteral("^[A-Za-zâ”œÃ‡-â”œâ”\\s'-]+$"));
     static const QRegularExpression telPattern(QStringLiteral("^\\d{8,15}$"));
 
     if (id <= 0) {
@@ -7923,8 +10193,8 @@ void MainWindow::on_pushButton_5e_clicked()
         return;
     }
 
-    // En mode ajout, forcer le schéma d'ID selon le rôle.
-    // En mode édition, l'ID peut être issu d'un ancien schéma: on n'empêche pas la modification des autres champs.
+    // En mode ajout, forcer le schÃ©ma d'ID selon le rÃ´le.
+    // En mode Ã©dition, l'ID peut Ãªtre issu d'un ancien schÃ©ma: on n'empÃªche pas la modification des autres champs.
     if (!editingEmploye) {
         const QString canonRole = canonicalEmployeRole(role);
         int prefix = 264;
@@ -7995,9 +10265,9 @@ void MainWindow::on_pushButton_5e_clicked()
     // Rafraichir la table et reinitialiser l'etat d'edition
     loadEmployes();
 
-    // Réinitialiser les champs spécifiques (CV, Raison)
+    // RÃ©initialiser les champs spÃ©cifiques (CV, Raison)
     m_currentCvPath.clear();
-    if (ui->pushButton_5e_2) ui->pushButton_5e_2->setText(QStringLiteral("📄 Upload CV"));
+    if (ui->pushButton_5e_2) ui->pushButton_5e_2->setText(QStringLiteral("ðŸ“„ Upload CV"));
     if (ui->lineEdit_raison_banni) ui->lineEdit_raison_banni->clear();
     if (ui->lineEdit_cv_path) ui->lineEdit_cv_path->clear();
 
@@ -8082,7 +10352,7 @@ void MainWindow::loadPecheurs()
     QString roleSelection = cleanFilterLabel(ui->comboBox_5p ? ui->comboBox_5p->currentText() : QString());
     QString dispoSelection = cleanFilterLabel(ui->comboBox_6p ? ui->comboBox_6p->currentText() : QString());
 
-    // Les valeurs par défaut de l'IHM ("Tous les rôles" / "Toutes les disponibilités")
+    // Les valeurs par dÃ©faut de l'IHM ("Tous les rÃ´les" / "Toutes les disponibilitÃ©s")
     // ne doivent pas filtrer la table.
     const QString roleKey = normalizeKey(roleSelection);
     if (roleKey.isEmpty() || roleKey == QStringLiteral("tous") || roleKey.startsWith(QStringLiteral("touslesrole"))) {
@@ -8135,7 +10405,7 @@ void MainWindow::loadPecheurs()
         const int heures = record.heures;
         const QString heureTexte = QStringLiteral(" %1:00").arg(qBound(0, heures, 23), 2, 10, QChar('0'));
         table->setItem(row, 7, new QTableWidgetItem(dIns.isValid() ? dIns.toString("dd/MM/yyyy") + heureTexte : QString()));
-        table->setItem(row, 8, new QTableWidgetItem(dAff.isValid() ? dAff.toString("dd/MM/yyyy") + heureTexte : QStringLiteral("Non affectée")));
+        table->setItem(row, 8, new QTableWidgetItem(dAff.isValid() ? dAff.toString("dd/MM/yyyy") + heureTexte : QStringLiteral("Non affectÃ©e")));
         table->setItem(row, 9, new QTableWidgetItem(QString::number(heures)));
         
         // Affichage de la photo dans la colonne 10 (from mainwindow1)
@@ -8439,7 +10709,7 @@ void MainWindow::loadPecheurFromTable()
         }
     }
     if (ui->dateTimeEdit_2) {
-        if (!dateAffStr.isEmpty() && dateAffStr != QStringLiteral("Non affectée")) {
+        if (!dateAffStr.isEmpty() && dateAffStr != QStringLiteral("Non affectÃ©e")) {
             QDateTime dtAff = QDateTime::fromString(dateAffStr, "dd/MM/yyyy HH:mm");
             if (!dtAff.isValid()) {
                 const QDate dAff = QDate::fromString(dateAffStr, "dd/MM/yyyy");
@@ -8692,7 +10962,8 @@ static QStringList buildQuaiReportInfoLines(Ui::MainWindow* ui,
         }
         const bool isDefaultSort =
             sortText.compare(QStringLiteral("Par defaut"), Qt::CaseInsensitive) == 0
-            || sortText.compare(QStringLiteral("Par défaut"), Qt::CaseInsensitive) == 0;
+            || sortText.compare(QStringLiteral("Par d\u00e9faut"), Qt::CaseInsensitive) == 0
+            || sortText.compare(QStringLiteral("Par d\u00e9faut"), Qt::CaseInsensitive) == 0;
         if (!sortText.isEmpty() && !isDefaultSort) {
             filterParts << QStringLiteral("Tri: %1").arg(sortText);
         }
@@ -8731,7 +11002,8 @@ static int countActiveQuaiFilters(Ui::MainWindow* ui)
 
     const bool isDefaultSort =
         sortText.compare(QStringLiteral("Par defaut"), Qt::CaseInsensitive) == 0
-        || sortText.compare(QStringLiteral("Par défaut"), Qt::CaseInsensitive) == 0;
+        || sortText.compare(QStringLiteral("Par d\u00e9faut"), Qt::CaseInsensitive) == 0
+        || sortText.compare(QStringLiteral("Par d\u00e9faut"), Qt::CaseInsensitive) == 0;
     if (!sortText.isEmpty() && !isDefaultSort) ++count;
 
     return count;
@@ -9164,7 +11436,7 @@ static void exportPecheursPdfReport(MainWindow* parent, Ui::MainWindow* ui)
 
     QPainter painter(&writer);
     if (!painter.isActive()) {
-        QMessageBox::critical(parent, QStringLiteral("Erreur"), QStringLiteral("Impossible de cr├⌐er le fichier PDF."));
+        QMessageBox::critical(parent, QStringLiteral("Erreur"), QStringLiteral("Impossible de crâ”œâŒer le fichier PDF."));
         return;
     }
 
@@ -9371,10 +11643,10 @@ void MainWindow::ajouterBateauFromForm()
     QDate   dateMaint   = ui->dateEdit_2->date();
     int     freqMaint   = ui->spinBox->value();
 
-    // ΓöÇΓöÇ Contr├┤les de saisie ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    // Î“Ã¶Ã‡Î“Ã¶Ã‡ Contrâ”œâ”¤les de saisie Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡
     QStringList erreurs;
 
-    // ID auto-généré (schéma: 261NNN) en mode ajout
+    // ID auto-gÃ©nÃ©rÃ© (schÃ©ma: 261NNN) en mode ajout
     if (currentEditingId.isEmpty()) {
         if (id.isEmpty()) {
             const QString generatedId = bateaauuu::genererNouvelId();
@@ -9384,13 +11656,13 @@ void MainWindow::ajouterBateauFromForm()
             }
         }
         if (id.isEmpty()) {
-            erreurs << "Impossible de générer l'ID du bateau (préfixe 261NNN).";
+            erreurs << "Impossible de gÃ©nÃ©rer l'ID du bateau (prÃ©fixe 261NNN).";
         } else {
             QSqlQuery checkId;
             checkId.prepare("SELECT COUNT(*) FROM BATEAUX WHERE ID_BATEAU = :id");
             checkId.bindValue(":id", id);
             if (checkId.exec() && checkId.next() && checkId.value(0).toInt() > 0) {
-                erreurs << "Cet ID existe déjà. Veuillez réessayer.";
+                erreurs << "Cet ID existe dÃ©jÃ . Veuillez rÃ©essayer.";
             }
         }
     }
@@ -9398,15 +11670,15 @@ void MainWindow::ajouterBateauFromForm()
     // Nom obligatoire et lettres/espaces uniquement
     if (nom.isEmpty()) {
         erreurs << "Le nom du bateau est obligatoire.";
-    } else if (!QRegularExpression("^[A-Za-z├Ç-├┐\\s\\-']+$").match(nom).hasMatch()) {
+    } else if (!QRegularExpression("^[A-Za-zâ”œÃ‡-â”œâ”\\s\\-']+$").match(nom).hasMatch()) {
         erreurs << "Le nom du bateau ne doit contenir que des lettres, espaces ou tirets.";
     }
 
-    // Propri├⌐taire obligatoire et lettres/espaces uniquement
+    // Propriâ”œâŒtaire obligatoire et lettres/espaces uniquement
     if (proprietaire.isEmpty()) {
-        erreurs << "Le propri├⌐taire est obligatoire.";
-    } else if (!QRegularExpression("^[A-Za-z├Ç-├┐\\s\\-']+$").match(proprietaire).hasMatch()) {
-        erreurs << "Le propri├⌐taire ne doit contenir que des lettres, espaces ou tirets.";
+        erreurs << "Le propriâ”œâŒtaire est obligatoire.";
+    } else if (!QRegularExpression("^[A-Za-zâ”œÃ‡-â”œâ”\\s\\-']+$").match(proprietaire).hasMatch()) {
+        erreurs << "Le propriâ”œâŒtaire ne doit contenir que des lettres, espaces ou tirets.";
     }
 
     // Type obligatoire
@@ -9421,42 +11693,42 @@ void MainWindow::ajouterBateauFromForm()
 
     // Largeur > 0
     if (largeur <= 0.0) {
-        erreurs << "La largeur doit ├¬tre sup├⌐rieure ├á 0.";
+        erreurs << "La largeur doit â”œÂ¬tre supâ”œâŒrieure â”œÃ¡ 0.";
     }
 
-    // Capacit├⌐ > 0
+    // Capacitâ”œâŒ > 0
     if (capacite <= 0) {
-        erreurs << "La capacit├⌐ doit ├¬tre sup├⌐rieure ├á 0.";
+        erreurs << "La capacitâ”œâŒ doit â”œÂ¬tre supâ”œâŒrieure â”œÃ¡ 0.";
     }
 
-    // Fr├⌐quence de maintenance > 0
+    // Frâ”œâŒquence de maintenance > 0
     if (freqMaint <= 0) {
-        erreurs << "La fr├⌐quence de maintenance doit ├¬tre sup├⌐rieure ├á 0.";
+        erreurs << "La frâ”œâŒquence de maintenance doit â”œÂ¬tre supâ”œâŒrieure â”œÃ¡ 0.";
     }
 
-    // Date d'entr├⌐e valide et pas dans le futur
+    // Date d'entrâ”œâŒe valide et pas dans le futur
     if (!dateEntree.isValid()) {
-        erreurs << "La date d'entr├⌐e n'est pas valide.";
+        erreurs << "La date d'entrâ”œâŒe n'est pas valide.";
     } else if (dateEntree > QDate::currentDate()) {
-        erreurs << "La date d'entr├⌐e ne peut pas ├¬tre dans le futur.";
+        erreurs << "La date d'entrâ”œâŒe ne peut pas â”œÂ¬tre dans le futur.";
     }
 
-    // Date de maintenance <= aujourd'hui si renseign├⌐e
+    // Date de maintenance <= aujourd'hui si renseignâ”œâŒe
     if (dateMaint.isValid() && dateMaint > QDate::currentDate()) {
-        erreurs << "La date de derni├¿re maintenance ne peut pas ├¬tre dans le futur.";
+        erreurs << "La date de derniâ”œÂ¿re maintenance ne peut pas â”œÂ¬tre dans le futur.";
     }
 
-    // Date de maintenance >= date d'entr├⌐e
+    // Date de maintenance >= date d'entrâ”œâŒe
     if (dateEntree.isValid() && dateMaint.isValid() && dateMaint < dateEntree) {
-        erreurs << "La date de maintenance ne peut pas ├¬tre ant├⌐rieure ├á la date d'entr├⌐e.";
+        erreurs << "La date de maintenance ne peut pas â”œÂ¬tre antâ”œâŒrieure â”œÃ¡ la date d'entrâ”œâŒe.";
     }
 
-    // Si erreurs, afficher la premi├¿re erreur et arr├¬ter
+    // Si erreurs, afficher la premiâ”œÂ¿re erreur et arrâ”œÂ¬ter
     if (!erreurs.isEmpty()) {
         QMessageBox::warning(this, "Erreur de saisie", erreurs.first());
         return;
     }
-    // ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    // Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡
 
     bateaauuu b;
     bool ok = false;
@@ -9466,19 +11738,19 @@ void MainWindow::ajouterBateauFromForm()
         ok = b.updateBateau(currentEditingId, nom, type, capacite, proprietaire,
                             statut, largeur, dateEntree, dateMaint, freqMaint);
         if (ok) {
-            QMessageBox::information(this, "Succ├¿s", "Bateau modifi├⌐ avec succ├¿s.");
+            QMessageBox::information(this, "Succâ”œÂ¿s", "Bateau modifiâ”œâŒ avec succâ”œÂ¿s.");
             currentEditingId.clear();
         } else {
-            QMessageBox::critical(this, "Erreur", "├ëchec de la modification:\n" + b.lastError());
+            QMessageBox::critical(this, "Erreur", "â”œÃ«chec de la modification:\n" + b.lastError());
         }
     } else {
         // Add new
         ok = b.addBateau(id, nom, type, capacite, proprietaire,
                          statut, largeur, dateEntree, dateMaint, freqMaint);
         if (ok) {
-            QMessageBox::information(this, "Succ├¿s", "Bateau ajout├⌐ avec succ├¿s.");
+            QMessageBox::information(this, "Succâ”œÂ¿s", "Bateau ajoutâ”œâŒ avec succâ”œÂ¿s.");
         } else {
-            QMessageBox::critical(this, "Erreur", "├ëchec de l'ajout:\n" + b.lastError());
+            QMessageBox::critical(this, "Erreur", "â”œÃ«chec de l'ajout:\n" + b.lastError());
         }
     }
 
@@ -9503,7 +11775,7 @@ void MainWindow::ajouterBateauFromForm()
     }
 }
 
-// ΓöÇΓöÇ Database helpers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// Î“Ã¶Ã‡Î“Ã¶Ã‡ Database helpers Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡
 Connection* MainWindow::getOracleConnection()
 {
     Connection* conn = Connection::getInstance();
@@ -9524,11 +11796,11 @@ void MainWindow::ajouterBateau(const QString& nom, const QString& type, int capa
     bateaauuu b;
     if (!b.addBateau(QString(), nom, type, capacite, proprietaire, statut, largeur,
                      QDate::currentDate(), QDate(), 0)) {
-        QMessageBox::critical(this, "Erreur", "├ëchec ajout:\n" + b.lastError());
+        QMessageBox::critical(this, "Erreur", "â”œÃ«chec ajout:\n" + b.lastError());
     }
 }
 
-// ΓöÇΓöÇ Load bateaux table ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// Î“Ã¶Ã‡Î“Ã¶Ã‡ Load bateaux table Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡
 void MainWindow::loadBateaux()
 {
     if (!ui->tableWidgetb) return;
@@ -9582,7 +11854,7 @@ void MainWindow::loadBateaux()
     }
 
     QSqlQuery query(sql);
-    // Synchronise le nombre de colonnes avec les donn├⌐es SQL + Actions
+    // Synchronise le nombre de colonnes avec les donnâ”œâŒes SQL + Actions
     // 10 attributs + 1 actions
     ui->tableWidgetb->setColumnCount(11);
     auto ensureHeader = [this](int col, const QString& text) {
@@ -9618,7 +11890,7 @@ void MainWindow::loadBateaux()
             }
             ui->tableWidgetb->setItem(row, col, new QTableWidgetItem(cellText));
         }
-        // Colonne Actions (d├⌐cal├⌐e en derni├¿re colonne)
+        // Colonne Actions (dâ”œâŒcalâ”œâŒe en derniâ”œÂ¿re colonne)
         QWidget *actionWidget = new QWidget();
         actionWidget->setStyleSheet("background: transparent; border: none;");
         QHBoxLayout *layout = new QHBoxLayout(actionWidget);
@@ -9692,17 +11964,17 @@ void MainWindow::loadBateaux()
         ui->tableWidgetb->setColumnWidth(col, qMax(ui->tableWidgetb->columnWidth(col), minW));
     };
 
-    // Largeurs minimales pour éviter les dates tronquées.
+    // Largeurs minimales pour Ã©viter les dates tronquÃ©es.
     ensureMinWidth(0, 95);   // ID
     ensureMinWidth(1, 140);  // Nom
-    ensureMinWidth(2, 140);  // Propriétaire
+    ensureMinWidth(2, 140);  // PropriÃ©taire
     ensureMinWidth(3, 80);   // Largeur
     ensureMinWidth(4, 120);  // Type
     ensureMinWidth(5, 110);  // Statut
-    ensureMinWidth(6, 90);   // Capacité
-    ensureMinWidth(7, 110);  // Date entrée
-    ensureMinWidth(8, 110);  // Dernière maintenance
-    ensureMinWidth(9, 95);   // Fréquence maintenance
+    ensureMinWidth(6, 90);   // CapacitÃ©
+    ensureMinWidth(7, 110);  // Date entrÃ©e
+    ensureMinWidth(8, 110);  // DerniÃ¨re maintenance
+    ensureMinWidth(9, 95);   // FrÃ©quence maintenance
     ensureMinWidth(10, 114); // Actions
 
     if (ui->tableWidgetb->horizontalHeader()) {
@@ -9713,11 +11985,11 @@ void MainWindow::loadBateaux()
     loadPecheurBateauChoices(ui);
     updateStatsBateaux();
 
-    // Mettre ├á jour les alertes de maintenance sur la table affich├⌐e.
+    // Mettre â”œÃ¡ jour les alertes de maintenance sur la table affichâ”œâŒe.
     refreshBateauMaintenanceAlerts(false);
 }
 
-// ΓöÇΓöÇ Modifier : remplir le formulaire avec les donn├⌐es de la ligne ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// Î“Ã¶Ã‡Î“Ã¶Ã‡ Modifier : remplir le formulaire avec les donnâ”œâŒes de la ligne Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡
 void MainWindow::modifierBateauFromRow(int row)
 {
     if (!ui->tableWidgetb) return;
@@ -9749,13 +12021,13 @@ void MainWindow::modifierBateauFromRow(int row)
     ui->spinBox->setValue(cellText(9).toInt()); // Frequence maintenance
 
     QMessageBox::information(this, "Modifier",
-        QString("Bateau \"%1\" charg├⌐ dans le formulaire.\nModifiez les champs puis cliquez sur Modifier.").arg(cellText(1)));
+        QString("Bateau \"%1\" chargâ”œâŒ dans le formulaire.\nModifiez les champs puis cliquez sur Modifier.").arg(cellText(1)));
 
     // Change le texte du bouton en "Modifier"
     if (ui->pushButton_2b) ui->pushButton_2b->setText("Modifier");
 }
 
-// ΓöÇΓöÇ Supprimer : supprimer le bateau de la ligne ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// Î“Ã¶Ã‡Î“Ã¶Ã‡ Supprimer : supprimer le bateau de la ligne Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡
 void MainWindow::supprimerBateauFromRow(int row)
 {
     if (!ui->tableWidgetb) return;
@@ -9775,23 +12047,23 @@ void MainWindow::supprimerBateauFromRow(int row)
 
     bateaauuu b;
     if (b.deleteBateau(id)) {
-        QMessageBox::information(this, "Succ├¿s", "Bateau supprim├⌐ avec succ├¿s.");
+        QMessageBox::information(this, "Succâ”œÂ¿s", "Bateau supprimâ”œâŒ avec succâ”œÂ¿s.");
         loadBateaux();
     } else {
-        QMessageBox::critical(this, "Erreur", "├ëchec de la suppression:\n" + b.lastError());
+        QMessageBox::critical(this, "Erreur", "â”œÃ«chec de la suppression:\n" + b.lastError());
     }
 }
 
-// ΓöÇΓöÇ Filtrer la table bateaux ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// Î“Ã¶Ã‡Î“Ã¶Ã‡ Filtrer la table bateaux Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡
 void MainWindow::filterBateaux()
 {
     loadBateaux();
 }
 
-// ΓöÇΓöÇ Update statistics widgets ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// Î“Ã¶Ã‡Î“Ã¶Ã‡ Update statistics widgets Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡
 void MainWindow::updateStatsBateaux()
 {
-    // ΓöÇΓöÇ Build the same WHERE clause used by loadBateaux() ΓöÇΓöÇ
+    // Î“Ã¶Ã‡Î“Ã¶Ã‡ Build the same WHERE clause used by loadBateaux() Î“Ã¶Ã‡Î“Ã¶Ã‡
     QStringList conditions;
     QString searchText = ui->lineEdit_4p_2 ? ui->lineEdit_4p_2->text().trimmed() : QString();
     double  filterLargeur  = ui->doubleSpinBox_largeur ? ui->doubleSpinBox_largeur->value() : 0.0;
@@ -9870,7 +12142,7 @@ void MainWindow::updateStatsBateaux()
     if (ui->label_legend_otherb)
         ui->label_legend_otherb->setText(QStringLiteral("\u2022 Autres: %1 (%2%)").arg(nAutres).arg(pctStr(nAutres)));
 
-    // ΓöÇΓöÇ Draw solid pie chart on progressTypeCircleb ΓöÇΓöÇ
+    // Î“Ã¶Ã‡Î“Ã¶Ã‡ Draw solid pie chart on progressTypeCircleb Î“Ã¶Ã‡Î“Ã¶Ã‡
     if (ui->progressTypeCircleb && total > 0) {
         int sz = qMin(ui->progressTypeCircleb->width(), ui->progressTypeCircleb->height());
         if (sz < 50) sz = 200;
@@ -9933,7 +12205,7 @@ void MainWindow::updateStatsBateaux()
 }
 
 // ----------------------
-// Alertes automatiques de maintenance préventive (Bateaux)
+// Alertes automatiques de maintenance prÃ©ventive (Bateaux)
 // ----------------------
 
 namespace {
@@ -9981,7 +12253,7 @@ static QColor severityColor(MaintenanceSeverity s)
 
 static QColor severityRowBackground(MaintenanceSeverity s)
 {
-    // Fonds clairs pour garder la lisibilit├® (ligne color├®e)
+    // Fonds clairs pour garder la lisibilitâ”œÂ® (ligne colorâ”œÂ®e)
     switch (s) {
     case MaintenanceSeverity::Warning:
         return QColor(QStringLiteral("#fff9c4")); // jaune clair
@@ -10023,8 +12295,8 @@ static QDate variantToDate(const QVariant& v)
 static MaintenanceSeverity computeSeverity(bool enMer, int daysRemaining)
 {
     Q_UNUSED(enMer);
-    // R├¿gles demand├®es:
-    // - Rouge   = Critique : maintenance d├®pass├®e
+    // Râ”œÂ¿gles demandâ”œÂ®es:
+    // - Rouge   = Critique : maintenance dâ”œÂ®passâ”œÂ®e
     // - Orange  = Urgent   : moins de 7 jours
     // - Jaune   = Avert.   : moins de 30 jours
     // - Normal  = OK
@@ -10107,7 +12379,7 @@ void MainWindow::setupBateauMaintenanceAlertSystem()
         connect(ui->pushButton_alertb, &QPushButton::clicked, this, &MainWindow::toggleBateauAlertHistoryPanel);
 
         if (!m_bateauAlertBadge) {
-            // Badge rouge (chiffre) en haut ├á droite du bouton
+            // Badge rouge (chiffre) en haut â”œÃ¡ droite du bouton
             m_bateauAlertBadge = new QLabel(ui->pushButton_alertb);
             m_bateauAlertBadge->setObjectName(QStringLiteral("label_bateauAlertBadge"));
             m_bateauAlertBadge->setAlignment(Qt::AlignCenter);
@@ -10154,7 +12426,7 @@ void MainWindow::notifyBateauMaintenanceAlertsIfAny()
     const int total = m_bateauAlertsWarning + m_bateauAlertsUrgent + m_bateauAlertsCritical;
     if (total <= 0) return;
 
-    // Rate limit: ├®vite le spam si l'utilisateur clique plusieurs fois.
+    // Rate limit: â”œÂ®vite le spam si l'utilisateur clique plusieurs fois.
     const QDateTime now = QDateTime::currentDateTime();
     if (m_lastBateauAlertNotificationAt.isValid() && m_lastBateauAlertNotificationAt.secsTo(now) < 15) {
         return;
@@ -10175,7 +12447,7 @@ void MainWindow::notifyBateauMaintenanceAlertsIfAny()
     }
 
     const QString title = QStringLiteral("Alerte maintenance (%1)").arg(level);
-    const QString msg = QStringLiteral("Critique: %1 | Urgent: %2 | Avertissement: %3\nClique sur 'Historique des alertes' pour d├®tails.")
+    const QString msg = QStringLiteral("Critique: %1 | Urgent: %2 | Avertissement: %3\nClique sur 'Historique des alertes' pour dâ”œÂ®tails.")
                             .arg(m_bateauAlertsCritical)
                             .arg(m_bateauAlertsUrgent)
                             .arg(m_bateauAlertsWarning);
@@ -10197,11 +12469,11 @@ void MainWindow::notifyBateauMaintenanceAlertsIfAny()
 
     // Fallback si le system tray n'est pas disponible.
     if (m_bateauAlertsHighestLevel >= 3) {
-        QMessageBox::critical(this, QStringLiteral("Maintenance pr├®ventive"), msg);
+        QMessageBox::critical(this, QStringLiteral("Maintenance prâ”œÂ®ventive"), msg);
     } else if (m_bateauAlertsHighestLevel == 2) {
-        QMessageBox::warning(this, QStringLiteral("Maintenance pr├®ventive"), msg);
+        QMessageBox::warning(this, QStringLiteral("Maintenance prâ”œÂ®ventive"), msg);
     } else {
-        QMessageBox::information(this, QStringLiteral("Maintenance pr├®ventive"), msg);
+        QMessageBox::information(this, QStringLiteral("Maintenance prâ”œÂ®ventive"), msg);
     }
 }
 
@@ -10386,7 +12658,7 @@ void MainWindow::populateBateauAlertHistoryTable()
         msgItem->setToolTip(message);
         msgItem->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
-        // Appliquer la couleur de fond ├á toute la ligne
+        // Appliquer la couleur de fond â”œÃ¡ toute la ligne
         for (QTableWidgetItem* it : {idItem, nameItem, sevItem, msgItem, dateItem}) {
             if (!it) continue;
             it->setFlags(it->flags() & ~Qt::ItemIsEditable);
@@ -10402,7 +12674,7 @@ void MainWindow::populateBateauAlertHistoryTable()
         ++added;
     }
 
-    // Ajuster la hauteur des lignes pour afficher le message complet (jusqu'aux ~300 entr├®es affich├®es)
+    // Ajuster la hauteur des lignes pour afficher le message complet (jusqu'aux ~300 entrâ”œÂ®es affichâ”œÂ®es)
     m_bateauAlertHistoryTable->resizeRowsToContents();
 }
 
@@ -10556,7 +12828,7 @@ void MainWindow::refreshBateauMaintenanceAlerts(bool persistNewAlerts)
     }
 
     if (persistNewAlerts && historyDirty) {
-        // Garder une taille raisonnable (dernieres 2000 entr├®es)
+        // Garder une taille raisonnable (dernieres 2000 entrâ”œÂ®es)
         const int maxEntries = 2000;
         if (history.size() > maxEntries) {
             QJsonArray trimmed;
@@ -10569,7 +12841,7 @@ void MainWindow::refreshBateauMaintenanceAlerts(bool persistNewAlerts)
         writeMaintenanceHistoryArray(history);
     }
 
-    // M├®moriser le r├®sum├® pour les notifications
+    // Mâ”œÂ®moriser le râ”œÂ®sumâ”œÂ® pour les notifications
     m_bateauAlertsWarning = nWarn;
     m_bateauAlertsUrgent = nUrgent;
     m_bateauAlertsCritical = nCrit;
@@ -10584,13 +12856,19 @@ void MainWindow::refreshBateauMaintenanceAlerts(bool persistNewAlerts)
         const QString critLbl = plural(nCrit, QStringLiteral("Critique"), QStringLiteral("Critiques"));
         const QString urgLbl  = plural(nUrgent, QStringLiteral("Urgent"), QStringLiteral("Urgents"));
         const QString warnLbl = plural(nWarn, QStringLiteral("Avertissement"), QStringLiteral("Avertissements"));
+        const QString critIcon = QString::fromUtf8(u8"\U0001F534");
+        const QString urgIcon = QString::fromUtf8(u8"\U0001F7E0");
+        const QString warnIcon = QString::fromUtf8(u8"\U0001F7E1");
 
         ui->label_alert_statusb->setText(
-            QStringLiteral("🔴 %1 %2  |  🟠 %3 %4  |  🟡 %5 %6")
+            QStringLiteral("%1 %2 %3  |  %4 %5 %6  |  %7 %8 %9")
+                .arg(critIcon)
                 .arg(nCrit)
                 .arg(critLbl)
+                .arg(urgIcon)
                 .arg(nUrgent)
                 .arg(urgLbl)
+                .arg(warnIcon)
                 .arg(nWarn)
                 .arg(warnLbl));
         ui->label_alert_statusb->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
@@ -10603,7 +12881,7 @@ void MainWindow::refreshBateauMaintenanceAlerts(bool persistNewAlerts)
             "border: 1px solid rgb(0, 0, 115);"
             "border-radius: 10px;"));
 
-        // Taille: ajust├®e au texte (evite un bandeau trop long).
+        // Taille: ajustâ”œÂ®e au texte (evite un bandeau trop long).
         const int x = 10;
         const int y = 10;
         const int h = 40;
@@ -10624,8 +12902,13 @@ void MainWindow::refreshBateauMaintenanceAlerts(bool persistNewAlerts)
             };
 
             ui->label_alert_statusb->setToolTip(
-                QStringLiteral("IDs bateaux en alerte:\n🔴 Critique: %1\n🟠 Urgent: %2\n🟡 Avertissement: %3")
-                    .arg(listOrNone(criticalBoatIds), listOrNone(urgentBoatIds), listOrNone(warnBoatIds)));
+                QStringLiteral("IDs bateaux en alerte:\n%1 Critique: %2\n%3 Urgent: %4\n%5 Avertissement: %6")
+                    .arg(critIcon)
+                    .arg(listOrNone(criticalBoatIds))
+                    .arg(urgIcon)
+                    .arg(listOrNone(urgentBoatIds))
+                    .arg(warnIcon)
+                    .arg(listOrNone(warnBoatIds)));
         } else {
             ui->label_alert_statusb->setToolTip(QString());
         }
@@ -10647,7 +12930,7 @@ void MainWindow::refreshBateauMaintenanceAlerts(bool persistNewAlerts)
     if (m_bateauAlertBadge) {
         if (totalAlerts > 0) {
             m_bateauAlertBadge->setText(QString::number(totalAlerts));
-            // Badge color├® selon le niveau le plus ├®lev├®
+            // Badge colorâ”œÂ® selon le niveau le plus â”œÂ®levâ”œÂ®
             QString bg = QStringLiteral("#e74c3c");
             QString fg = QStringLiteral("white");
             if (highest == MaintenanceSeverity::Urgent) {
@@ -10670,8 +12953,8 @@ void MainWindow::refreshBateauMaintenanceAlerts(bool persistNewAlerts)
         }
     }
 
-    // Mise ├á jour de la table des bateaux: on enl├¿ve la coloration des lignes.
-    // Les d├®tails des alertes sont visibles dans l'historique + via le compteur/badge.
+    // Mise â”œÃ¡ jour de la table des bateaux: on enlâ”œÂ¿ve la coloration des lignes.
+    // Les dâ”œÂ®tails des alertes sont visibles dans l'historique + via le compteur/badge.
     if (ui->tableWidgetb) {
         const int cols = ui->tableWidgetb->columnCount();
         for (int r = 0; r < ui->tableWidgetb->rowCount(); ++r) {
@@ -10720,7 +13003,7 @@ void MainWindow::on_pushButton_11_clicked()
             {QStringLiteral("ID quai"), ui->lineEdit_4, [this]{ return !ui->lineEdit_4 || ui->lineEdit_4->text().trimmed().isEmpty(); }},
             {QStringLiteral("Nom du quai"), ui->lineEdit_6, [this]{ return !ui->lineEdit_6 || ui->lineEdit_6->text().trimmed().isEmpty(); }},
             {QStringLiteral("Longueur maximale"), ui->doubleSpinBox_2, [this]{ return !ui->doubleSpinBox_2 || ui->doubleSpinBox_2->value() <= 0.0; }},
-            {QStringLiteral("Capacit├⌐ maximale"), ui->spinBox_2, [this]{ return !ui->spinBox_2 || ui->spinBox_2->value() <= 0; }},
+            {QStringLiteral("Capacitâ”œâŒ maximale"), ui->spinBox_2, [this]{ return !ui->spinBox_2 || ui->spinBox_2->value() <= 0; }},
         })) {
         return;
     }
@@ -10756,7 +13039,7 @@ void MainWindow::on_pushButton_11_clicked()
     QString zoneCouverte = ui->comboBox_8 ? ui->comboBox_8->currentText().trimmed() : QString();
     QString statutUi = ui->comboBox_7 ? ui->comboBox_7->currentText().trimmed() : QString();
     QString statutDb = statutUi;
-    if (statutUi.compare(QStringLiteral("Occupé"), Qt::CaseInsensitive) == 0 ||
+    if (statutUi.compare(QStringLiteral("OccupÃ©"), Qt::CaseInsensitive) == 0 ||
         statutUi.startsWith(QStringLiteral("Occu"), Qt::CaseInsensitive)) {
         statutDb = QStringLiteral("Occupe");
     }
@@ -10808,7 +13091,7 @@ void MainWindow::on_pushButton_11_clicked()
         // Mode modification
         succes = m_quai.modifier(m_quai.idEnCours(), donnees);
         if (succes) {
-            QMessageBox::information(this, "Modification", "Quai modifi├⌐ avec succ├¿s.");
+            QMessageBox::information(this, "Modification", "Quai modifiâ”œâŒ avec succâ”œÂ¿s.");
             m_quai.setModeModification(false);
             ui->pushButton_11->setText("Ajouter");
         } else {
@@ -10816,27 +13099,27 @@ void MainWindow::on_pushButton_11_clicked()
             QMessageBox::critical(this,
                                   QStringLiteral("Erreur"),
                                   err.isEmpty()
-                                      ? QStringLiteral("├ëchec de la modification.")
-                                      : QStringLiteral("├ëchec de la modification : %1").arg(err));
+                                      ? QStringLiteral("â”œÃ«chec de la modification.")
+                                      : QStringLiteral("â”œÃ«chec de la modification : %1").arg(err));
         }
     } else {
         // Mode ajout
         succes = m_quai.ajouter(donnees);
         if (succes) {
-            QMessageBox::information(this, "Ajout", "Quai ajout├⌐ avec succ├¿s.");
+            QMessageBox::information(this, "Ajout", "Quai ajoutâ”œâŒ avec succâ”œÂ¿s.");
         } else {
             const QString err = m_quai.lastError();
             QMessageBox::critical(this,
                                   QStringLiteral("Erreur"),
                                   err.isEmpty()
-                                      ? QStringLiteral("├ëchec de l'ajout.")
-                                      : QStringLiteral("├ëchec de l'ajout : %1").arg(err));
+                                      ? QStringLiteral("â”œÃ«chec de l'ajout.")
+                                      : QStringLiteral("â”œÃ«chec de l'ajout : %1").arg(err));
         }
     }
 
     if (succes) {
         // En mode ajout, un filtre actif peut masquer la nouvelle ligne.
-        // Pour garantir que l'utilisateur la voie, on r├⌐initialise les filtres.
+        // Pour garantir que l'utilisateur la voie, on râ”œâŒinitialise les filtres.
         if (!wasModification) {
             if (ui->lineEdit_3) ui->lineEdit_3->clear();
 
@@ -10911,11 +13194,15 @@ void MainWindow::refreshQuaiTable()
     Connection *conn = Connection::getInstance();
     if (!conn->ensureOpen()) {
         QMessageBox::critical(this, QStringLiteral("DB"),
-                              QStringLiteral("Connexion DB ├⌐chou├⌐e: %1").arg(conn->lastErrorText()));
+                              QStringLiteral("Connexion DB â”œâŒchouâ”œâŒe: %1").arg(conn->lastErrorText()));
         return;
     }
 
     QSqlDatabase db = conn->getDatabase();
+
+    if (m_quaisFermeMeteo && m_quaisAutoLocked.isEmpty()) {
+        lockQuaisForWeather();
+    }
 
     const QHash<QString, QStringList> syn = {
         {QStringLiteral("ID_QUAI"), {QStringLiteral("ID_QUAI"), QStringLiteral("id_quai"), QStringLiteral("id")}},
@@ -11041,7 +13328,6 @@ void MainWindow::refreshQuaiTable()
                 bool okId = false;
                 const int quaiId = idItem->text().trimmed().toInt(&okId);
                 if (!okId || !m_quaisAutoLocked.contains(quaiId)) continue;
-                if (statusItem->text().compare(QStringLiteral("Ferme"), Qt::CaseInsensitive) != 0) continue;
 
                 statusItem->setData(Qt::UserRole, statusItem->text());
                 statusItem->setText(QStringLiteral("Ferme (meteo)"));
@@ -11175,7 +13461,7 @@ void MainWindow::deleteQuaiById(int id, const QString &)
     if (!m_quai.supprimer(id)) {
         QMessageBox::critical(this,
                               QStringLiteral("Suppression"),
-                              QStringLiteral("├ëchec de la suppression du quai."));
+                              QStringLiteral("â”œÃ«chec de la suppression du quai."));
         return;
     }
 
@@ -11208,7 +13494,7 @@ void MainWindow::editQuaiFromTable(int row)
     const QVariantMap infos = m_quai.chargerInfos(id);
     if (infos.isEmpty()) {
         QMessageBox::warning(this,
-                             QStringLiteral("├ëdition quai"),
+                             QStringLiteral("â”œÃ«dition quai"),
                              QStringLiteral("Impossible de charger les informations de ce quai."));
         return;
     }
@@ -11268,7 +13554,7 @@ void MainWindow::editQuaiFromTable(int row)
     showQuaiFormPage();
 }
 
-// --- Filtres de recherche / statut / zone / capacit├⌐ sur la page_3 (quais) ---
+// --- Filtres de recherche / statut / zone / capacitâ”œâŒ sur la page_3 (quais) ---
 
 void MainWindow::applyQuaiFilters()
 {
@@ -11315,14 +13601,15 @@ void MainWindow::applyQuaiFilters()
         const QString trimmed = text.trimmed();
         if (trimmed.isEmpty()) return QString();
 
-        if (trimmed.compare(QStringLiteral("Occupé"), Qt::CaseInsensitive) == 0
+        if (trimmed.compare(QStringLiteral("OccupÃ©"), Qt::CaseInsensitive) == 0
             || trimmed.compare(QStringLiteral("Occupe"), Qt::CaseInsensitive) == 0
             || trimmed.startsWith(QStringLiteral("Occu"), Qt::CaseInsensitive)) {
             return QStringLiteral("Occupe");
         }
 
         if (trimmed.compare(QStringLiteral("Ferme (meteo)"), Qt::CaseInsensitive) == 0
-            || trimmed.compare(QStringLiteral("Fermé (météo)"), Qt::CaseInsensitive) == 0
+            || trimmed.compare(QStringLiteral("Ferme (m\u00e9t\u00e9o)"), Qt::CaseInsensitive) == 0
+            || trimmed.compare(QStringLiteral("FermÃ© (mÃ©tÃ©o)"), Qt::CaseInsensitive) == 0
             || trimmed.compare(QStringLiteral("Ferme"), Qt::CaseInsensitive) == 0
             || trimmed.startsWith(QStringLiteral("Ferm"), Qt::CaseInsensitive)) {
             return QStringLiteral("Ferme");
@@ -11357,7 +13644,7 @@ void MainWindow::applyQuaiFilters()
         const QString trimmed = text.trimmed();
         if (trimmed.isEmpty()) return 0;
         bool ok = false;
-        // On essaie de lire le premier "mot" num├⌐rique
+        // On essaie de lire le premier "mot" numâ”œâŒrique
         const QString firstToken = trimmed.split(' ', Qt::SkipEmptyParts).value(0);
         int value = firstToken.toInt(&ok);
         if (!ok) {
@@ -11462,21 +13749,21 @@ void MainWindow::on_comboBoxCity_currentIndexChanged(int index)
     refreshWeatherForPage3();
 }
 
-// Boutons suppl├⌐mentaires non encore utilis├⌐s explicitement dans la logique
+// Boutons supplâ”œâŒmentaires non encore utilisâ”œâŒs explicitement dans la logique
 
 void MainWindow::on_pushButton_6_clicked()
 {
     // Depuis la page_3 (gestion des quais) : ouvrir la page_4 (carte + statistiques)
     if (ui && ui->stackedWidget && ui->page_4) {
         ui->stackedWidget->setCurrentWidget(ui->page_4);
-        // Actualiser les statistiques ├á l'ouverture
+        // Actualiser les statistiques â”œÃ¡ l'ouverture
         refreshStats_2();
     }
 }
 
 void MainWindow::on_pushButton_2_clicked()
 {
-    // Bouton retour sur la page_4 : revenir ├á la gestion des quais (page_3)
+    // Bouton retour sur la page_4 : revenir â”œÃ¡ la gestion des quais (page_3)
     if (ui && ui->stackedWidget && ui->page_3) {
         ui->stackedWidget->setCurrentWidget(ui->page_3);
     }
@@ -11484,7 +13771,7 @@ void MainWindow::on_pushButton_2_clicked()
 
 void MainWindow::on_pushButton_9_clicked()
 {
-    // Bouton "statistiques" sur la page_3 : m├¬me comportement que le bouton carte,
+    // Bouton "statistiques" sur la page_3 : mâ”œÂ¬me comportement que le bouton carte,
     // ouvre la page_4 avec les stats d'occupation.
     on_pushButton_6_clicked();
 }
@@ -11492,7 +13779,7 @@ void MainWindow::on_pushButton_9_clicked()
 void MainWindow::on_pushButton_pdfb_clicked()
 {
     if (!ui->tableWidgetb || ui->tableWidgetb->rowCount() == 0) {
-        QMessageBox::warning(this, "Export PDF", "Le tableau est vide, rien ├á exporter.");
+        QMessageBox::warning(this, "Export PDF", "Le tableau est vide, rien â”œÃ¡ exporter.");
         return;
     }
 
@@ -11509,7 +13796,7 @@ void MainWindow::on_pushButton_pdfb_clicked()
 
     QPainter painter(&writer);
     if (!painter.isActive()) {
-        QMessageBox::critical(this, "Erreur", "Impossible de cr├⌐er le fichier PDF.");
+        QMessageBox::critical(this, "Erreur", "Impossible de crâ”œâŒer le fichier PDF.");
         return;
     }
 
@@ -11523,26 +13810,26 @@ void MainWindow::on_pushButton_pdfb_clicked()
     const int bottomMargin = 80;
     const int contentW = pageW - leftMargin - rightMargin;
 
-    // ΓöÇΓöÇ Title ΓöÇΓöÇ
+    // Î“Ã¶Ã‡Î“Ã¶Ã‡ Title Î“Ã¶Ã‡Î“Ã¶Ã‡
     QFont titleFont("Arial", 20, QFont::Bold);
     titleFont.setPointSize(20);
     painter.setFont(titleFont);
     painter.setPen(QColor(0, 82, 155));
-    painter.drawText(QRect(leftMargin, topMargin - 40, contentW, 60), Qt::AlignCenter, "AQUATEC ΓÇô Liste des Bateaux");
+    painter.drawText(QRect(leftMargin, topMargin - 40, contentW, 60), Qt::AlignCenter, "AQUATEC Î“Ã‡Ã´ Liste des Bateaux");
 
-    // ΓöÇΓöÇ Date ΓöÇΓöÇ
+    // Î“Ã¶Ã‡Î“Ã¶Ã‡ Date Î“Ã¶Ã‡Î“Ã¶Ã‡
     QFont dateFont("Arial", 9);
     dateFont.setPointSize(9);
     painter.setFont(dateFont);
     painter.setPen(Qt::darkGray);
     painter.drawText(QRect(leftMargin, topMargin + 20, contentW, 30), Qt::AlignCenter,
-                     "Export├⌐ le " + QDateTime::currentDateTime().toString("dd/MM/yyyy hh:mm"));
+                     "Exportâ”œâŒ le " + QDateTime::currentDateTime().toString("dd/MM/yyyy hh:mm"));
 
     int yStart = topMargin + 80;
 
     // Column headers (0-9, skip 10 and 11=Actions)
-    QStringList headers = { "ID", "Nom", "Propri├⌐taire", "Largeur", "Type",
-                            "Statut", "Capacit├⌐", "Date entr├⌐e", "Dern. maint.", "Fr├⌐q. maint." };
+    QStringList headers = { "ID", "Nom", "Propriâ”œâŒtaire", "Largeur", "Type",
+                            "Statut", "Capacitâ”œâŒ", "Date entrâ”œâŒe", "Dern. maint.", "Frâ”œâŒq. maint." };
     const int colCount = headers.size();
 
     // Calculate column widths
@@ -11556,7 +13843,7 @@ void MainWindow::on_pushButton_pdfb_clicked()
     int headerHeight = 48;
     int xMargin = leftMargin;
 
-    // ΓöÇΓöÇ Draw header row ΓöÇΓöÇ
+    // Î“Ã¶Ã‡Î“Ã¶Ã‡ Draw header row Î“Ã¶Ã‡Î“Ã¶Ã‡
     QFont headerFont("Arial", 11, QFont::Bold);
     headerFont.setPointSize(11);
     painter.setFont(headerFont);
@@ -11577,7 +13864,7 @@ void MainWindow::on_pushButton_pdfb_clicked()
         x += colWidths[c];
     }
 
-    // ΓöÇΓöÇ Draw data rows ΓöÇΓöÇ
+    // Î“Ã¶Ã‡Î“Ã¶Ã‡ Draw data rows Î“Ã¶Ã‡Î“Ã¶Ã‡
     QFont cellFont("Arial", 9);
     cellFont.setPointSize(9);
     painter.setFont(cellFont);
@@ -11627,7 +13914,7 @@ void MainWindow::on_pushButton_pdfb_clicked()
         y += rowHeight;
     }
 
-    // ΓöÇΓöÇ Footer on table page ΓöÇΓöÇ
+    // Î“Ã¶Ã‡Î“Ã¶Ã‡ Footer on table page Î“Ã¶Ã‡Î“Ã¶Ã‡
     painter.setPen(Qt::darkGray);
     QFont footerFont("Arial", 9);
     footerFont.setPointSize(9);
@@ -11635,12 +13922,12 @@ void MainWindow::on_pushButton_pdfb_clicked()
     painter.drawText(QRect(leftMargin, pageH - bottomMargin + 10, contentW, bottomMargin - 10), Qt::AlignCenter,
                      QString("Total: %1 bateaux").arg(rowCount));
 
-    // ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+    // Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰
     //  PAGE 2 : STATISTIQUES
-    // ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+    // Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰
     writer.newPage();
 
-    // ΓöÇΓöÇ Gather stats data (same logic as updateStatsBateaux) ΓöÇΓöÇ
+    // Î“Ã¶Ã‡Î“Ã¶Ã‡ Gather stats data (same logic as updateStatsBateaux) Î“Ã¶Ã‡Î“Ã¶Ã‡
     QStringList statConditions;
     QString sText = ui->lineEdit_4p_2 ? ui->lineEdit_4p_2->text().trimmed() : QString();
     double  sLarg = ui->doubleSpinBox_largeur ? ui->doubleSpinBox_largeur->value() : 0.0;
@@ -11684,7 +13971,7 @@ void MainWindow::on_pushButton_pdfb_clicked()
         else                             nAu += cv;
     }
 
-    // ΓöÇΓöÇ Stats page title ΓöÇΓöÇ
+    // Î“Ã¶Ã‡Î“Ã¶Ã‡ Stats page title Î“Ã¶Ã‡Î“Ã¶Ã‡
     painter.setPen(QColor(0, 82, 155));
     titleFont.setPointSize(18);
     painter.setFont(titleFont);
@@ -11696,13 +13983,13 @@ void MainWindow::on_pushButton_pdfb_clicked()
     painter.drawText(QRect(leftMargin, 140, contentW, 30), Qt::AlignCenter,
                      QString("Total: %1 bateaux").arg(sTotal));
 
-    // ΓöÇΓöÇ Decorative line under title ΓöÇΓöÇ
+    // Î“Ã¶Ã‡Î“Ã¶Ã‡ Decorative line under title Î“Ã¶Ã‡Î“Ã¶Ã‡
     painter.setPen(QPen(QColor(0, 0, 112), 4));
     painter.drawLine(200, 380, pageW - 200, 380);
 
-    // ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
-    //  TOP SECTION: R├⌐partition par Statut (horizontal bars)
-    // ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+    // Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰
+    //  TOP SECTION: Râ”œâŒpartition par Statut (horizontal bars)
+    // Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰
     int statsY = 440;
     int contentX = 200;
     int statsContentW = pageW - 400;
@@ -11765,15 +14052,15 @@ void MainWindow::on_pushButton_pdfb_clicked()
         statsY += barSpacing;
     }
 
-    // ΓöÇΓöÇ Separator line ΓöÇΓöÇ
+    // Î“Ã¶Ã‡Î“Ã¶Ã‡ Separator line Î“Ã¶Ã‡Î“Ã¶Ã‡
     statsY += 40;
     painter.setPen(QPen(QColor(200, 200, 220), 3));
     painter.drawLine(contentX, statsY, contentX + statsContentW, statsY);
     statsY += 60;
 
-    // ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
-    //  BOTTOM SECTION: R├⌐partition par Type (pie chart + legend side by side)
-    // ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+    // Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰
+    //  BOTTOM SECTION: Râ”œâŒpartition par Type (pie chart + legend side by side)
+    // Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰Î“Ã²Ã‰
     painter.setFont(sectionFont);
     painter.setPen(QColor(0, 0, 112));
     painter.drawText(QRect(contentX, statsY, statsContentW, 130), Qt::AlignLeft | Qt::AlignVCenter,
@@ -11843,16 +14130,16 @@ void MainWindow::on_pushButton_pdfb_clicked()
         legendY += itemH + 8;
     }
 
-    // ΓöÇΓöÇ Final footer ΓöÇΓöÇ
+    // Î“Ã¶Ã‡Î“Ã¶Ã‡ Final footer Î“Ã¶Ã‡Î“Ã¶Ã‡
     painter.setPen(Qt::darkGray);
     painter.setFont(footerFont);
     painter.drawText(QRect(leftMargin, pageH - bottomMargin + 10, contentW, bottomMargin - 10), Qt::AlignCenter,
-                     "AQUATEC - Rapport g├⌐n├⌐r├⌐ le " + QDateTime::currentDateTime().toString("dd/MM/yyyy hh:mm"));
+                     "AQUATEC - Rapport gâ”œâŒnâ”œâŒrâ”œâŒ le " + QDateTime::currentDateTime().toString("dd/MM/yyyy hh:mm"));
 
     painter.end();
 
     QMessageBox::information(this, "Export PDF",
-        QString("PDF export├⌐ avec succ├¿s !\n%1").arg(filePath));
+        QString("PDF exportâ”œâŒ avec succâ”œÂ¿s !\n%1").arg(filePath));
 }
 
 void MainWindow::on_pushButton_pdfb_2_clicked()
@@ -12478,12 +14765,12 @@ void MainWindow::on_btnExportStatsPDF_2_clicked()
 void MainWindow::legacy_comboChartType_2_currentIndexChanged(int)
 {
     // Pour l'instant, le filtrage temporel fin n'est pas disponible.
-    // On relance simplement le calcul des statistiques pour rester coh├⌐rent
-    // et permettre une ├⌐volution future (24h / 7j / 30j).
+    // On relance simplement le calcul des statistiques pour rester cohâ”œâŒrent
+    // et permettre une â”œâŒvolution future (24h / 7j / 30j).
     refreshStats_2();
 }
 
-// --- Export PDF g├⌐n├⌐rique pour un widget donn├⌐ ---
+// --- Export PDF gâ”œâŒnâ”œâŒrique pour un widget donnâ”œâŒ ---
 
 bool MainWindow::exportWidgetToPdf(QWidget *widget,
                                    const QString &defaultFileName,
@@ -12500,7 +14787,7 @@ bool MainWindow::exportWidgetToPdf(QWidget *widget,
                 QStringLiteral("Fichiers PDF (*.pdf)"));
 
     if (filePath.isEmpty()) {
-        return false; // annul├⌐ par l'utilisateur
+        return false; // annulâ”œâŒ par l'utilisateur
     }
 
     QPdfWriter writer(filePath);
@@ -12512,7 +14799,7 @@ bool MainWindow::exportWidgetToPdf(QWidget *widget,
     if (!painter.isActive()) {
         QMessageBox::warning(this,
                              QStringLiteral("Export PDF"),
-                             QStringLiteral("Impossible de cr├⌐er le fichier PDF."));
+                             QStringLiteral("Impossible de crâ”œâŒer le fichier PDF."));
         return false;
     }
 
@@ -12534,7 +14821,7 @@ bool MainWindow::exportWidgetToPdf(QWidget *widget,
 
     QMessageBox::information(this,
                              QStringLiteral("Export PDF"),
-                             QStringLiteral("Exportation termin├⌐e :\n%1")
+                             QStringLiteral("Exportation terminâ”œâŒe :\n%1")
                                  .arg(QDir::toNativeSeparators(filePath)));
 
     return true;
@@ -12778,6 +15065,10 @@ void MainWindow::refreshStats_2()
         else if (zone.compare(QStringLiteral("Ouest"), Qt::CaseInsensitive) == 0) zone = QStringLiteral("Ouest");
         else continue;
 
+        if (m_quaisFermeMeteo && m_quaisAutoLocked.contains(id)) {
+            statut = QStringLiteral("Ferme");
+        }
+
         quaisParZone[zone].append(qMakePair(id, statut));
     }
 
@@ -13015,7 +15306,7 @@ void MainWindow::updateWeatherLabels(const QString& icon,
         metrics.reserve(16);
 
         for (const QString &line : lines) {
-            const QStringList parts = line.split(QStringLiteral(" • "), Qt::SkipEmptyParts);
+            const QStringList parts = line.split(QStringLiteral(" â€¢ "), Qt::SkipEmptyParts);
             for (const QString &part : parts) {
                 const MeteoMetric metric = parseMetric(part);
                 if (!metric.label.isEmpty() || !metric.value.isEmpty()) {
@@ -13068,7 +15359,7 @@ void MainWindow::updateWeatherLabels(const QString& icon,
     auto chipLine = [&](const QString& fullText) -> QString {
         const QStringList lines = fullText.split(QStringLiteral("\n"), Qt::KeepEmptyParts);
         const QString mainLine = lines.value(0).trimmed();
-        const QString metaLine = lines.mid(1).join(QStringLiteral(" • ")).trimmed();
+        const QString metaLine = lines.mid(1).join(QStringLiteral(" â€¢ ")).trimmed();
 
         const int colon = mainLine.indexOf(QLatin1Char(':'));
         const QString header = (colon >= 0) ? mainLine.left(colon).trimmed() : QString();
@@ -13159,7 +15450,7 @@ void MainWindow::updateWeatherLabels(const QString& icon,
                 ? frLocale.dayName(day.date.dayOfWeek(), QLocale::ShortFormat)
                 : QStringLiteral("Jour %1").arg(i + 1);
             const QString dateStr = day.date.isValid() ? day.date.toString(QStringLiteral("dd/MM")) : QStringLiteral("--/--");
-            const QString temp = QStringLiteral("%1/%2°C").arg(QString::number(day.tMin, 'f', 0), QString::number(day.tMax, 'f', 0));
+            const QString temp = QStringLiteral("%1/%2\u00b0C").arg(QString::number(day.tMin, 'f', 0), QString::number(day.tMax, 'f', 0));
             const QString prob = (day.probMax >= 0) ? QStringLiteral("%1%").arg(day.probMax) : QString();
             const QColor accent = dailyColor(day.code);
             const int ar = accent.red();
@@ -13186,7 +15477,7 @@ void MainWindow::updateWeatherLabels(const QString& icon,
                         .arg(i).arg(content);
             ++col;
         }
-        html += QStringLiteral("</tr></table><div style=\"margin-top:6px;font-size:11px;font-weight:800;color:rgba(11,31,54,150);\">Cliquez sur un jour pour les details</div></div>");
+        html += QStringLiteral("</tr></table><div style=\"margin-top:6px;font-size:11px;font-weight:800;color:rgba(11,31,54,150);\">Cliquez sur un jour pour les d\u00e9tails</div></div>");
         return html;
     };
 
@@ -13275,7 +15566,7 @@ void MainWindow::updateSelectedDayDetails()
         : QStringLiteral("Jour");
     const QString dateStr = day.date.isValid() ? day.date.toString(QStringLiteral("dd/MM/yyyy")) : QStringLiteral("--/--/----");
     const QString desc = weatherDescriptionFr(day.code);
-    const QString temp = QStringLiteral("%1°C / %2°C").arg(QString::number(day.tMin, 'f', 0), QString::number(day.tMax, 'f', 0));
+    const QString temp = QStringLiteral("%1\u00b0C / %2\u00b0C").arg(QString::number(day.tMin, 'f', 0), QString::number(day.tMax, 'f', 0));
     const QString prob = (day.probMax >= 0) ? QStringLiteral("%1%").arg(day.probMax) : QStringLiteral("--");
     const QString sunrise = day.sunrise.isValid() ? day.sunrise.toString(QStringLiteral("HH:mm")) : QStringLiteral("--:--");
     const QString sunset = day.sunset.isValid() ? day.sunset.toString(QStringLiteral("HH:mm")) : QStringLiteral("--:--");
@@ -13287,7 +15578,7 @@ void MainWindow::updateSelectedDayDetails()
         "<div style=\"font-size:11px;font-weight:900;color:#0B1F36;\">%4 - %5 <span style=\"margin-left:6px;\">%6</span></div>"
         "<div style=\"margin-top:3px;font-size:10px;font-weight:800;color:rgba(11,31,54,170);\">%7</div>"
         "<div style=\"margin-top:8px;\">"
-        "<span style=\"display:inline-block;padding:5px 10px;border-radius:12px;background:rgba(255,255,255,0.7);border:1px solid rgba(15,23,42,0.08);font-size:10px;font-weight:900;color:#0B1F36;\">Temperatures : %8</span>&nbsp;&nbsp;"
+        "<span style=\"display:inline-block;padding:5px 10px;border-radius:12px;background:rgba(255,255,255,0.7);border:1px solid rgba(15,23,42,0.08);font-size:10px;font-weight:900;color:#0B1F36;\">Temp\u00e9ratures : %8</span>&nbsp;&nbsp;"
         "<span style=\"display:inline-block;padding:5px 10px;border-radius:12px;background:rgba(255,255,255,0.7);border:1px solid rgba(15,23,42,0.08);font-size:10px;font-weight:900;color:#0B1F36;\">Pluie (max) : %9</span>&nbsp;&nbsp;"
         "<span style=\"display:inline-block;padding:5px 10px;border-radius:12px;background:rgba(255,255,255,0.7);border:1px solid rgba(15,23,42,0.08);font-size:10px;font-weight:900;color:#0B1F36;\">Lever : %10</span>&nbsp;&nbsp;"
         "<span style=\"display:inline-block;padding:5px 10px;border-radius:12px;background:rgba(255,255,255,0.7);border:1px solid rgba(15,23,42,0.08);font-size:10px;font-weight:900;color:#0B1F36;\">Coucher : %11</span>"
@@ -13313,18 +15604,18 @@ void MainWindow::refreshWeatherForPage3()
                             QStringLiteral("--\u00B0C"),
                             desc,
                             QStringLiteral("Vent : -- km/h"),
-                            QStringLiteral("Humidite : --%"),
-                            QStringLiteral("Previsions (6h) : indisponibles"),
+                            QStringLiteral("Humidit\u00e9 : --%"),
+                            QStringLiteral("Pr\u00e9visions (6h) : indisponibles"),
                             QStringLiteral("Tendance (5 jours) : indisponible"),
                             true);
     };
 
     updateWeatherLabels(QStringLiteral("\u23F3"),
                         QStringLiteral("--\u00B0C"),
-                        QStringLiteral("Chargement meteo..."),
+                        QStringLiteral("Chargement m\u00e9t\u00e9o..."),
                         QStringLiteral("Vent : -- km/h"),
-                        QStringLiteral("Humidite : --%"),
-                        QStringLiteral("Previsions (6h) : --"),
+                        QStringLiteral("Humidit\u00e9 : --%"),
+                        QStringLiteral("Pr\u00e9visions (6h) : --"),
                         QStringLiteral("Tendance (5 jours) : --"),
                         true);
 
@@ -13343,20 +15634,20 @@ void MainWindow::refreshWeatherForPage3()
         geoReply->deleteLater();
 
         if (geoError != QNetworkReply::NoError) {
-            showWeatherError(QStringLiteral("Meteo indisponible"));
+            showWeatherError(QStringLiteral("M\u00e9t\u00e9o indisponible"));
             return;
         }
 
         QJsonParseError geoParseError;
         const QJsonDocument geoDoc = QJsonDocument::fromJson(geoPayload, &geoParseError);
         if (geoParseError.error != QJsonParseError::NoError || !geoDoc.isObject()) {
-            showWeatherError(QStringLiteral("Reponse meteo invalide"));
+            showWeatherError(QStringLiteral("R\u00e9ponse m\u00e9t\u00e9o invalide"));
             return;
         }
 
         const QJsonArray results = geoDoc.object().value(QStringLiteral("results")).toArray();
         if (results.isEmpty() || !results.first().isObject()) {
-            showWeatherError(QStringLiteral("Localisation meteo introuvable"));
+            showWeatherError(QStringLiteral("Localisation m\u00e9t\u00e9o introuvable"));
             return;
         }
 
@@ -13386,21 +15677,21 @@ void MainWindow::refreshWeatherForPage3()
             weatherReply->deleteLater();
 
             if (weatherError != QNetworkReply::NoError) {
-                showWeatherError(QStringLiteral("Meteo indisponible (%1)").arg(cityName));
+                showWeatherError(QStringLiteral("M\u00e9t\u00e9o indisponible (%1)").arg(cityName));
                 return;
             }
 
             QJsonParseError weatherParseError;
             const QJsonDocument weatherDoc = QJsonDocument::fromJson(weatherPayload, &weatherParseError);
             if (weatherParseError.error != QJsonParseError::NoError || !weatherDoc.isObject()) {
-                showWeatherError(QStringLiteral("Donnees meteo invalides (%1)").arg(cityName));
+                showWeatherError(QStringLiteral("Donn\u00e9es m\u00e9t\u00e9o invalides (%1)").arg(cityName));
                 return;
             }
 
             const QJsonObject root = weatherDoc.object();
             const QJsonObject current = root.value(QStringLiteral("current")).toObject();
             if (current.isEmpty()) {
-                showWeatherError(QStringLiteral("Aucune meteo courante (%1)").arg(cityName));
+                showWeatherError(QStringLiteral("Aucune m\u00e9t\u00e9o courante (%1)").arg(cityName));
                 return;
             }
 
@@ -13432,20 +15723,20 @@ void MainWindow::refreshWeatherForPage3()
             };
 
             const QString icon = weatherIconEmojiDayNight(code, isDay);
-            const QString tempText = QStringLiteral("%1°C").arg(QString::number(temp, 'f', 1));
-            const QString descText = QStringLiteral("%1 - %2\nMise a jour : %3")
+            const QString tempText = QStringLiteral("%1\u00b0C").arg(QString::number(temp, 'f', 1));
+            const QString descText = QStringLiteral("%1 - %2\nMise \u00e0 jour : %3")
                 .arg(cityName,
                      weatherDescriptionFr(code),
                      currentDt.isValid() ? currentDt.toString(QStringLiteral("HH:mm")) : QStringLiteral("--:--"));
             const QString windDirText = (windDir >= 0.0)
-                ? QStringLiteral("%1° (%2)").arg(QString::number(windDir, 'f', 0), degToCompassFr(windDir))
+                ? QStringLiteral("%1\u00b0 (%2)").arg(QString::number(windDir, 'f', 0), degToCompassFr(windDir))
                 : QStringLiteral("--");
-            const QString windText = QStringLiteral("Vent : %1 km/h • %2\nRafales : %3 km/h")
+            const QString windText = QStringLiteral("Vent : %1 km/h \u2022 %2\nRafales : %3 km/h")
                 .arg(QString::number(wind, 'f', 1),
                      windDirText,
                      QString::number(windGusts, 'f', 1));
             const QString humidityText = QStringLiteral(
-                "Humidite : %1% • Ressenti : %2°C • Pluie : %3 mm\nPression : %4 hPa • Visibilite : %5 km • Nuages : %6%")
+                "Humidit\u00e9 : %1% \u2022 Ressenti : %2\u00b0C \u2022 Pluie : %3 mm\nPression : %4 hPa \u2022 Visibilit\u00e9 : %5 km \u2022 Nuages : %6%")
                 .arg(humidity)
                 .arg(QString::number(apparent, 'f', 1))
                 .arg(QString::number(precipitation, 'f', 1))
@@ -13453,7 +15744,7 @@ void MainWindow::refreshWeatherForPage3()
                 .arg(QString::number((visibilityMeters > 0.0) ? visibilityMeters / 1000.0 : 0.0, 'f', 1))
                 .arg(QString::number(cloudCover, 'f', 0));
 
-            QString hourlyText = QStringLiteral("Previsions (6h) : indisponibles");
+            QString hourlyText = QStringLiteral("Pr\u00e9visions (6h) : indisponibles");
             const QJsonObject hourly = root.value(QStringLiteral("hourly")).toObject();
             if (!hourly.isEmpty()) {
                 const QJsonArray times = hourly.value(QStringLiteral("time")).toArray();
@@ -13485,13 +15776,13 @@ void MainWindow::refreshWeatherForPage3()
                         const double hourWind = (i < winds.size()) ? winds.at(i).toDouble(0.0) : 0.0;
                         const bool hourDay = !hourDt.isValid() || (hourDt.time().hour() >= 6 && hourDt.time().hour() < 20);
 
-                        QString part = QStringLiteral("%1 %2°C %3").arg(hourStr, QString::number(hourTemp, 'f', 0), weatherIconEmojiDayNight(hourCode, hourDay));
-                        if (hourProb >= 0) part += QStringLiteral(" • %1%").arg(hourProb);
-                        if (hourWind > 0.0) part += QStringLiteral(" • %1 km/h").arg(QString::number(hourWind, 'f', 0));
+                        QString part = QStringLiteral("%1 %2\u00b0C %3").arg(hourStr, QString::number(hourTemp, 'f', 0), weatherIconEmojiDayNight(hourCode, hourDay));
+                        if (hourProb >= 0) part += QStringLiteral(" \u2022 %1%").arg(hourProb);
+                        if (hourWind > 0.0) part += QStringLiteral(" \u2022 %1 km/h").arg(QString::number(hourWind, 'f', 0));
                         parts.append(part);
                     }
                     if (!parts.isEmpty()) {
-                        hourlyText = QStringLiteral("Previsions (6h) : %1").arg(parts.join(QStringLiteral("  | ")));
+                        hourlyText = QStringLiteral("Pr\u00e9visions (6h) : %1").arg(parts.join(QStringLiteral("  | ")));
                     }
                 }
             }
@@ -13532,7 +15823,7 @@ void MainWindow::refreshWeatherForPage3()
                         const QString dayName = item.date.isValid()
                             ? frLocale.dayName(item.date.dayOfWeek(), QLocale::ShortFormat)
                             : QStringLiteral("Jour %1").arg(i + 1);
-                        QString part = QStringLiteral("%1 %2/%3°C %4")
+                        QString part = QStringLiteral("%1 %2/%3\u00b0C %4")
                             .arg(dayName,
                                  QString::number(item.tMin, 'f', 0),
                                  QString::number(item.tMax, 'f', 0),
@@ -13544,15 +15835,14 @@ void MainWindow::refreshWeatherForPage3()
                     }
 
                     if (!parts.isEmpty()) {
-                        dailyText = QStringLiteral("Tendance (5 jours) : %1\nCliquez sur un jour pour les details")
+                        dailyText = QStringLiteral("Tendance (5 jours) : %1\nCliquez sur un jour pour les d\u00e9tails")
                             .arg(parts.join(QStringLiteral("  | ")));
                     }
                 }
             }
 
-            const bool shouldClose = (wind >= 10.0);
+            const bool shouldClose = (wind > m_quaiWindCloseThresholdKmh);
             const bool wasClosed = m_quaisFermeMeteo;
-            m_quaisFermeMeteo = shouldClose;
 
             if (m_selectedDailyIndex < 0 || (!m_dailyForecast.isEmpty() && m_selectedDailyIndex >= m_dailyForecast.size())) {
                 m_selectedDailyIndex = 0;
@@ -13571,10 +15861,29 @@ void MainWindow::refreshWeatherForPage3()
             updateWeatherLabels(icon, tempText, descText, windText, humidityText, hourlyText, dailyText, isDay);
             updateSelectedDayDetails();
 
-            if (shouldClose && !wasClosed) {
-                lockQuaisForWeather();
-            } else if (!shouldClose) {
-                unlockQuaisForWeather();
+            if (shouldClose) {
+                m_quaisFermeMeteo = true;
+                if (!wasClosed || m_quaisAutoLocked.isEmpty()) {
+                    lockQuaisForWeather();
+                    if (m_portConsole) {
+                        m_portConsole->appendPlainText(
+                            QStringLiteral("[METEO] Quais occupes fermes: vent=%1 km/h, rafales=%2 km/h, seuil vent=%3 km/h")
+                                .arg(QString::number(wind, 'f', 1),
+                                     QString::number(windGusts, 'f', 1),
+                                     QString::number(m_quaiWindCloseThresholdKmh, 'f', 1)));
+                    }
+                }
+            } else {
+                if (wasClosed || !m_quaisAutoLocked.isEmpty()) {
+                    unlockQuaisForWeather();
+                    if (m_portConsole) {
+                        m_portConsole->appendPlainText(
+                            QStringLiteral("[METEO] Quais rouverts: vent=%1 km/h, rafales=%2 km/h")
+                                .arg(QString::number(wind, 'f', 1),
+                                     QString::number(windGusts, 'f', 1)));
+                    }
+                }
+                m_quaisFermeMeteo = false;
             }
 
             refreshQuaiTable();
@@ -13585,6 +15894,82 @@ void MainWindow::refreshWeatherForPage3()
     });
 }
 
+bool MainWindow::ensureQuaiWeatherStatusSupport(QString* errorOut)
+{
+    Connection *conn = Connection::getInstance();
+    if (!conn || !conn->ensureOpen()) {
+        if (errorOut) *errorOut = QStringLiteral("Connexion DB indisponible.");
+        return false;
+    }
+
+    QSqlDatabase db = conn->getDatabase();
+    if (!db.isOpen()) {
+        if (errorOut) *errorOut = QStringLiteral("Base de donnees non ouverte.");
+        return false;
+    }
+
+    QSqlQuery query(db);
+    query.prepare(QStringLiteral(
+        "SELECT uc.CONSTRAINT_NAME "
+        "FROM USER_CONSTRAINTS uc "
+        "JOIN USER_CONS_COLUMNS ucc "
+        "  ON uc.CONSTRAINT_NAME = ucc.CONSTRAINT_NAME "
+        "WHERE uc.TABLE_NAME = 'QUAIS' "
+        "  AND uc.CONSTRAINT_TYPE = 'C' "
+        "  AND ucc.COLUMN_NAME = 'STATUT'"));
+
+    if (!query.exec()) {
+        if (errorOut) *errorOut = query.lastError().text();
+        return false;
+    }
+
+    QStringList constraintsToDrop;
+    bool supportsFerme = false;
+    while (query.next()) {
+        const QString constraintName = query.value(0).toString().trimmed().toUpper();
+        if (constraintName.isEmpty()) {
+            continue;
+        }
+
+        if (constraintName == QStringLiteral("CHK_QUAIS_STATUT_WEATHER")) {
+            supportsFerme = true;
+            continue;
+        }
+
+        constraintsToDrop.append(constraintName);
+    }
+
+    if (supportsFerme && constraintsToDrop.isEmpty()) {
+        if (errorOut) errorOut->clear();
+        return true;
+    }
+
+    for (const QString& constraintName : std::as_const(constraintsToDrop)) {
+        QSqlQuery dropQuery(db);
+        if (!dropQuery.exec(QStringLiteral("ALTER TABLE QUAIS DROP CONSTRAINT %1").arg(constraintName))) {
+            if (errorOut) *errorOut = dropQuery.lastError().text();
+            return false;
+        }
+    }
+
+    if (!supportsFerme) {
+        QSqlQuery addQuery(db);
+        if (!addQuery.exec(QStringLiteral(
+                "ALTER TABLE QUAIS "
+                "ADD CONSTRAINT CHK_QUAIS_STATUT_WEATHER "
+                "CHECK (STATUT IN ('Libre','Occupe','Maintenance','Ferme'))"))) {
+            if (errorOut) *errorOut = addQuery.lastError().text();
+            return false;
+        }
+    }
+
+    QSqlQuery commitQuery(db);
+    commitQuery.exec(QStringLiteral("COMMIT"));
+
+    if (errorOut) errorOut->clear();
+    return true;
+}
+
 void MainWindow::lockQuaisForWeather()
 {
     Connection *conn = Connection::getInstance();
@@ -13593,27 +15978,86 @@ void MainWindow::lockQuaisForWeather()
     QSqlDatabase db = conn->getDatabase();
     if (!db.isOpen()) return;
 
+    QString schemaError;
+    if (!ensureQuaiWeatherStatusSupport(&schemaError)) {
+        if (m_portConsole && !schemaError.trimmed().isEmpty()) {
+            m_portConsole->appendPlainText(QStringLiteral("[DB] Quai weather schema error: %1").arg(schemaError));
+        }
+        return;
+    }
+
+    auto canonicalWeatherStatus = [](const QString &raw) -> QString {
+        const QString key = normalizeKey(raw);
+        if (key.startsWith(QStringLiteral("occu"))) return QStringLiteral("Occupe");
+        if (key.startsWith(QStringLiteral("lib"))) return QStringLiteral("Libre");
+        if (key.startsWith(QStringLiteral("maint"))) return QStringLiteral("Maintenance");
+        if (key.startsWith(QStringLiteral("ferm"))) return QStringLiteral("Ferme");
+        return raw.trimmed();
+    };
+
+    const QHash<int, QString> previousLocks = m_quaisAutoLocked;
     m_quaisAutoLocked.clear();
 
     QSqlQuery selectQuery(db);
+    QSqlQuery updateQuery(db);
+    updateQuery.prepare(QStringLiteral("UPDATE QUAIS SET STATUT = 'Ferme' WHERE ID_QUAI = :id"));
+    bool hasChanges = false;
+
     if (selectQuery.exec(QStringLiteral("SELECT ID_QUAI, STATUT, ID_BATEAU FROM QUAIS"))) {
         while (selectQuery.next()) {
             const int id = selectQuery.value(0).toInt();
             const QString statut = selectQuery.value(1).toString().trimmed();
-            const bool hasBoat = !selectQuery.value(2).isNull() && selectQuery.value(2).toInt() > 0;
-            if (statut.compare(QStringLiteral("Occupe"), Qt::CaseInsensitive) == 0) {
-                m_quaisAutoLocked.insert(id, QStringLiteral("Occupe"));
-            } else if (statut.compare(QStringLiteral("Ferme"), Qt::CaseInsensitive) == 0 && hasBoat) {
-                m_quaisAutoLocked.insert(id, QStringLiteral("Occupe"));
+            const QString canonicalStatut = canonicalWeatherStatus(statut);
+            if (canonicalStatut == QStringLiteral("Maintenance")) {
+                continue;
+            }
+
+            const QString previousOriginalStatut = previousLocks.value(id).trimmed();
+            if (!previousOriginalStatut.isEmpty()) {
+                if (previousOriginalStatut.compare(QStringLiteral("Occupe"), Qt::CaseInsensitive) != 0) {
+                    continue;
+                }
+                m_quaisAutoLocked.insert(id, previousOriginalStatut);
+                if (canonicalStatut.compare(QStringLiteral("Ferme"), Qt::CaseInsensitive) != 0) {
+                    updateQuery.bindValue(QStringLiteral(":id"), id);
+                    if (updateQuery.exec()) {
+                        hasChanges = true;
+                    } else if (m_portConsole) {
+                        m_portConsole->appendPlainText(
+                            QStringLiteral("[DB] Meteo close failed for quai %1: %2")
+                                .arg(QString::number(id), updateQuery.lastError().text()));
+                    }
+                }
+                continue;
+            }
+
+            if (canonicalStatut.compare(QStringLiteral("Occupe"), Qt::CaseInsensitive) != 0) {
+                continue;
+            }
+
+            if (canonicalStatut.compare(QStringLiteral("Ferme"), Qt::CaseInsensitive) == 0) {
+                continue;
+            }
+
+            m_quaisAutoLocked.insert(id, canonicalStatut);
+
+            updateQuery.bindValue(QStringLiteral(":id"), id);
+            if (updateQuery.exec()) {
+                hasChanges = true;
+            } else if (m_portConsole) {
+                m_portConsole->appendPlainText(
+                    QStringLiteral("[DB] Meteo close failed for quai %1: %2")
+                        .arg(QString::number(id), updateQuery.lastError().text()));
             }
         }
+    } else {
+        m_quaisAutoLocked = previousLocks;
     }
 
-    QSqlQuery updateQuery(db);
-    updateQuery.prepare(QStringLiteral(
-        "UPDATE QUAIS SET STATUT = 'Ferme' "
-        "WHERE UPPER(STATUT) = 'OCCUPE'"));
-    updateQuery.exec();
+    if (hasChanges) {
+        QSqlQuery commitQuery(db);
+        commitQuery.exec(QStringLiteral("COMMIT"));
+    }
 }
 
 void MainWindow::unlockQuaisForWeather()
@@ -13624,23 +16068,41 @@ void MainWindow::unlockQuaisForWeather()
     QSqlDatabase db = conn->getDatabase();
     if (!db.isOpen()) return;
 
+    QString schemaError;
+    if (!ensureQuaiWeatherStatusSupport(&schemaError)) {
+        if (m_portConsole && !schemaError.trimmed().isEmpty()) {
+            m_portConsole->appendPlainText(QStringLiteral("[DB] Quai weather schema error: %1").arg(schemaError));
+        }
+        return;
+    }
+
     if (!m_quaisAutoLocked.isEmpty()) {
         QSqlQuery updateQuery(db);
-        updateQuery.prepare(QStringLiteral("UPDATE QUAIS SET STATUT = :statut WHERE ID_QUAI = :id AND UPPER(STATUT) = 'FERME'"));
+        updateQuery.prepare(QStringLiteral("UPDATE QUAIS SET STATUT = :statut WHERE ID_QUAI = :id AND TRIM(UPPER(STATUT)) = 'FERME'"));
+        bool hasChanges = false;
         for (auto it = m_quaisAutoLocked.constBegin(); it != m_quaisAutoLocked.constEnd(); ++it) {
             updateQuery.bindValue(QStringLiteral(":statut"), it.value());
             updateQuery.bindValue(QStringLiteral(":id"), it.key());
-            updateQuery.exec();
+            if (updateQuery.exec()) {
+                hasChanges = true;
+            }
+        }
+        if (hasChanges) {
+            QSqlQuery commitQuery(db);
+            commitQuery.exec(QStringLiteral("COMMIT"));
         }
         m_quaisAutoLocked.clear();
         return;
     }
 
     QSqlQuery fallbackQuery(db);
-    fallbackQuery.exec(QStringLiteral(
+    if (fallbackQuery.exec(QStringLiteral(
         "UPDATE QUAIS "
         "SET STATUT = CASE WHEN NVL(ID_BATEAU,0) > 0 THEN 'Occupe' ELSE 'Libre' END "
-        "WHERE UPPER(STATUT) = 'FERME'"));
+        "WHERE TRIM(UPPER(STATUT)) = 'FERME'"))) {
+        QSqlQuery commitQuery(db);
+        commitQuery.exec(QStringLiteral("COMMIT"));
+    }
 }
 
 static void exportCapturesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
@@ -13671,7 +16133,7 @@ static void exportCapturesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
 
     QPainter painter(&writer);
     if (!painter.isActive()) {
-        QMessageBox::critical(parent, QStringLiteral("Erreur"), QStringLiteral("Impossible de créer le fichier PDF."));
+        QMessageBox::critical(parent, QStringLiteral("Erreur"), QStringLiteral("Impossible de crÃ©er le fichier PDF."));
         return;
     }
 
@@ -13707,12 +16169,12 @@ static void exportCapturesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
     painter.setFont(titleFont);
     painter.setPen(QColor(0, 82, 155));
     painter.drawText(QRect(leftMargin, topMargin - 40, contentW, 60), Qt::AlignCenter,
-                     QStringLiteral("AQUATEC – Liste des Captures"));
+                     QStringLiteral("AQUATEC â€“ Liste des Captures"));
 
     painter.setPen(Qt::darkGray);
     painter.setFont(subtitleFont);
     painter.drawText(QRect(leftMargin, topMargin + 20, contentW, 30), Qt::AlignCenter,
-                     QStringLiteral("Exporté le %1").arg(exportStamp));
+                     QStringLiteral("ExportÃ© le %1").arg(exportStamp));
 
     int y = topMargin + 80;
 
@@ -13734,7 +16196,7 @@ static void exportCapturesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
         restoreActionColumn();
         painter.end();
         QMessageBox::warning(parent, QStringLiteral("Export PDF"),
-                             QStringLiteral("Aucune colonne à exporter."));
+                             QStringLiteral("Aucune colonne Ã  exporter."));
         return;
     }
 
@@ -13836,10 +16298,10 @@ static void exportCapturesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
         painter.setFont(QFont(QStringLiteral("Arial"), 9, QFont::Normal));
         painter.setPen(QColor(QStringLiteral("#8a8a8a")));
         painter.drawText(QRect(leftMargin, y + 24, contentW, 18), Qt::AlignCenter,
-                         QStringLiteral("(%1 lignes affichées sur %2 dans cette page)").arg(exportedRows).arg(totalVisibleRows));
+                         QStringLiteral("(%1 lignes affichÃ©es sur %2 dans cette page)").arg(exportedRows).arg(totalVisibleRows));
     }
 
-    // Section Statistiques - Top 5 Espèces
+    // Section Statistiques - Top 5 EspÃ¨ces
     y += 60;
 
     const QVector<captures::SpeciesStatData> statsData = captures::calculerTop5Species();
@@ -13860,14 +16322,14 @@ static void exportCapturesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
         painter.setFont(QFont(QStringLiteral("Arial"), 14, QFont::Bold));
         painter.setPen(QColor(0, 82, 155));
         painter.drawText(QRect(leftMargin, y, contentW, titleH), Qt::AlignLeft | Qt::AlignVCenter,
-                         QStringLiteral("Statistiques - Top 5 Espèces"));
+                         QStringLiteral("Statistiques - Top 5 EspÃ¨ces"));
         y += titleH + titleGap;
 
         const int col1W = contentW * 45 / 100;
         const int col2W = contentW * 28 / 100;
         const int col3W = contentW - col1W - col2W;
 
-        // En-têtes du tableau
+        // En-tÃªtes du tableau
         painter.setFont(QFont(QStringLiteral("Arial"), 10, QFont::Bold));
         QLinearGradient statHeaderGrad(0, y, 0, y + statRowH);
         statHeaderGrad.setColorAt(0.0, QColor(QStringLiteral("#0b5ea8")));
@@ -13875,8 +16337,8 @@ static void exportCapturesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
         painter.fillRect(QRect(leftMargin, y, contentW, statRowH), statHeaderGrad);
 
         painter.setPen(Qt::white);
-        painter.drawText(QRect(leftMargin + 10, y, col1W - 20, statRowH), Qt::AlignVCenter | Qt::AlignLeft, QStringLiteral("Espèce"));
-        painter.drawText(QRect(leftMargin + col1W, y, col2W, statRowH), Qt::AlignVCenter | Qt::AlignCenter, QStringLiteral("Quantité"));
+        painter.drawText(QRect(leftMargin + 10, y, col1W - 20, statRowH), Qt::AlignVCenter | Qt::AlignLeft, QStringLiteral("EspÃ¨ce"));
+        painter.drawText(QRect(leftMargin + col1W, y, col2W, statRowH), Qt::AlignVCenter | Qt::AlignCenter, QStringLiteral("QuantitÃ©"));
         painter.drawText(QRect(leftMargin + col1W + col2W, y, col3W, statRowH), Qt::AlignVCenter | Qt::AlignCenter, QStringLiteral("Pourcentage"));
 
         painter.setPen(QPen(QColor(200, 210, 220), 1));
@@ -13886,7 +16348,7 @@ static void exportCapturesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
 
         y += statRowH;
 
-        // Données du tableau
+        // DonnÃ©es du tableau
         const QFont dataFont(QStringLiteral("Arial"), 9, QFont::Normal);
         painter.setFont(dataFont);
         QFontMetrics dataFm(dataFont);
@@ -13923,13 +16385,13 @@ static void exportCapturesPdfReport(MainWindow* parent, Ui::MainWindow* ui)
     painter.setPen(QColor(QStringLiteral("#8a8a8a")));
     painter.setFont(footerFont);
     painter.drawText(QRect(leftMargin, footerY, contentW, 20), Qt::AlignCenter,
-                     QStringLiteral("AQUATEC - Rapport généré le %1").arg(exportStamp));
+                     QStringLiteral("AQUATEC - Rapport gÃ©nÃ©rÃ© le %1").arg(exportStamp));
 
     restoreActionColumn();
 
     painter.end();
     QMessageBox::information(parent, QStringLiteral("Export PDF"),
-                             QStringLiteral("Fichier PDF exporté avec succès:\n%1").arg(filePath));
+                             QStringLiteral("Fichier PDF exportÃ© avec succÃ¨s:\n%1").arg(filePath));
 }
 
 void MainWindow::on_cap_btnExporter_clicked()
@@ -13949,7 +16411,9 @@ static void updateCapturesStats(MainWindow* parent, Ui::MainWindow* ui)
 
     // Mode stats: 0 = Quantité, 1 = Poids
     int metricIndex = 0;
-    if (ui->cap_pagecaptures) {
+    if (auto *combo = ui->frame_zonesb_2->parentWidget()->findChild<QComboBox*>(QStringLiteral("cap_comboStatsMetric"))) {
+        metricIndex = combo->currentIndex();
+    } else if (ui->cap_pagecaptures) {
         if (auto *combo = ui->cap_pagecaptures->findChild<QComboBox*>(QStringLiteral("cap_comboStatsMetric"))) {
             metricIndex = combo->currentIndex();
         }
@@ -14011,41 +16475,65 @@ static void updateCapturesStats(MainWindow* parent, Ui::MainWindow* ui)
         totalAll += total;
     }
 
-    if (all.isEmpty() || totalAll <= 0.0) {
-        // Vider l'affichage si rien à montrer
-        const QStringList labelNames = {
-            QStringLiteral("label_zoneNordb_2"),
-            QStringLiteral("label_zoneSudb_2"),
-            QStringLiteral("label_zoneEstb_2"),
-            QStringLiteral("label_zoneOuestb_3"),
-            QStringLiteral("label_zoneOuestb_2")
-        };
-        const QStringList progressNames = {
-            QStringLiteral("progressZoneNordb_2"),
-            QStringLiteral("progressZoneSudb_2"),
-            QStringLiteral("progressZoneEstb_2"),
-            QStringLiteral("progressZoneOuestb_3"),
-            QStringLiteral("progressZoneOuestb_2")
-        };
-        const QStringList valueNames = {
-            QStringLiteral("value_zoneNordb_2"),
-            QStringLiteral("value_zoneSudb_2"),
-            QStringLiteral("value_zoneEstb_2"),
-            QStringLiteral("value_zoneOuestb_3"),
-            QStringLiteral("value_zoneOuestb_2")
-        };
-        for (int i = 0; i < 5; ++i) {
-            auto* label = ui->frame_zonesb_2->findChild<QLabel*>(labelNames[i]);
-            auto* progressBar = ui->frame_zonesb_2->findChild<QProgressBar*>(progressNames[i]);
-            auto* valueLabel = ui->frame_zonesb_2->findChild<QLabel*>(valueNames[i]);
-            if (label) label->setText(QString());
-            if (progressBar) progressBar->setValue(0);
-            if (valueLabel) valueLabel->setText(QStringLiteral("0/0"));
-        }
-        return;
+    // Styles according to the target image
+    const QString titleStyle = QStringLiteral(
+        "QLabel {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 2px solid rgb(0, 0, 115);"
+        " border-radius: 18px;"
+        " color: rgb(0, 0, 115);"
+        " font-weight: bold;"
+        " font-size: 18px;"
+        " padding: 6px;"
+        " }");
+
+    const QString labelBoxStyle = QStringLiteral(
+        "QLabel {"
+        " background-color: rgb(224, 238, 255);"
+        " border: 1.5px solid rgb(0, 0, 115);"
+        " border-radius: 2px;"
+        " padding: 2px;"
+        " font-size: 15px;"
+        " font-weight: bold;"
+        " color: rgb(0, 0, 90);"
+        " }");
+
+    auto progressBarStyle = [](const QString& color) {
+        return QStringLiteral(
+            "QProgressBar:vertical {"
+            " border: 1.5px solid %1;"
+            " border-radius: 8px;"
+            " background-color: white;"
+            " padding: 0px;"
+            "}"
+            "QProgressBar::chunk:vertical {"
+            " background-color: %1;"
+            " border-radius: 6px;"
+            " margin: 2px;"
+            "}").arg(color);
+    };
+
+    auto valueBoxStyle = [](const QString& color) {
+        return QStringLiteral(
+            "QLabel {"
+            " background-color: rgb(224, 238, 255);"
+            " border: 1.5px solid rgb(0, 0, 115);"
+            " border-radius: 2px;"
+            " padding: 2px;"
+            " font-size: 14px;"
+            " font-weight: bold;"
+            " color: %1;"
+            " text-align: center;"
+            " }").arg(color);
+    };
+
+    if (ui->label_zonesb_2) {
+        ui->label_zonesb_2->setStyleSheet(titleStyle);
+        ui->label_zonesb_2->setText(QStringLiteral("Répartitions par top 5 especes :"));
+        ui->label_zonesb_2->setAlignment(Qt::AlignCenter);
     }
-    
-    // Noms des widgets pour les 5 colonnes
+
+
     const QStringList labelNames = {
         QStringLiteral("label_zoneNordb_2"),
         QStringLiteral("label_zoneSudb_2"),
@@ -14053,7 +16541,6 @@ static void updateCapturesStats(MainWindow* parent, Ui::MainWindow* ui)
         QStringLiteral("label_zoneOuestb_3"),
         QStringLiteral("label_zoneOuestb_2")
     };
-    
     const QStringList progressNames = {
         QStringLiteral("progressZoneNordb_2"),
         QStringLiteral("progressZoneSudb_2"),
@@ -14061,7 +16548,6 @@ static void updateCapturesStats(MainWindow* parent, Ui::MainWindow* ui)
         QStringLiteral("progressZoneOuestb_3"),
         QStringLiteral("progressZoneOuestb_2")
     };
-    
     const QStringList valueNames = {
         QStringLiteral("value_zoneNordb_2"),
         QStringLiteral("value_zoneSudb_2"),
@@ -14069,18 +16555,80 @@ static void updateCapturesStats(MainWindow* parent, Ui::MainWindow* ui)
         QStringLiteral("value_zoneOuestb_3"),
         QStringLiteral("value_zoneOuestb_2")
     };
-    
-    // Mettre à jour chaque colonne
+    const QStringList accentColors = {
+        QStringLiteral("#3498db"), // Sardine - Blue
+        QStringLiteral("#27ae60"), // Loup - Green
+        QStringLiteral("#f39c12"), // Thon - Orange
+        QStringLiteral("#c51414"), // Rouget - Red
+        QStringLiteral("#9b59b6")  // Other - Purple
+    };
+
+    // Update each column
     for (int i = 0; i < 5; ++i) {
-        // Récupérer les widgets pour cette colonne
         auto* label = ui->frame_zonesb_2->findChild<QLabel*>(labelNames[i]);
         auto* progressBar = ui->frame_zonesb_2->findChild<QProgressBar*>(progressNames[i]);
         auto* valueLabel = ui->frame_zonesb_2->findChild<QLabel*>(valueNames[i]);
         
-        if (!label || !progressBar || !valueLabel) {
-            continue;
-        }
+        if (!label || !progressBar || !valueLabel) continue;
+
+        const QString color = accentColors.value(i, QStringLiteral("#9b59b6"));
         
+        label->setStyleSheet(labelBoxStyle);
+        label->setAlignment(Qt::AlignCenter);
+        
+        progressBar->setOrientation(Qt::Vertical);
+        progressBar->setStyleSheet(progressBarStyle(color));
+        progressBar->setTextVisible(false);
+        progressBar->setFixedWidth(32); // Thinner bars to match image
+        progressBar->setMaximumWidth(32);
+        progressBar->setMinimumHeight(120);
+
+        // Handle percentage label
+        QLabel* pctLabel = ui->frame_zonesb_2->findChild<QLabel*>(QStringLiteral("pctLabel_%1").arg(i));
+        
+        if (!pctLabel) {
+            // Navigate to find the correct column layout (QVBoxLayout)
+            QVBoxLayout* colLayout = nullptr;
+            if (auto* mainV = qobject_cast<QVBoxLayout*>(ui->frame_zonesb_2->layout())) {
+                for (int vIdx = 0; vIdx < mainV->count(); ++vIdx) {
+                    if (auto* subH = qobject_cast<QHBoxLayout*>(mainV->itemAt(vIdx)->layout())) {
+                        if (i < subH->count()) {
+                            colLayout = qobject_cast<QVBoxLayout*>(subH->itemAt(i)->layout());
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (colLayout) {
+                int barIdx = colLayout->indexOf(progressBar);
+                if (barIdx != -1) {
+                    pctLabel = new QLabel(ui->frame_zonesb_2);
+                    pctLabel->setObjectName(QStringLiteral("pctLabel_%1").arg(i));
+                    pctLabel->setStyleSheet(QStringLiteral("font-weight: bold; font-size: 14px; color: rgb(0, 0, 90); background: transparent; border: none;"));
+                    pctLabel->setFixedWidth(38);
+                    pctLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+                    QHBoxLayout* barHLayout = new QHBoxLayout();
+                    barHLayout->setContentsMargins(0, 0, 0, 0);
+                    barHLayout->setSpacing(4);
+                    barHLayout->setAlignment(Qt::AlignCenter);
+                    
+                    colLayout->takeAt(barIdx);
+                    barHLayout->addWidget(pctLabel);
+                    barHLayout->addWidget(progressBar);
+                    colLayout->insertLayout(barIdx, barHLayout);
+                }
+            }
+        }
+
+
+
+
+
+        valueLabel->setStyleSheet(valueBoxStyle(color));
+        valueLabel->setAlignment(Qt::AlignCenter);
+
         if (i < all.size()) {
             const QString species = all[i].first;
             const double value = all[i].second;
@@ -14088,58 +16636,60 @@ static void updateCapturesStats(MainWindow* parent, Ui::MainWindow* ui)
 
             label->setText(species);
             progressBar->setValue(qBound(0, static_cast<int>(pct + 0.5), 100));
+            if (pctLabel) {
+                pctLabel->setText(QStringLiteral("%1%").arg(static_cast<int>(pct + 0.5)));
+                pctLabel->show();
+            }
 
             if (metricIndex == 1) {
-                // Poids
-                const QString vTxt = QString::number(value, 'f', 1);
-                const QString tTxt = QString::number(totalAll, 'f', 1);
-                valueLabel->setText(QStringLiteral("%1kg/%2kg").arg(vTxt, tTxt));
+                valueLabel->setText(QStringLiteral("%1kg/%2kg").arg(QString::number(value, 'f', 1), QString::number(totalAll, 'f', 1)));
             } else {
-                // Quantité (arrondie à l'entier)
-                const int vInt = static_cast<int>(value + 0.5);
-                const int tInt = static_cast<int>(totalAll + 0.5);
-                valueLabel->setText(QStringLiteral("%1/%2").arg(QString::number(vInt), QString::number(tInt)));
+                valueLabel->setText(QStringLiteral("%1/%2").arg(QString::number(static_cast<int>(value)), QString::number(static_cast<int>(totalAll))));
             }
         } else {
-            // Vider la colonne
             label->setText(QString());
             progressBar->setValue(0);
-            valueLabel->setText(QStringLiteral("0/0"));
+            if (pctLabel) pctLabel->hide();
+            valueLabel->setText(metricIndex == 1 ? QStringLiteral("0.0kg/0.0kg") : QStringLiteral("0/0"));
         }
+
     }
+
+
 }
+
 
 static QString weatherDescriptionFr(int weatherCode)
 {
-    if (weatherCode == 0) return QStringLiteral("Ciel degage");
-    if (weatherCode == 1) return QStringLiteral("Principalement degage");
+    if (weatherCode == 0) return QStringLiteral("Ciel d\u00e9gag\u00e9");
+    if (weatherCode == 1) return QStringLiteral("Principalement d\u00e9gag\u00e9");
     if (weatherCode == 2) return QStringLiteral("Partiellement nuageux");
     if (weatherCode == 3) return QStringLiteral("Couvert");
     if (weatherCode == 45) return QStringLiteral("Brouillard");
     if (weatherCode == 48) return QStringLiteral("Brouillard givrant");
     if (weatherCode == 51) return QStringLiteral("Bruine faible");
-    if (weatherCode == 53) return QStringLiteral("Bruine moderee");
+    if (weatherCode == 53) return QStringLiteral("Bruine mod\u00e9r\u00e9e");
     if (weatherCode == 55) return QStringLiteral("Bruine forte");
-    if (weatherCode == 56) return QStringLiteral("Bruine verglaçante faible");
-    if (weatherCode == 57) return QStringLiteral("Bruine verglaçante forte");
+    if (weatherCode == 56) return QStringLiteral("Bruine vergla\u00e7ante faible");
+    if (weatherCode == 57) return QStringLiteral("Bruine vergla\u00e7ante forte");
     if (weatherCode == 61) return QStringLiteral("Pluie faible");
-    if (weatherCode == 63) return QStringLiteral("Pluie moderee");
+    if (weatherCode == 63) return QStringLiteral("Pluie mod\u00e9r\u00e9e");
     if (weatherCode == 65) return QStringLiteral("Pluie forte");
-    if (weatherCode == 66) return QStringLiteral("Pluie verglaçante faible");
-    if (weatherCode == 67) return QStringLiteral("Pluie verglaçante forte");
+    if (weatherCode == 66) return QStringLiteral("Pluie vergla\u00e7ante faible");
+    if (weatherCode == 67) return QStringLiteral("Pluie vergla\u00e7ante forte");
     if (weatherCode == 71) return QStringLiteral("Neige faible");
-    if (weatherCode == 73) return QStringLiteral("Neige moderee");
+    if (weatherCode == 73) return QStringLiteral("Neige mod\u00e9r\u00e9e");
     if (weatherCode == 75) return QStringLiteral("Neige forte");
     if (weatherCode == 77) return QStringLiteral("Grains de neige");
     if (weatherCode == 80) return QStringLiteral("Averses faibles");
-    if (weatherCode == 81) return QStringLiteral("Averses moderees");
+    if (weatherCode == 81) return QStringLiteral("Averses mod\u00e9r\u00e9es");
     if (weatherCode == 82) return QStringLiteral("Averses fortes");
     if (weatherCode == 85) return QStringLiteral("Averses de neige faibles");
     if (weatherCode == 86) return QStringLiteral("Averses de neige fortes");
     if (weatherCode == 95) return QStringLiteral("Orage");
-    if (weatherCode == 96) return QStringLiteral("Orage avec grele faible");
-    if (weatherCode == 99) return QStringLiteral("Orage avec grele forte");
-    return QStringLiteral("Meteo variable");
+    if (weatherCode == 96) return QStringLiteral("Orage avec gr\u00eale faible");
+    if (weatherCode == 99) return QStringLiteral("Orage avec gr\u00eale forte");
+    return QStringLiteral("M\u00e9t\u00e9o variable");
 }
 
 static QString weatherIconEmoji(int weatherCode)
@@ -14182,7 +16732,7 @@ void MainWindow::on_btnCapturep_clicked()
 
     if (nom.isEmpty() || prenom.isEmpty() || role.isEmpty()) {
         QMessageBox::warning(this, QStringLiteral("Capture"),
-                             QStringLiteral("Veuillez remplir le Nom, le Prénom et le Rôle avant la capture."));
+                             QStringLiteral("Veuillez remplir le Nom, le PrÃ©nom et le RÃ´le avant la capture."));
         return;
     }
 
@@ -14224,7 +16774,7 @@ void MainWindow::on_bmip_clicked()
     const QString prenom = ui->lineEdit_3p ? ui->lineEdit_3p->text().trimmed() : QString();
 
     if (email.isEmpty()) {
-        QMessageBox::warning(this, QStringLiteral("Mission"), QStringLiteral("Veuillez renseigner l'email du pêcheur."));
+        QMessageBox::warning(this, QStringLiteral("Mission"), QStringLiteral("Veuillez renseigner l'email du pÃªcheur."));
         return;
     }
 
@@ -14244,7 +16794,7 @@ void MainWindow::on_bmip_clicked()
     }
 
     if (nom.isEmpty() || prenom.isEmpty()) {
-        QMessageBox::warning(this, QStringLiteral("Mission"), QStringLiteral("Veuillez renseigner le nom et le prénom du pêcheur."));
+        QMessageBox::warning(this, QStringLiteral("Mission"), QStringLiteral("Veuillez renseigner le nom et le prÃ©nom du pÃªcheur."));
         return;
     }
 
@@ -14283,7 +16833,7 @@ void MainWindow::on_bmip_clicked()
     const bool canPersist = !ancienId.isEmpty() && (m_editingPecheurId == ancienId || Pecheurs::idExiste(ancienId));
     if (canPersist) {
         if (!p.modifierAvecAncienId(ancienId)) {
-            QMessageBox::warning(this, QStringLiteral("Mission"), QStringLiteral("L'email a été préparé, mais la mise à jour en base a échoué: %1").arg(Pecheurs::lastError()));
+            QMessageBox::warning(this, QStringLiteral("Mission"), QStringLiteral("L'email a Ã©tÃ© prÃ©parÃ©, mais la mise Ã  jour en base a Ã©chouÃ©: %1").arg(Pecheurs::lastError()));
             return;
         }
         loadPecheurs();
@@ -14291,7 +16841,7 @@ void MainWindow::on_bmip_clicked()
 
     QMessageBox::information(this,
                              QStringLiteral("Mission"),
-                             QStringLiteral("E-mail d'affectation envoyé à %1 et mise à jour réussie.").arg(email));
+                             QStringLiteral("E-mail d'affectation envoyÃ© Ã  %1 et mise Ã  jour rÃ©ussie.").arg(email));
 }
 
 void MainWindow::on_pushButton_5e_2_clicked()
@@ -14299,14 +16849,14 @@ void MainWindow::on_pushButton_5e_2_clicked()
     if (!ui) return;
 
     QString fileName = QFileDialog::getOpenFileName(this,
-        tr("Sélectionner le CV"), "", tr("Documents (*.pdf *.doc *.docx *.txt);;Tous les fichiers (*)"));
+        tr("SÃ©lectionner le CV"), "", tr("Documents (*.pdf *.doc *.docx *.txt);;Tous les fichiers (*)"));
     
     if (fileName.isEmpty()) return;
 
     m_currentCvPath = fileName;
     if (ui->lineEdit_cv_path) ui->lineEdit_cv_path->setText(fileName);
     
-    ui->pushButton_5e_2->setText(QStringLiteral("📄 CV Sélectionné"));
+    ui->pushButton_5e_2->setText(QStringLiteral("ðŸ“„ CV SÃ©lectionnÃ©"));
     ui->pushButton_5e_2->setToolTip(fileName);
 
     QString content;
@@ -14323,7 +16873,7 @@ void MainWindow::on_pushButton_5e_2_clicked()
     } 
 #ifdef HAVE_ACTIVEQT
     else if (fileName.endsWith(".docx", Qt::CaseInsensitive) || fileName.endsWith(".doc", Qt::CaseInsensitive)) {
-        // Tentative d'extraction via Microsoft Word si installé
+        // Tentative d'extraction via Microsoft Word si installÃ©
         QAxObject* word = new QAxObject("Word.Application", this);
         if (word && !word->isNull()) {
             word->setProperty("Visible", false);
@@ -14350,20 +16900,20 @@ void MainWindow::on_pushButton_5e_2_clicked()
 
     // 2. Extraction des valeurs via Regex
     auto extractValue = [&](const QString &keyword) -> QString {
-        // Regex plus précise : s'arrête au prochain mot-clé ou à la fin de la ligne
-        // On définit la liste des mots-clés pour savoir où s'arrêter
+        // Regex plus prÃ©cise : s'arrÃªte au prochain mot-clÃ© ou Ã  la fin de la ligne
+        // On dÃ©finit la liste des mots-clÃ©s pour savoir oÃ¹ s'arrÃªter
         static const QStringList keywords = {
             "Id", "Nom", "Prenom", "Telephone", "Role", "Statut", "Equipe", "Etat", "Salaire"
         };
         
-        // On construit une regex qui cherche le mot-clé, puis capture tout jusqu'à :
-        // - un autre mot-clé (suivi de :)
+        // On construit une regex qui cherche le mot-clÃ©, puis capture tout jusqu'Ã  :
+        // - un autre mot-clÃ© (suivi de :)
         // - ou la fin de la ligne ($)
         // - ou un saut de ligne (\n)
         
         QString otherKeywords = keywords.join("|");
         // Regex : keyword + separator + (capture tout ce qui n'est pas un saut de ligne et qui n'est pas suivi par un autre keyword:)
-        // Version simplifiée mais efficace : capture jusqu'au prochain mot-clé ou fin de ligne
+        // Version simplifiÃ©e mais efficace : capture jusqu'au prochain mot-clÃ© ou fin de ligne
         QRegularExpression re(keyword + "\\s*[:=]\\s*(.*?)(?=(?:" + otherKeywords + ")\\s*[:=]|$|\\r|\\n)", 
                              QRegularExpression::CaseInsensitiveOption);
         
@@ -14384,10 +16934,10 @@ void MainWindow::on_pushButton_5e_2_clicked()
     QString etat = extractValue("Etat");
     QString salaire = extractValue("Salaire");
 
-    // 3. Fallback : Si rien n'a été trouvé (ex: fichier binaire sans Word), on essaie le nom du fichier
+    // 3. Fallback : Si rien n'a Ã©tÃ© trouvÃ© (ex: fichier binaire sans Word), on essaie le nom du fichier
     if (id.isEmpty() && nom.isEmpty() && prenom.isEmpty()) {
         QString baseName = QFileInfo(fileName).baseName();
-        // On remplace les séparateurs par des espaces pour le découpage
+        // On remplace les sÃ©parateurs par des espaces pour le dÃ©coupage
         QString cleanName = baseName.replace('_', ' ').replace('-', ' ');
         QStringList parts = cleanName.split(' ', Qt::SkipEmptyParts);
         
@@ -14434,10 +16984,10 @@ void MainWindow::on_pushButton_5e_2_clicked()
 
     if (readSuccess) {
         QMessageBox::information(this, tr("Upload CV"), 
-            tr("Le CV a été lu et le formulaire a été pré-rempli automatiquement."));
+            tr("Le CV a Ã©tÃ© lu et le formulaire a Ã©tÃ© prÃ©-rempli automatiquement."));
     } else {
         QMessageBox::warning(this, tr("Upload CV"), 
-            tr("Le fichier a été sélectionné, mais son contenu n'a pas pu être lu directement (format .docx sans Word installé).\n\n"
-               "Certains champs ont été remplis à partir du nom du fichier. Pour un remplissage complet, utilisez un fichier .txt."));
+            tr("Le fichier a Ã©tÃ© sÃ©lectionnÃ©, mais son contenu n'a pas pu Ãªtre lu directement (format .docx sans Word installÃ©).\n\n"
+               "Certains champs ont Ã©tÃ© remplis Ã  partir du nom du fichier. Pour un remplissage complet, utilisez un fichier .txt."));
     }
 }

@@ -1,16 +1,14 @@
 #include "connection.h"
 
-// Initialisation de l'instance statique à nullptr
 Connection* Connection::instance = nullptr;
 
-// Constructeur privé
-Connection::Connection() {
-    // Ajout du driver Oracle (ODBC)
+Connection::Connection()
+{
     db = QSqlDatabase::addDatabase("QODBC");
 }
 
-// Destructeur
-Connection::~Connection() {
+Connection::~Connection()
+{
     fermerConnexion();
     if (instance) {
         delete instance;
@@ -18,107 +16,105 @@ Connection::~Connection() {
     }
 }
 
-// Méthode pour obtenir l'instance unique
-Connection* Connection::getInstance() {
+Connection* Connection::getInstance()
+{
     if (instance == nullptr) {
         instance = new Connection();
     }
     return instance;
 }
 
-// Méthode pour établir la connexion - AVEC LE BON NOM!
-bool Connection::createconnect() {
+bool Connection::createconnect(bool showMessages)
+{
     try {
-        // 🔧 PARAMÈTRES DE CONNEXION - À MODIFIER SELON VOTRE CONFIG
-        QString nomUtilisateur = "hr";           // Nom d'utilisateur Oracle
-        QString motDePasse = "hr"
-                             "123";                  // Mot de passe Oracle
-        QString hote = "localhost";                  // Adresse du serveur
-        int port = 1521;                             // Port Oracle
-        QString sid = "XE";                          // SID de votre base (XE, ORCL, etc.)
+        QString nomUtilisateur = "hr";
+        QString motDePasse = "hr123";
+        QString hote = "localhost";
+        int port = 1521;
+        QString sid = "XE";
 
-        // Méthode 1: Chaîne de connexion ODBC complète (recommandée)
         QString connectionString = QString(
-                                       "DRIVER={Oracle in XE};"            // Driver Oracle détecté sur votre système
-                                       "DBQ=%1:%2/%3;"                     // Format: hote:port/sid
+                                       "DRIVER={Oracle in XE};"
+                                       "DBQ=%1:%2/%3;"
                                        "UID=%4;"
-                                       "PWD=%5;"
-                                       ).arg(hote).arg(port).arg(sid).arg(nomUtilisateur).arg(motDePasse);
+                                       "PWD=%5;")
+                                       .arg(hote, QString::number(port), sid, nomUtilisateur, motDePasse);
 
         db.setDatabaseName(connectionString);
 
-        // Tentative d'ouverture de la connexion
         if (!db.open()) {
-            QString erreur = db.lastError().text();
-            qDebug() << "❌ Erreur de connexion à la base de données : " << erreur;
+            const QString erreur = db.lastError().text();
+            qDebug() << "Connection DB failed:" << erreur;
 
-            QMessageBox::critical(nullptr,
-                                  "Erreur de Connexion",
-                                  "Impossible de se connecter à la base de données :\n" + erreur);
+            if (showMessages) {
+                QMessageBox::critical(nullptr,
+                                      "Erreur de Connexion",
+                                      "Impossible de se connecter a la base de donnees :\n" + erreur);
+            }
             return false;
         }
 
-        qDebug() << "✅ Connexion à la base de données établie avec succès !";
-        qDebug() << "📌 Hôte : " << hote << ":" << port;
-        qDebug() << "📌 SID : " << sid;
-        qDebug() << "👤 Utilisateur : " << nomUtilisateur;
-
-        QMessageBox::information(nullptr,
-                                 "Connexion Réussie",
-                                 "✅ Connexion à la base de données établie avec succès !");
-
+        qDebug() << "Database connected.";
+        qDebug() << "Host:" << hote << ":" << port;
+        qDebug() << "SID:" << sid;
+        qDebug() << "User:" << nomUtilisateur;
         return true;
 
-    } catch (const std::exception &e) {
-        qDebug() << "❌ Exception lors de la connexion : " << e.what();
-        QMessageBox::critical(nullptr,
-                              "Exception",
-                              "Exception lors de la connexion :\n" + QString(e.what()));
+    } catch (const std::exception& e) {
+        qDebug() << "Connection exception:" << e.what();
+        if (showMessages) {
+            QMessageBox::critical(nullptr,
+                                  "Exception",
+                                  "Exception lors de la connexion :\n" + QString::fromLocal8Bit(e.what()));
+        }
         return false;
     }
 }
 
-// Méthode pour fermer la connexion
-void Connection::fermerConnexion() {
+void Connection::fermerConnexion()
+{
     if (db.isOpen()) {
         db.close();
-        qDebug() << "🔌 Connexion à la base de données fermée.";
+        qDebug() << "Database connection closed.";
     }
 }
 
-// Méthode pour vérifier l'état de la connexion
-bool Connection::estConnecte() {
+bool Connection::estConnecte()
+{
     return db.isOpen();
 }
 
-// Méthode pour obtenir la base de données
-QSqlDatabase Connection::getDatabase() {
+QSqlDatabase Connection::getDatabase()
+{
     return db;
 }
 
-bool Connection::ensureOpen() {
+bool Connection::ensureOpen()
+{
     if (db.isOpen()) return true;
 
-    // If createconnect() was called, connection parameters are already set.
-    // Try a simple open without additional UI messaging.
     if (db.open()) return true;
 
-    qDebug() << "❌ ensureOpen(): open failed:" << db.lastError().text();
+    qDebug() << "ensureOpen(): open failed:" << db.lastError().text();
     return false;
 }
 
-QString Connection::lastErrorText() const {
+QString Connection::lastErrorText() const
+{
     return db.lastError().text();
 }
 
-QStringList Connection::availableDrivers() const {
+QStringList Connection::availableDrivers() const
+{
     return QSqlDatabase::drivers();
 }
 
-QString Connection::selectedDriver() const {
+QString Connection::selectedDriver() const
+{
     return db.driverName();
 }
 
-QString Connection::lastError() const {
+QString Connection::lastError() const
+{
     return db.lastError().text();
 }

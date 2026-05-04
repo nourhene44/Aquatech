@@ -1,39 +1,107 @@
-# Script pour recompiler le projet Qt
-$qtInstallPath = "C:\Qt\6.7.3"
-$minGWBinPath = "$qtInstallPath\mingw_64\bin"
-$projectDir = "c:\Users\esrab\Downloads\Aquatech-CRUD1111"
-$buildDir = "$projectDir\build\Desktop_Qt_6_7_3_MinGW_64_bit_qt_qt6-Debug"
+# Script pour recompiler le projet Qt depuis ce depot
+$qtRoot = "C:\Qt\6.7.3\mingw_64"
+$qtBinPath = Join-Path $qtRoot "bin"
+$minGwBinPath = "C:\Qt\Tools\mingw1120_64\bin"
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$projectFile = Join-Path $scriptDir "projet.pro"
+$buildDir = Join-Path $scriptDir "build\Desktop_Qt_6_7_3_MinGW_64_bit-Debug"
+$exeDir = Join-Path $buildDir "debug"
+$exePath = Join-Path $exeDir "projet.exe"
 
-# Ajouter Qt et MinGW au PATH
-$env:PATH = "$minGWBinPath;$env:PATH"
-
-# Vérifier que nous avons les outils
-Write-Host "Vérification des outils..."
-$qmake = Get-Command qmake -ErrorAction SilentlyContinue
-$make = Get-Command mingw32-make -ErrorAction SilentlyContinue
-
-if ($null -eq $qmake) {
-    Write-Host "Tentative de trouver qmake dans $minGWBinPath\qmake.exe..."
-    if (Test-Path "$minGWBinPath\qmake.exe") {
-        & "$minGWBinPath\qmake.exe" --version
-    } else {
-        Write-Host "ERREUR: qmake not found!"
+function Require-Path($path, $label) {
+    if (-not (Test-Path $path)) {
+        Write-Error "$label introuvable: $path"
         exit 1
     }
 }
 
-Write-Host "Changement vers le répertoire de build..."
+function Copy-IfExists($source, $destination) {
+    if (Test-Path $source) {
+        Copy-Item -Path $source -Destination $destination -Force
+    }
+}
+
+Require-Path $qtBinPath "Qt bin"
+Require-Path $minGwBinPath "MinGW bin"
+Require-Path $projectFile "Fichier projet"
+
+New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
+New-Item -ItemType Directory -Force -Path $exeDir | Out-Null
+
+$env:PATH = "$qtBinPath;$minGwBinPath;$env:PATH"
+$qmakeExe = Join-Path $qtBinPath "qmake.exe"
+$makeExe = Join-Path $minGwBinPath "mingw32-make.exe"
+
+Write-Host "Generation de Makefile.Debug..."
 Push-Location $buildDir
-
-Write-Host "Lancement de la compilation..."
-& mingw32-make -j4
-
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "Compilation réussie!"
-    Write-Host "Exécutable devrait être disponible à: $buildDir\debug\projet.exe"
-} else {
-    Write-Host "Compilation échouée!"
+& $qmakeExe -o Makefile.Debug ..\..\projet.pro -spec win32-g++ "CONFIG+=debug" "CONFIG+=qml_debug"
+if ($LASTEXITCODE -ne 0) {
+    Pop-Location
+    Write-Error "Echec qmake."
     exit 1
 }
 
+Write-Host "Compilation en cours..."
+& $makeExe -f Makefile.Debug -B debug/projet.exe
+if ($LASTEXITCODE -ne 0) {
+    Pop-Location
+    Write-Error "Compilation echouee."
+    exit 1
+}
 Pop-Location
+
+Write-Host "Copie des runtimes Qt et MinGW..."
+$qtDlls = @(
+    "Qt6Core.dll",
+    "Qt6Gui.dll",
+    "Qt6Multimedia.dll",
+    "Qt6Network.dll",
+    "Qt6Sql.dll",
+    "Qt6Widgets.dll"
+)
+
+$mingwDlls = @(
+    "libgcc_s_seh-1.dll",
+    "libstdc++-6.dll",
+    "libwinpthread-1.dll"
+)
+
+foreach ($dll in $qtDlls) {
+    Copy-IfExists (Join-Path $qtBinPath $dll) $exeDir
+}
+
+foreach ($dll in $mingwDlls) {
+    Copy-IfExists (Join-Path $minGwBinPath $dll) $exeDir
+}
+
+$pluginDirs = @(
+    "generic",
+    "iconengines",
+    "imageformats",
+    "multimedia",
+    "networkinformation",
+    "platforminputcontexts",
+    "platforms",
+    "sqldrivers",
+    "styles",
+    "tls"
+)
+
+foreach ($pluginDir in $pluginDirs) {
+    $sourceDir = Join-Path $qtRoot "plugins\$pluginDir"
+    $targetDir = Join-Path $exeDir $pluginDir
+    if (Test-Path $sourceDir) {
+        New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+        Copy-Item -Path (Join-Path $sourceDir "*") -Destination $targetDir -Recurse -Force
+    }
+}
+
+if (Test-Path $exePath) {
+    $exeInfo = Get-Item $exePath
+    Write-Host "Compilation reussie."
+    Write-Host "Executable: $exePath"
+    Write-Host "Taille: $($exeInfo.Length) octets"
+} else {
+    Write-Error "Executable introuvable apres compilation."
+    exit 1
+}

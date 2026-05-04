@@ -1,18 +1,8 @@
 QT       += core gui sql network
 
-qtHaveModule(serialport) {
-    QT += serialport
-    DEFINES += HAVE_SERIALPORT
-}
-
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 CONFIG += c++17
-
-win32-g++ {
-    QMAKE_CXXFLAGS_DEBUG -= -g
-    QMAKE_CXXFLAGS_DEBUG += -g1
-}
 
 # You can make your code fail to compile if it uses deprecated APIs.
 # In order to do so, uncomment the following line.
@@ -26,8 +16,7 @@ SOURCES += \
     mainwindow.cpp \
     quai.cpp \
     bateaauuu.cpp \
-    pecheurs.cpp \
-    arduinoserial.cpp
+    pecheurs.cpp
 
 HEADERS += \
     client.h \
@@ -36,8 +25,7 @@ HEADERS += \
     mainwindow.h \
     quai.h \
     bateaauuu.h \
-    pecheurs.h \
-    arduinoserial.h
+    pecheurs.h
 
 FORMS += \
     mainwindow.ui
@@ -51,7 +39,6 @@ RESOURCES += \
     img.qrc
 
 DEFINES += QT_DEPRECATED_WARNINGS
-win32: LIBS += -lsetupapi
 
 # Export Excel réel (.xlsx) via ActiveQt/COM (nécessite Excel installé)
 win32:qtHaveModule(axcontainer) {

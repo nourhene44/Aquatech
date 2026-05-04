@@ -546,35 +546,14 @@ bool ArduinoSerial::writeLine(const QString& line, QString* errorOut)
 bool ArduinoSerial::sendAccessDecision(const QString& uid, bool allow)
 {
     const QString cleanUid = normalizeUidText(uid);
-    const QString compactUid = compactUidText(cleanUid);
-    const QString baseCommand = allow ? QStringLiteral("OPEN") : QStringLiteral("DENY");
-    QStringList commands;
-
-    if (!compactUid.isEmpty()) {
-        commands << (baseCommand + QLatin1Char(':') + compactUid);
-    }
+    QString command = allow ? QStringLiteral("OPEN") : QStringLiteral("DENY");
     if (!cleanUid.isEmpty()) {
-        const QString spacedCommand = baseCommand + QLatin1Char(':') + cleanUid;
-        if (!commands.contains(spacedCommand)) {
-            commands << spacedCommand;
-        }
+        command += QLatin1Char(':');
+        command += cleanUid;
     }
-    commands << baseCommand;
 
     QString error;
-    bool atLeastOneCommandSent = false;
-    for (const QString& command : commands) {
-        QString commandError;
-        if (!writeLine(command, &commandError)) {
-            appendArduinoDebugLog(QStringLiteral("Access command failed on %1: %2")
-                                  .arg(command, commandError));
-            error = commandError;
-            continue;
-        }
-        atLeastOneCommandSent = true;
-    }
-
-    if (!atLeastOneCommandSent) {
+    if (!writeLine(command, &error)) {
         emit statusMessage(QStringLiteral("Impossible d'envoyer %1 a l'Arduino.")
                                .arg(allow ? QStringLiteral("OPEN") : QStringLiteral("DENY")));
         return false;
@@ -588,7 +567,7 @@ bool ArduinoSerial::sendAccessDecision(const QString& uid, bool allow)
     }
 
     emit statusMessage(QStringLiteral("Commande %1 envoyee a l'Arduino pour %2.")
-                           .arg(baseCommand,
+                           .arg(allow ? QStringLiteral("OPEN") : QStringLiteral("DENY"),
                                 cleanUid.isEmpty() ? QStringLiteral("badge inconnu") : cleanUid));
     return true;
 }
